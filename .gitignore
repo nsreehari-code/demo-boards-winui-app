@@ -1,0 +1,62 @@
+# ---- .NET / Visual Studio ----
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio / Rider
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.vsp
+*.vspx
+*.userprefs
+
+# Build results / packages
+*.dll
+*.exe
+*.pdb
+*.cache
+*.msi
+*.appx
+*.appxbundle
+*.msix
+*.msixbundle
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# NuGet
+*.nupkg
+*.snupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+.nuget/
+
+# WinUI / MSIX publish output
+AppPackages/
+BundleArtifacts/
+*.appxupload
+*.appxsym
+GeneratedArtifacts/
+_pkginfo.txt
+
+# ---- Embedded JS runtime / brain ----
+node_modules/
+js-runtime/dist/
+*.tsbuildinfo
+
+# ---- OS ----
+.DS_Store
+Thumbs.db
