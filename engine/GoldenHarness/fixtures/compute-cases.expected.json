@@ -1,0 +1,42 @@
+[
+  {
+    "name": "scalar-arithmetic",
+    "result": "50.75"
+  },
+  {
+    "name": "portfolio-total",
+    "result": "7642.799999999999"
+  },
+  {
+    "name": "round-2dp",
+    "result": "24480.75"
+  },
+  {
+    "name": "average",
+    "result": "4"
+  },
+  {
+    "name": "sort-desc",
+    "result": "[9,7,5,3,1]"
+  },
+  {
+    "name": "map-project",
+    "result": "[{\"label\":\"a\",\"net\":90},{\"label\":\"b\",\"net\":232.96}]"
+  },
+  {
+    "name": "conditional",
+    "result": "\"fail\""
+  },
+  {
+    "name": "string-join",
+    "result": "\"2026-06-19\""
+  },
+  {
+    "name": "nested-agg",
+    "result": "29.73"
+  },
+  {
+    "name": "float-precision",
+    "result": "0.30000000000000004"
+  }
+]

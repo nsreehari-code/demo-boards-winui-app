@@ -36,3 +36,14 @@ function runGoldenReplay(framesJson) {
   const snapshot = canonical(replay(frames, boardId));
   return JSON.stringify(snapshot, null, 2) + '\n';
 }
+
+// Compute oracle: evaluate one jsonata case via the vendored evaluator
+// (globalThis.jsonataSync, provided by the compute-jsonata.js bundle) and
+// serialize the result the same way the Node generator does, so the C# host
+// can assert byte-identical results across engines.
+function runComputeCase(expr, dataJson) {
+  const data = JSON.parse(dataJson);
+  const result = jsonataSync(expr).evaluate(data);
+  return JSON.stringify(result === undefined ? null : result);
+}
+

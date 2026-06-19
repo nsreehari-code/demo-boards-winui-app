@@ -1,0 +1,68 @@
+[
+  {
+    "name": "scalar-arithmetic",
+    "expr": "a * b + c",
+    "data": { "a": 12.5, "b": 4, "c": 0.75 }
+  },
+  {
+    "name": "portfolio-total",
+    "expr": "$sum(holdings.(qty * price))",
+    "data": {
+      "holdings": [
+        { "qty": 10, "price": 105.25 },
+        { "qty": 3, "price": 1990.1 },
+        { "qty": 50, "price": 12.4 }
+      ]
+    }
+  },
+  {
+    "name": "round-2dp",
+    "expr": "$round(value, 2)",
+    "data": { "value": 24480.754999 }
+  },
+  {
+    "name": "average",
+    "expr": "$average(xs)",
+    "data": { "xs": [1, 2, 3, 4, 5, 6, 7] }
+  },
+  {
+    "name": "sort-desc",
+    "expr": "$sort(xs, function($l, $r) { $l < $r })",
+    "data": { "xs": [5, 3, 9, 1, 7] }
+  },
+  {
+    "name": "map-project",
+    "expr": "items.{ 'label': name, 'net': $round(amount * (1 - rate), 2) }",
+    "data": {
+      "items": [
+        { "name": "a", "amount": 100, "rate": 0.1 },
+        { "name": "b", "amount": 250.5, "rate": 0.07 }
+      ]
+    }
+  },
+  {
+    "name": "conditional",
+    "expr": "score >= 50 ? 'pass' : 'fail'",
+    "data": { "score": 49.999 }
+  },
+  {
+    "name": "string-join",
+    "expr": "$join(parts, '-')",
+    "data": { "parts": ["2026", "06", "19"] }
+  },
+  {
+    "name": "nested-agg",
+    "expr": "$sum(orders.lines.(qty * unitPrice))",
+    "data": {
+      "orders": [
+        { "lines": [ { "qty": 2, "unitPrice": 9.99 }, { "qty": 1, "unitPrice": 3.5 } ] },
+        { "lines": [ { "qty": 5, "unitPrice": 1.25 } ] }
+      ]
+    }
+  },
+  {
+    "name": "float-precision",
+    "expr": "0.1 + 0.2",
+    "data": {}
+  }
+]
