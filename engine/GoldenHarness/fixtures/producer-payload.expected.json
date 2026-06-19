@@ -1,0 +1,76 @@
+{
+  "boardId": "phase-d-board",
+  "cardChatsByCardId": {},
+  "cardDefinitions": [
+    {
+      "card_data": {
+        "amount": 4250.5,
+        "currency": "USD",
+        "title": "Quarterly Revenue"
+      },
+      "id": "card-alpha",
+      "view": {
+        "elements": []
+      }
+    },
+    {
+      "card_data": {
+        "count": 7,
+        "owner": "team-reactor",
+        "title": "Open Tasks"
+      },
+      "id": "card-beta",
+      "view": {
+        "elements": []
+      }
+    }
+  ],
+  "cardRuntimeById": {
+    "card-alpha": {
+      "card_data": {
+        "amount": 4250.5,
+        "currency": "USD",
+        "title": "Quarterly Revenue"
+      },
+      "card_id": "card-alpha",
+      "computed_values": {},
+      "schema_version": "v1"
+    },
+    "card-beta": {
+      "card_data": {
+        "count": 7,
+        "owner": "team-reactor",
+        "title": "Open Tasks"
+      },
+      "card_id": "card-beta",
+      "computed_values": {},
+      "schema_version": "v1"
+    }
+  },
+  "dataObjectsByToken": {},
+  "statusSnapshot": {
+    "cards": [],
+    "meta": {
+      "board": {
+        "path": "b64:eyJraW5kIjoibG9jYWwtc3RvcmFnZSIsInZhbHVlIjoiYm9hcmRzOnBoYXNlLWQtYm9hcmQifQ"
+      }
+    },
+    "schema_version": "v1",
+    "summary": {
+      "blocked": 0,
+      "card_count": 0,
+      "completed": 0,
+      "eligible": 0,
+      "failed": 0,
+      "in_progress": 0,
+      "orphan_cards": 0,
+      "pending": 0,
+      "topology": {
+        "edge_count": 0,
+        "max_fan_out": 0,
+        "max_fan_out_card": null
+      },
+      "unresolved": 0
+    }
+  }
+}

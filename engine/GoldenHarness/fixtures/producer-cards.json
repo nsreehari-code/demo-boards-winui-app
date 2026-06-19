@@ -1,0 +1,23 @@
+{
+  "boardId": "phase-d-board",
+  "cards": [
+    {
+      "id": "card-alpha",
+      "card_data": {
+        "title": "Quarterly Revenue",
+        "amount": 4250.5,
+        "currency": "USD"
+      },
+      "view": { "elements": [] }
+    },
+    {
+      "id": "card-beta",
+      "card_data": {
+        "title": "Open Tasks",
+        "count": 7,
+        "owner": "team-reactor"
+      },
+      "view": { "elements": [] }
+    }
+  ]
+}

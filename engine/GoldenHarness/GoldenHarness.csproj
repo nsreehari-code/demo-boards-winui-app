@@ -26,6 +26,7 @@
   -->
   <ItemGroup>
     <None Include="js\golden-driver.js" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="js\producer-driver.js" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\..\yaml-flow\browser\board-sse-state.js"
           Link="js\board-sse-state.js"
           CopyToOutputDirectory="PreserveNewest" />
@@ -37,6 +38,8 @@
           CopyToOutputDirectory="PreserveNewest" />
     <None Include="fixtures\compute-cases.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="fixtures\compute-cases.expected.json" CopyToOutputDirectory="PreserveNewest" />
+        <None Include="fixtures\producer-cards.json" CopyToOutputDirectory="PreserveNewest" />
+        <None Include="fixtures\producer-payload.expected.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\..\demo-boards-frontend\tests\fixtures\deterministic-smoke.frames.json"
           Link="fixtures\frames.json"
           CopyToOutputDirectory="PreserveNewest" />
