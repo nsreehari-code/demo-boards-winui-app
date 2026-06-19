@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>GoldenHarness</RootNamespace>
+    <AssemblyName>GoldenHarness</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <!--
+    Lighter embedded JS engine: real V8 via ClearScript, no Node runtime.
+    The native package supplies the platform-specific V8 binaries.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.ClearScript.V8" Version="7.*" />
+    <PackageReference Include="Microsoft.ClearScript.V8.Native.win-x64" Version="7.*" />
+  </ItemGroup>
+
+  <!--
+    The brain bundle and golden fixtures live in the sibling JS repos and are
+    copied into the output at build time so this proof never drifts from source.
+    Paths are relative to ai-tool-evolver/ (three levels up from this project).
+  -->
+  <ItemGroup>
+    <None Include="js\golden-driver.js" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\yaml-flow\browser\board-sse-state.js"
+          Link="js\board-sse-state.js"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\demo-boards-frontend\tests\fixtures\deterministic-smoke.frames.json"
+          Link="fixtures\frames.json"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\demo-boards-frontend\tests\fixtures\deterministic-smoke.snapshot.json"
+          Link="fixtures\snapshot.json"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
