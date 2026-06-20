@@ -37,6 +37,47 @@ function createSyntheticResponse() {
   };
 }
 
+// Body-aware synthetic request: the runtime reads POST bodies via
+// `for await (const chunk of req)`, so the async iterator must yield the body
+// as a Uint8Array (no Buffer in the embedded V8 — readJsonBody falls back to
+// TextDecoder over Uint8Array chunks).
+function createSyntheticRequestWithBody(method, url, bodyText) {
+  var body = bodyText == null ? '' : String(bodyText);
+  return {
+    method: method,
+    url: url,
+    headers: { 'content-type': 'application/json' },
+    on: function () {},
+    [Symbol.asyncIterator]: async function* () {
+      if (body) {
+        yield new TextEncoder().encode(body);
+      }
+    },
+  };
+}
+
+// Status-capturing synthetic response: unlike createSyntheticResponse (used by
+// the SSE bootstrap), this records the HTTP status code so the agentface proxy
+// can faithfully relay the runtime's response to external callers.
+function createSyntheticResponseWithStatus() {
+  var chunks = [];
+  var status = 200;
+  function push(chunk) {
+    if (chunk == null) return;
+    chunks.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk));
+  }
+  return {
+    res: {
+      writeHead: function (code) { if (typeof code === 'number') status = code; },
+      setHeader: function () {},
+      write: function (chunk) { push(chunk); },
+      end: function (chunk) { push(chunk); },
+    },
+    status: function () { return status; },
+    body: function () { return chunks.join(''); },
+  };
+}
+
 function createParsedUrl(pathAndQuery) {
   var parts = String(pathAndQuery || '').split('?');
   var pathname = parts[0] || '/';
@@ -466,3 +507,84 @@ async function runInvocationAdapterProof() {
     lastInvocation: JSON.parse(HostInvocationBridge.GetLastInvocationJson() || 'null'),
   }), null, 2) + '\n';
 }
+
+// ---------------------------------------------------------------------------
+// Long-lived WinUI runtime: one host-backed runtime kept alive for the app so
+// the shell can mutate the board and re-read the published snapshot without
+// rebuilding the whole brain each time. Board-change notifications collapse to
+// an in-process call into the C# HostNotifier (the embedded boundary model:
+// watchers/SSE become direct in-process calls).
+// ---------------------------------------------------------------------------
+
+async function initWinuiRuntime(boardId, cardsJson) {
+  const cards = JSON.parse(cardsJson);
+  const bundle = createHostBridgeBundle(boardId);
+
+  if (globalThis.HostNotifier) {
+    bundle.boardAdapter.publishBoardChangeNotifications = function () {
+      try { HostNotifier.NotifyBoardChanged(); } catch (e) {}
+    };
+  }
+
+  const runtime = ServerRuntimeControlface.createSingleBoardServerRuntime(
+    createRuntimeOptions(boardId, bundle, createHostInvocationAdapter())
+  );
+
+  const seed = await runtime.cardStore.set({ body: cards });
+  if (!seed || seed.status !== 'success') {
+    throw new Error('winui runtime seed failed: ' + ((seed && seed.error) || 'unknown'));
+  }
+  await bootstrapRuntime(runtime);
+
+  globalThis.__winuiRuntime = runtime;
+  globalThis.__winuiBoardId = boardId;
+  return JSON.stringify(canonical(await runtime.buildPublishedRuntimePayload()), null, 2) + '\n';
+}
+
+function getWinuiRuntime() {
+  var runtime = globalThis.__winuiRuntime;
+  if (!runtime) throw new Error('winui runtime not initialized');
+  return runtime;
+}
+
+async function winuiBuildSnapshot() {
+  const runtime = getWinuiRuntime();
+  return JSON.stringify(canonical(await runtime.buildPublishedRuntimePayload()), null, 2) + '\n';
+}
+
+async function winuiAddCard(cardJson) {
+  const runtime = getWinuiRuntime();
+  const card = JSON.parse(cardJson);
+
+  const current = await runtime.buildPublishedRuntimePayload();
+  const existing = Array.isArray(current.cardDefinitions) ? current.cardDefinitions : [];
+  const merged = existing.concat([card]);
+
+  const seed = await runtime.cardStore.set({ body: merged });
+  if (!seed || seed.status !== 'success') {
+    throw new Error('winui add card failed: ' + ((seed && seed.error) || 'unknown'));
+  }
+  await bootstrapRuntime(runtime);
+
+  return JSON.stringify(canonical(await runtime.buildPublishedRuntimePayload()), null, 2) + '\n';
+}
+
+// Real agentface proxy: forward an HTTP request straight into the long-lived
+// runtime's handleRuntimeApi. This makes the embedded agentface a faithful
+// face over the SAME runtime API the Node server exposes (MCP /api/board/mcp,
+// /api/board/mcp-raw, SSE one-shot, card files, …) — no stubbed semantics.
+async function winuiHandleRuntimeApi(method, pathAndQuery, bodyJson) {
+  const runtime = getWinuiRuntime();
+  const req = createSyntheticRequestWithBody(method || 'GET', pathAndQuery, bodyJson);
+  const syn = createSyntheticResponseWithStatus();
+  const parsed = createParsedUrl(pathAndQuery);
+  const handled = await runtime.handleRuntimeApi(req, syn.res, parsed);
+  if (!handled) {
+    return JSON.stringify({
+      status: 404,
+      body: JSON.stringify({ error: 'runtime did not handle ' + method + ' ' + pathAndQuery }),
+    });
+  }
+  return JSON.stringify({ status: syn.status(), body: syn.body() });
+}
+
