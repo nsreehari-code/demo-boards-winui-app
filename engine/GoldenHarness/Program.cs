@@ -1,8 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using DemoBoards.RuntimeHost;
 using Microsoft.ClearScript.V8;
 
 namespace GoldenHarness;
@@ -11,7 +16,7 @@ namespace GoldenHarness;
 // V8 engine via ClearScript — a LIGHTER engine than full Node (real V8, no
 // fs/net/libuv) — and assert it behaves identically to the Node reference.
 //
-// Five checks:
+// Six checks:
 //   1. Consumer golden — replay the deterministic-smoke frames through the
 //      board-sse-state reducer and assert a byte-identical snapshot.
 //   2. Compute battery — evaluate vendored-jsonata cases and assert byte-identical
@@ -23,6 +28,8 @@ namespace GoldenHarness;
 //      Node localstorage reference golden.
 //   5. Invocation seam — inject a host LLM/chat invocation adapter and assert
 //      the runtime routes a chat-agent request into it with the expected shape.
+//   6. Embedded localhost smoke — boot the WinUI runtime host and exercise the
+//      embedded /agent/mcp manifest, session, tools/list, and tools/call flow.
 internal static class Program
 {
     private static async Task<int> Main(string[] args)
@@ -137,10 +144,140 @@ if (typeof atob === 'undefined') {
             ok &= await RunInvocationAdapterProof(engine, storageBridge, invocationBridge);
         }
 
+        ok &= await RunEmbeddedAgentfaceSmoke();
+
         Console.WriteLine(ok
             ? "[harness] ALL CHECKS PASSED — the board brain runs identically in embedded V8."
             : "[harness] FAILURES above.");
         return ok ? 0 : 1;
+    }
+
+    private static async Task<bool> RunEmbeddedAgentfaceSmoke()
+    {
+        try
+        {
+            await using var runtimeService = new DemoBoardsRuntimeService();
+            await runtimeService.StartAsync().ConfigureAwait(false);
+
+            using var client = new HttpClient
+            {
+                BaseAddress = new Uri(runtimeService.GetStatus().AgentfaceEndpoint + "/")
+            };
+
+            using HttpResponseMessage healthzResponse = await client.GetAsync("healthz").ConfigureAwait(false);
+            string healthzText = await RequireSuccessAsync(healthzResponse, "GET /healthz").ConfigureAwait(false);
+            using JsonDocument healthzDocument = JsonDocument.Parse(healthzText);
+            if (!healthzDocument.RootElement.TryGetProperty("status", out JsonElement healthzStatus)
+                || !string.Equals(healthzStatus.GetString(), "ok", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("embedded healthz did not return status=ok");
+            }
+
+            using HttpResponseMessage manifestResponse = await client.GetAsync("agent/mcp/manifest").ConfigureAwait(false);
+            string manifestText = await RequireSuccessAsync(manifestResponse, "GET /agent/mcp/manifest").ConfigureAwait(false);
+            using JsonDocument manifestDocument = JsonDocument.Parse(manifestText);
+            JsonElement manifestTools = manifestDocument.RootElement.GetProperty("tools");
+            bool manifestHasSmokeTool = false;
+            foreach (JsonElement tool in manifestTools.EnumerateArray())
+            {
+                if (tool.TryGetProperty("name", out JsonElement name)
+                    && string.Equals(name.GetString(), "liveboards.explore.list-sample-templates", StringComparison.Ordinal))
+                {
+                    manifestHasSmokeTool = true;
+                    break;
+                }
+            }
+            if (!manifestHasSmokeTool)
+            {
+                throw new InvalidOperationException("embedded manifest did not expose liveboards.explore.list-sample-templates");
+            }
+
+            using HttpResponseMessage initializeResponse = await client.PostAsync(
+                "agent/mcp",
+                CreateJsonContent(new
+                {
+                    jsonrpc = "2.0",
+                    id = "init",
+                    method = "initialize",
+                    @params = new
+                    {
+                        protocolVersion = "2024-11-05",
+                        capabilities = new { },
+                        clientInfo = new { name = "golden-harness", version = "1.0.0" }
+                    }
+                })).ConfigureAwait(false);
+            _ = await RequireSuccessAsync(initializeResponse, "POST /agent/mcp initialize").ConfigureAwait(false);
+
+            if (!initializeResponse.Headers.TryGetValues("mcp-session-id", out IEnumerable<string>? sessionHeaderValues))
+            {
+                throw new InvalidOperationException("embedded initialize response did not provide mcp-session-id");
+            }
+            string sessionId = sessionHeaderValues.FirstOrDefault() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(sessionId))
+            {
+                throw new InvalidOperationException("embedded initialize response returned an empty mcp-session-id");
+            }
+
+            using HttpResponseMessage listResponse = await PostAgentfaceRpcAsync(client, sessionId, new
+            {
+                jsonrpc = "2.0",
+                id = "list",
+                method = "tools/list"
+            }).ConfigureAwait(false);
+            string listText = await RequireSuccessAsync(listResponse, "POST /agent/mcp tools/list").ConfigureAwait(false);
+            using JsonDocument listDocument = JsonDocument.Parse(listText);
+            JsonElement listedTools = listDocument.RootElement.GetProperty("result").GetProperty("tools");
+            bool listHasSmokeTool = false;
+            foreach (JsonElement tool in listedTools.EnumerateArray())
+            {
+                if (tool.TryGetProperty("name", out JsonElement name)
+                    && string.Equals(name.GetString(), "liveboards.explore.list-sample-templates", StringComparison.Ordinal))
+                {
+                    listHasSmokeTool = true;
+                    break;
+                }
+            }
+            if (!listHasSmokeTool)
+            {
+                throw new InvalidOperationException("embedded tools/list did not include liveboards.explore.list-sample-templates");
+            }
+
+            using HttpResponseMessage callResponse = await PostAgentfaceRpcAsync(client, sessionId, new
+            {
+                jsonrpc = "2.0",
+                id = "call",
+                method = "tools/call",
+                @params = new
+                {
+                    name = "liveboards.explore.list-sample-templates",
+                    arguments = new { }
+                }
+            }).ConfigureAwait(false);
+            string callText = await RequireSuccessAsync(callResponse, "POST /agent/mcp tools/call").ConfigureAwait(false);
+            using JsonDocument callDocument = JsonDocument.Parse(callText);
+            JsonElement entries = callDocument.RootElement
+                .GetProperty("result")
+                .GetProperty("structuredContent")
+                .GetProperty("result")
+                .GetProperty("entries");
+            if (entries.ValueKind != JsonValueKind.Array || entries.GetArrayLength() == 0)
+            {
+                throw new InvalidOperationException("embedded tools/call returned no sample template entries");
+            }
+
+            using HttpRequestMessage deleteRequest = new(HttpMethod.Delete, "agent/mcp");
+            deleteRequest.Headers.Add("mcp-session-id", sessionId);
+            using HttpResponseMessage deleteResponse = await client.SendAsync(deleteRequest).ConfigureAwait(false);
+            _ = await RequireSuccessAsync(deleteResponse, "DELETE /agent/mcp").ConfigureAwait(false);
+
+            Console.WriteLine($"[6/6] embedded localhost PASS — /agent/mcp manifest, session, tools/list, and tools/call succeeded ({entries.GetArrayLength()} entries).");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[6/6] embedded localhost FAIL — {ex.Message}");
+            return false;
+        }
     }
 
     private static bool RunConsumerGolden(V8ScriptEngine engine, string framesPath, string snapshotPath)
@@ -295,6 +432,33 @@ if (typeof atob === 'undefined') {
         }
 
         throw new InvalidOperationException($"Unexpected JS return type: {value?.GetType().FullName ?? "<null>"}");
+    }
+
+    private static StringContent CreateJsonContent(object payload)
+    {
+        return new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+    }
+
+    private static async Task<string> RequireSuccessAsync(HttpResponseMessage response, string operation)
+    {
+        string body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        if (response.IsSuccessStatusCode)
+        {
+            return body;
+        }
+
+        throw new InvalidOperationException($"{operation} failed with {(int)response.StatusCode} {response.ReasonPhrase}: {body}");
+    }
+
+    private static Task<HttpResponseMessage> PostAgentfaceRpcAsync(HttpClient client, string sessionId, object payload)
+    {
+        using HttpRequestMessage request = new(HttpMethod.Post, "agent/mcp")
+        {
+            Content = CreateJsonContent(payload)
+        };
+        request.Headers.Add("mcp-session-id", sessionId);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        return client.SendAsync(request);
     }
 
     private static void WriteFirstLineDiff(string expected, string actual)

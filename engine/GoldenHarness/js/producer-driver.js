@@ -8,22 +8,44 @@
 // Both paths drive the same server-runtime producer to the same canonical
 // published payload. The host-backed path is the real Phase D seam.
 
-function createSyntheticRequest(method, url) {
+function createSyntheticRequest(method, url, bodyText, headers) {
+  var chunks = bodyText == null || bodyText === '' ? [] : [String(bodyText)];
   return {
     method: method,
     url: url,
-    headers: {},
-    on: function () {},
-    [Symbol.asyncIterator]: async function* () {},
+    headers: headers || {},
+    on: function (event, handler) {
+      if (typeof handler !== 'function') return;
+      if (event === 'data') {
+        chunks.forEach(function (chunk) { handler(chunk); });
+      }
+      if (event === 'end') {
+        handler();
+      }
+    },
+    [Symbol.asyncIterator]: async function* () {
+      for (var i = 0; i < chunks.length; i += 1) {
+        yield chunks[i];
+      }
+    },
   };
 }
 
 function createSyntheticResponse() {
   var chunks = [];
+  var statusCode = 200;
+  var headers = {};
   return {
     res: {
-      writeHead: function () {},
-      setHeader: function () {},
+      writeHead: function (status, nextHeaders) {
+        statusCode = Number(status) || 200;
+        if (nextHeaders && typeof nextHeaders === 'object') {
+          Object.assign(headers, nextHeaders);
+        }
+      },
+      setHeader: function (name, value) {
+        headers[String(name || '').toLowerCase()] = value;
+      },
       write: function (chunk) {
         if (chunk != null) chunks.push(String(chunk));
       },
@@ -34,47 +56,12 @@ function createSyntheticResponse() {
     body: function () {
       return chunks.join('');
     },
-  };
-}
-
-// Body-aware synthetic request: the runtime reads POST bodies via
-// `for await (const chunk of req)`, so the async iterator must yield the body
-// as a Uint8Array (no Buffer in the embedded V8 — readJsonBody falls back to
-// TextDecoder over Uint8Array chunks).
-function createSyntheticRequestWithBody(method, url, bodyText) {
-  var body = bodyText == null ? '' : String(bodyText);
-  return {
-    method: method,
-    url: url,
-    headers: { 'content-type': 'application/json' },
-    on: function () {},
-    [Symbol.asyncIterator]: async function* () {
-      if (body) {
-        yield new TextEncoder().encode(body);
-      }
+    statusCode: function () {
+      return statusCode;
     },
-  };
-}
-
-// Status-capturing synthetic response: unlike createSyntheticResponse (used by
-// the SSE bootstrap), this records the HTTP status code so the agentface proxy
-// can faithfully relay the runtime's response to external callers.
-function createSyntheticResponseWithStatus() {
-  var chunks = [];
-  var status = 200;
-  function push(chunk) {
-    if (chunk == null) return;
-    chunks.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk));
-  }
-  return {
-    res: {
-      writeHead: function (code) { if (typeof code === 'number') status = code; },
-      setHeader: function () {},
-      write: function (chunk) { push(chunk); },
-      end: function (chunk) { push(chunk); },
+    headers: function () {
+      return headers;
     },
-    status: function () { return status; },
-    body: function () { return chunks.join(''); },
   };
 }
 
@@ -103,6 +90,108 @@ function createParsedUrl(pathAndQuery) {
       },
     },
   };
+}
+
+function getHostControlfaceBridge() {
+  if (!globalThis.HostControlfaceBridge) {
+    throw new Error('HostControlfaceBridge is required for embedded controlface routes');
+  }
+  return globalThis.HostControlfaceBridge;
+}
+
+function createManagedBoardsApi() {
+  var shared = globalThis.ControlfaceEmbeddedShared;
+  if (!shared
+    || typeof shared.createManagedBoardsApi !== 'function'
+    || typeof shared.createManagedBoardLifecycle !== 'function') {
+    throw new Error('ControlfaceEmbeddedShared managed-board shared helpers are required');
+  }
+  var bridge = getHostControlfaceBridge();
+  var lifecycle = shared.createManagedBoardLifecycle({
+    storage: {
+      list: function () {
+        return JSON.parse(bridge.ListBoardContainerRecordsJson() || '[]').map(function (record) {
+          var recordId = typeof (record && record.id) === 'string' ? record.id.trim() : '';
+          return { id: recordId, record: record };
+        });
+      },
+      get: function (boardId) {
+        var raw = bridge.GetBoardContainerRecordJson(String(boardId || ''));
+        return raw ? JSON.parse(raw) : null;
+      },
+      has: function (boardId) {
+        return !!bridge.HasBoardContainerRecord(String(boardId || ''));
+      },
+      put: function (boardId, record) {
+        bridge.PutBoardContainerRecordJson(String(boardId || ''), JSON.stringify(record));
+      },
+      set: function (boardId, record) {
+        bridge.SetBoardContainerRecordJson(String(boardId || ''), JSON.stringify(record));
+      },
+      getLayout: function (boardId) {
+        var raw = bridge.GetBoardContainerLayoutJson(String(boardId || ''));
+        return raw ? JSON.parse(raw) : null;
+      },
+      setLayout: function (boardId, layout) {
+        bridge.SetBoardContainerLayoutJson(String(boardId || ''), JSON.stringify(layout));
+      },
+      removeLayout: function (boardId) {
+        bridge.RemoveBoardContainerLayout(String(boardId || ''));
+      },
+      archive: function (boardId) {
+        var raw = bridge.ArchiveBoardContainerJson(String(boardId || ''));
+        return raw ? JSON.parse(raw) : null;
+      },
+    },
+  });
+  return shared.createManagedBoardsApi({
+    lifecycle: lifecycle,
+    getActiveBoardId: function () {
+      return globalThis.__winuiBoardId || '';
+    },
+    invokeRuntimeRoute: function (method, path, bodyText) {
+      return winuiHandleRuntimeApi(method, path, bodyText, '{}');
+    },
+  });
+}
+
+function createMcpExtrasApi() {
+  var shared = globalThis.ControlfaceEmbeddedShared;
+  if (!shared || typeof shared.createSampleTemplateCatalogApi !== 'function') {
+    throw new Error('ControlfaceEmbeddedShared.createSampleTemplateCatalogApi is required');
+  }
+  var bridge = getHostControlfaceBridge();
+  return shared.createSampleTemplateCatalogApi({
+    listEntries: function () {
+      return { entries: JSON.parse(bridge.ListSampleTemplateEntriesJson() || '[]') };
+    },
+    getEnvelope: function (key) {
+      return JSON.parse(bridge.GetSampleTemplateEnvelopeJson(String(key || '')));
+    },
+  });
+}
+
+function createAgentfaceMcpApi() {
+  if (globalThis.__winuiAgentfaceMcpApi) {
+    return globalThis.__winuiAgentfaceMcpApi;
+  }
+  var shared = globalThis.AgentfaceEmbeddedShared;
+  if (!shared
+    || typeof shared.createEmbeddedAgentfaceMcp !== 'function'
+    || typeof shared.createHttpRouteAgentfaceSurface !== 'function') {
+    throw new Error('AgentfaceEmbeddedShared shared surface helpers are required');
+  }
+  var bridge = getHostControlfaceBridge();
+  var surface = shared.createHttpRouteAgentfaceSurface({
+    manifest: JSON.parse(bridge.GetAgentfaceToolsManifestJson()),
+    invokeHttpRoute: function (method, path, bodyText) {
+      return winuiHandleRuntimeApi(method, path, bodyText, '{}');
+    },
+  });
+  globalThis.__winuiAgentfaceMcpApi = shared.createEmbeddedAgentfaceMcp({
+    surface: surface,
+  });
+  return globalThis.__winuiAgentfaceMcpApi;
 }
 
 async function bootstrapRuntime(runtime) {
@@ -521,7 +610,10 @@ async function initWinuiRuntime(boardId, cardsJson) {
   const bundle = createHostBridgeBundle(boardId);
 
   if (globalThis.HostNotifier) {
-    bundle.boardAdapter.publishBoardChangeNotifications = function () {
+    bundle.boardAdapter.publishBoardChangeNotifications = function (notifications) {
+      try {
+        HostNotifier.NotifyBoardNotifications(JSON.stringify(Array.isArray(notifications) ? notifications : []));
+      } catch (e) {}
       try { HostNotifier.NotifyBoardChanged(); } catch (e) {}
     };
   }
@@ -569,22 +661,51 @@ async function winuiAddCard(cardJson) {
   return JSON.stringify(canonical(await runtime.buildPublishedRuntimePayload()), null, 2) + '\n';
 }
 
-// Real agentface proxy: forward an HTTP request straight into the long-lived
-// runtime's handleRuntimeApi. This makes the embedded agentface a faithful
-// face over the SAME runtime API the Node server exposes (MCP /api/board/mcp,
-// /api/board/mcp-raw, SSE one-shot, card files, …) — no stubbed semantics.
-async function winuiHandleRuntimeApi(method, pathAndQuery, bodyJson) {
+async function winuiHandleRuntimeApi(method, path, bodyText, requestHeadersJson) {
   const runtime = getWinuiRuntime();
-  const req = createSyntheticRequestWithBody(method || 'GET', pathAndQuery, bodyJson);
-  const syn = createSyntheticResponseWithStatus();
-  const parsed = createParsedUrl(pathAndQuery);
-  const handled = await runtime.handleRuntimeApi(req, syn.res, parsed);
-  if (!handled) {
-    return JSON.stringify({
-      status: 404,
-      body: JSON.stringify({ error: 'runtime did not handle ' + method + ' ' + pathAndQuery }),
-    });
+  const boardId = globalThis.__winuiBoardId || 'winui-board';
+  const managedBoardsApi = createManagedBoardsApi();
+  const mcpExtrasApi = createMcpExtrasApi();
+  const agentfaceMcpApi = createAgentfaceMcpApi();
+  const requestHeaders = requestHeadersJson && String(requestHeadersJson).trim() ? JSON.parse(requestHeadersJson) : {};
+  let runtimePath = String(path || '').trim();
+  if (!runtimePath) {
+    runtimePath = '/mcp';
   }
-  return JSON.stringify({ status: syn.status(), body: syn.body() });
+  if (runtimePath.charAt(0) !== '/') {
+    runtimePath = '/' + runtimePath;
+  }
+  if (runtimePath === '/agent/mcp' || runtimePath === '/agent/mcp/manifest') {
+    return agentfaceMcpApi.handleRequest(method, runtimePath, bodyText || '', requestHeaders || {});
+  }
+  if (runtimePath === '/manage-boards') {
+    return managedBoardsApi.handleRequest(method, bodyText);
+  }
+  if (runtimePath === '/mcp-extras') {
+    return mcpExtrasApi.handleHttpTool(method, bodyText);
+  }
+  if (runtimePath.indexOf('/api/') !== 0) {
+    runtimePath = '/api/boards/' + encodeURIComponent(boardId) + runtimePath;
+  }
+
+  const parsedUrl = createParsedUrl(runtimePath);
+  const request = createSyntheticRequest(
+    String(method || 'GET').toUpperCase(),
+    runtimePath,
+    bodyText || '',
+    { 'content-type': 'application/json' }
+  );
+  const response = createSyntheticResponse();
+
+  await runtime.handleRuntimeApi(request, response.res, parsedUrl);
+  if (typeof runtime.__drainProcessAccumulatedLane === 'function') {
+    await runtime.__drainProcessAccumulatedLane();
+  }
+
+  return JSON.stringify({
+    statusCode: response.statusCode(),
+    headers: response.headers(),
+    body: response.body(),
+  }, null, 2);
 }
 
