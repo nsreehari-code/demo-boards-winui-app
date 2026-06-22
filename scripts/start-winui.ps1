@@ -1,21 +1,44 @@
 $ErrorActionPreference = 'Stop'
 
+$repoRoot = Split-Path -Parent $PSScriptRoot
+$projectDir = Join-Path $repoRoot 'app/DemoBoards.WinUI'
+$projectFile = Join-Path $projectDir 'DemoBoards.WinUI.csproj'
 $appProcessName = 'DemoBoards.WinUI'
-$appUserModelId = '3F0CE0FD-87AF-4243-9CBB-BA116FB513E1_1z32rh13vfry6!App'
-$launchTimeoutSeconds = 10
+$pidFile = Join-Path $PSScriptRoot '.winui-dotnet-run.pid'
+$launchTimeoutSeconds = 30
 
-Write-Host 'Starting WinUI app...'
-Start-Process explorer.exe "shell:AppsFolder\$appUserModelId"
+if (-not (Test-Path $projectFile)) {
+	throw "Could not find project file at $projectFile. Run npm run winui:build first."
+}
+
+Write-Host 'Starting WinUI app via dotnet run (registers package identity and launches by AUMID)...'
+
+# A packaged WinUI 3 app must be launched WITH its MSIX package identity, otherwise
+# WinUI type activation fails (REGDB_E_CLASSNOTREG) and the window never appears.
+# Microsoft.Windows.SDK.BuildTools.WinApp hooks `dotnet run` to register the debug
+# identity and launch the app by AUMID. dotnet run stays attached to the app, so we
+# launch it detached and record its PID for stop-winui.ps1 to clean up.
+$dotnetRun = Start-Process -FilePath 'dotnet' `
+	-ArgumentList @('run', '--project', $projectFile) `
+	-WorkingDirectory $projectDir `
+	-PassThru `
+	-WindowStyle Hidden
+
+Set-Content -Path $pidFile -Value $dotnetRun.Id
 
 $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 do {
-	$process = Get-Process -Name $appProcessName -ErrorAction SilentlyContinue | Select-Object -First 1
-	if ($process) {
-		Write-Host "Launched packaged app via $appUserModelId (PID: $($process.Id))"
+	$app = Get-Process -Name $appProcessName -ErrorAction SilentlyContinue | Select-Object -First 1
+	if ($app) {
+		Write-Host "Launched $appProcessName (PID: $($app.Id)) via dotnet run (host PID: $($dotnetRun.Id))."
 		return
 	}
 
-	Start-Sleep -Milliseconds 250
+	if ($dotnetRun.HasExited) {
+		throw "dotnet run (host PID: $($dotnetRun.Id)) exited before $appProcessName appeared. Run npm run winui:build and check %TEMP%\DemoBoards.WinUI.startup.log."
+	}
+
+	Start-Sleep -Milliseconds 300
 } while ($stopwatch.Elapsed.TotalSeconds -lt $launchTimeoutSeconds)
 
-throw "Timed out waiting for $appProcessName to appear after launching $appUserModelId."
+throw "Timed out waiting for $appProcessName to appear after launching via dotnet run."

@@ -8,40 +8,39 @@ namespace DemoBoards_WinUI.Controls;
 
 public sealed class GandalfPane : UserControl
 {
-    private const string OpenGlyph = "\uE76C";
-    private const string CloseGlyph = "\uE76B";
-
-    private readonly FloatingCircleButton ToggleButton;
-    private readonly Border PaneBorder;
-    private readonly TextBlock CountText;
-    private readonly TextBlock CurrentTitleText;
-    private readonly Button PrevButton;
-    private readonly TextBlock CounterText;
-    private readonly Button NextButton;
-    private readonly CardRenderer PreviewCardView;
+    private readonly PanelRail panelView;
+    private readonly TextBlock countText;
+    private readonly TextBlock currentTitleText;
+    private readonly Button prevButton;
+    private readonly TextBlock counterText;
+    private readonly Button nextButton;
+    private readonly CardRenderer previewCardView;
 
     private readonly List<BoardCard> cards = new();
     private int currentIndex;
-    private bool visible;
+    private IReadOnlyList<RendererRule>? currentRendererRules;
 
     public GandalfPane()
     {
-        ToggleButton = new FloatingCircleButton
-        {
-            IconGlyph = OpenGlyph,
-            FloatPosition = FloatingButtonPosition.TopLeft,
-            Inset = 0,
-            OffsetX = -10,
-            OffsetY = 8,
-            Diameter = 48,
-            ButtonStyle = ResolveStyle("BoardEdgeToggleButtonStyle"),
-            ActiveButtonStyle = ResolveStyle("BoardEdgeToggleButtonActiveStyle"),
-            ToolTipText = "Open Board Manager",
-        };
-        ToggleButton.Click += OnToggleClick;
+        panelView = new PanelRail();
+        panelView.Configure(new PanelRailOptions(
+            Side: PanelRailSide.Left,
+            ButtonPosition: FloatingButtonPosition.TopLeft,
+            PanelWidth: 368,
+            OpenToolTipText: "Open Board Manager",
+            CloseToolTipText: "Close Board Manager",
+            OpenGlyph: "\uE76C",
+            CloseGlyph: "\uE76B",
+            ButtonInset: 0,
+            ButtonOffsetX: -10,
+            ButtonOffsetY: 8,
+            ButtonDiameter: 48,
+            WrapContentInScrollViewer: true,
+            ButtonStyle: ResolveStyle("BoardEdgeToggleButtonStyle"),
+            ActiveButtonStyle: ResolveStyle("BoardEdgeToggleButtonActiveStyle")));
 
-        CountText = new TextBlock { FontSize = 12, Opacity = 0.72, VerticalAlignment = VerticalAlignment.Center };
-        CurrentTitleText = new TextBlock
+        countText = new TextBlock { FontSize = 12, Opacity = 0.72, VerticalAlignment = VerticalAlignment.Center };
+        currentTitleText = new TextBlock
         {
             FontSize = 13,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
@@ -49,13 +48,35 @@ public sealed class GandalfPane : UserControl
             TextWrapping = TextWrapping.NoWrap,
             TextTrimming = TextTrimming.CharacterEllipsis,
         };
-        PrevButton = new Button { Content = "Prev", HorizontalAlignment = HorizontalAlignment.Right, Style = ResolveStyle("BoardToolbarButtonStyle") };
-        PrevButton.Click += OnPrevClick;
-        CounterText = new TextBlock { FontSize = 12, Opacity = 0.72, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 8, 0) };
-        NextButton = new Button { Content = "Next", HorizontalAlignment = HorizontalAlignment.Right, Style = ResolveStyle("BoardToolbarButtonStyle") };
-        NextButton.Click += OnNextClick;
-        PreviewCardView = new CardRenderer();
+        prevButton = new Button { Content = "Prev", HorizontalAlignment = HorizontalAlignment.Right, Style = ResolveStyle("BoardToolbarButtonStyle") };
+        prevButton.Click += OnPrevClick;
+        counterText = new TextBlock { FontSize = 12, Opacity = 0.72, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 8, 0) };
+        nextButton = new Button { Content = "Next", HorizontalAlignment = HorizontalAlignment.Right, Style = ResolveStyle("BoardToolbarButtonStyle") };
+        nextButton.Click += OnNextClick;
+        previewCardView = new CardRenderer();
 
+        panelView.SetPanelContent(BuildPanelContent());
+        Content = panelView;
+    }
+
+    public void Render(IReadOnlyList<BoardCard> nextCards, IReadOnlyList<RendererRule>? rendererRules = null)
+    {
+        string? previousCardId = currentIndex >= 0 && currentIndex < cards.Count ? cards[currentIndex].Id : null;
+        cards.Clear();
+        if (nextCards is not null)
+        {
+            cards.AddRange(nextCards);
+        }
+
+        currentIndex = ResolveNextIndex(previousCardId, cards, currentIndex);
+        currentRendererRules = rendererRules;
+        countText.Text = cards.Count == 0 ? "No matching cards" : $"{cards.Count} cards";
+        panelView.ToggleVisibility = cards.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        RenderCurrentCard();
+    }
+
+    private UIElement BuildPanelContent()
+    {
         var headerGrid = new Grid { Padding = new Thickness(16, 14, 16, 12) };
         headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -67,104 +88,72 @@ public sealed class GandalfPane : UserControl
             Foreground = ResolveBrush("BoardAccentStrongBrush"),
             VerticalAlignment = VerticalAlignment.Center,
         });
-        Grid.SetColumn(CountText, 1);
-        headerGrid.Children.Add(CountText);
+        Grid.SetColumn(countText, 1);
+        headerGrid.Children.Add(countText);
 
         var navGrid = new Grid { Padding = new Thickness(16, 12, 16, 12), ColumnSpacing = 10 };
         navGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         navGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         navGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         navGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        navGrid.Children.Add(CurrentTitleText);
-        Grid.SetColumn(PrevButton, 1);
-        navGrid.Children.Add(PrevButton);
-        Grid.SetColumn(CounterText, 2);
-        navGrid.Children.Add(CounterText);
-        Grid.SetColumn(NextButton, 3);
-        navGrid.Children.Add(NextButton);
+        navGrid.Children.Add(currentTitleText);
+        Grid.SetColumn(prevButton, 1);
+        navGrid.Children.Add(prevButton);
+        Grid.SetColumn(counterText, 2);
+        navGrid.Children.Add(counterText);
+        Grid.SetColumn(nextButton, 3);
+        navGrid.Children.Add(nextButton);
 
-        PaneBorder = new Border
+        return new StackPanel
         {
-            Margin = new Thickness(0, 56, 0, 0),
-            Padding = new Thickness(0),
-            CornerRadius = new CornerRadius(14),
-            Visibility = Visibility.Collapsed,
-            Background = ResolveBrush("CardBackgroundFillColorDefaultBrush"),
-            Child = new StackPanel
-            {
-                Spacing = 0,
-                Children =
-                {
-                    headerGrid,
-                    navGrid,
-                    PreviewCardView,
-                }
-            }
-        };
-
-        Content = new Grid
-        {
+            Spacing = 0,
             Children =
             {
-                ToggleButton,
-                PaneBorder,
+                headerGrid,
+                navGrid,
+                previewCardView,
             }
         };
-    }
-
-    public void Render(IReadOnlyList<BoardCard> nextCards, IReadOnlyList<RendererRule>? rendererRules = null)
-    {
-        string? previousCardId = currentIndex >= 0 && currentIndex < cards.Count ? cards[currentIndex].Id : null;
-        cards.Clear();
-        if (nextCards is not null) cards.AddRange(nextCards);
-        currentIndex = ResolveNextIndex(previousCardId, cards, currentIndex);
-        currentRendererRules = rendererRules;
-
-        CountText.Text = cards.Count == 0 ? "No matching cards" : $"{cards.Count} cards";
-        ToggleButton.Visibility = cards.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
-        PaneBorder.Visibility = visible && cards.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        UpdateToggleButtonState();
-        RenderCurrentCard();
     }
 
     private void RenderCurrentCard()
     {
-        PrevButton.IsEnabled = currentIndex > 0;
-        NextButton.IsEnabled = currentIndex < cards.Count - 1;
-        CounterText.Text = cards.Count == 0 ? "-" : $"{currentIndex + 1} / {cards.Count}";
+        prevButton.IsEnabled = currentIndex > 0;
+        nextButton.IsEnabled = currentIndex < cards.Count - 1;
+        counterText.Text = cards.Count == 0 ? "-" : $"{currentIndex + 1} / {cards.Count}";
 
         if (cards.Count == 0)
         {
-            CurrentTitleText.Text = "";
-            PreviewCardView.Visibility = Visibility.Collapsed;
+            currentTitleText.Text = string.Empty;
+            previewCardView.Visibility = Visibility.Collapsed;
+            panelView.SetOpen(false);
             return;
         }
 
         BoardCard card = cards[currentIndex];
-        CurrentTitleText.Text = card.Title;
-        PreviewCardView.Visibility = Visibility.Visible;
-        PreviewCardView.Render(card, currentRendererRules);
-    }
-
-    private IReadOnlyList<RendererRule>? currentRendererRules;
-
-    private void OnToggleClick(object sender, RoutedEventArgs e)
-    {
-        visible = !visible;
-        PaneBorder.Visibility = visible && cards.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        UpdateToggleButtonState();
+        currentTitleText.Text = card.Title;
+        previewCardView.Visibility = Visibility.Visible;
+        previewCardView.Render(card, currentRendererRules);
     }
 
     private void OnPrevClick(object sender, RoutedEventArgs e)
     {
-        if (currentIndex <= 0) return;
+        if (currentIndex <= 0)
+        {
+            return;
+        }
+
         currentIndex -= 1;
         RenderCurrentCard();
     }
 
     private void OnNextClick(object sender, RoutedEventArgs e)
     {
-        if (currentIndex >= cards.Count - 1) return;
+        if (currentIndex >= cards.Count - 1)
+        {
+            return;
+        }
+
         currentIndex += 1;
         RenderCurrentCard();
     }
@@ -188,13 +177,6 @@ public sealed class GandalfPane : UserControl
         }
 
         return System.Math.Min(previousIndex, nextCards.Count - 1);
-    }
-
-    private void UpdateToggleButtonState()
-    {
-        ToggleButton.IsActive = visible;
-        ToggleButton.IconGlyph = visible ? CloseGlyph : OpenGlyph;
-        ToggleButton.ToolTipText = visible ? "Close Board Manager" : "Open Board Manager";
     }
 
     private static Style? ResolveStyle(string resourceKey)

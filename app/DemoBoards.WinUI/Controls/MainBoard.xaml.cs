@@ -18,14 +18,9 @@ public sealed class MainBoard : UserControl
         CentrePaneView = new CentrePane { MinHeight = 280 };
         TruthsetPaneView = new TruthsetExplorePane();
 
-        var root = new Grid { ColumnSpacing = 18 };
-        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(320) });
-        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(320) });
-        root.Children.Add(GandalfPaneView);
-        Grid.SetColumn(CentrePaneView, 1);
+        var root = new Grid();
         root.Children.Add(CentrePaneView);
-        Grid.SetColumn(TruthsetPaneView, 2);
+        root.Children.Add(GandalfPaneView);
         root.Children.Add(TruthsetPaneView);
         Content = root;
     }

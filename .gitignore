@@ -57,6 +57,9 @@ node_modules/
 js-runtime/dist/
 *.tsbuildinfo
 
+# ---- WinUI launcher runtime ----
+scripts/.winui-dotnet-run.pid
+
 # ---- OS ----
 .DS_Store
 Thumbs.db

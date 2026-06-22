@@ -33,13 +33,8 @@ public partial class App : Application
     /// </summary>
     public App()
     {
-        Resources = new ResourceDictionary();
-        Resources.MergedDictionaries.Add(new XamlControlsResources());
-        currentThemeDictionary = BoardTheme.CreateThemeDictionary(BoardTheme.DefaultThemePackId);
-        Resources.MergedDictionaries.Add(currentThemeDictionary);
+        InitializeComponent();
         LogStartup("App constructor initialized.");
-        LogStartup("Default theme pack provided by code-created merged dictionaries.");
-
         UnhandledException += OnUnhandledException;
     }
 
@@ -61,6 +56,10 @@ public partial class App : Application
 
         try
         {
+            Resources.MergedDictionaries.Add(new XamlControlsResources());
+            currentThemeDictionary = BoardTheme.CreateThemeDictionary(BoardTheme.DefaultThemePackId);
+            Resources.MergedDictionaries.Add(currentThemeDictionary);
+            LogStartup("App resources initialized.");
             appConfig = WinUiAppConfigLoader.Load(AppContext.BaseDirectory);
             Controls.BoardCanvasLayoutEngine.ConfigureDefaults(appConfig.Frontend.CanvasLayout);
             hostConfigService = new WinUiHostConfigService(appConfig, AppContext.BaseDirectory);

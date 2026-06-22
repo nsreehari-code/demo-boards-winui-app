@@ -41,8 +41,10 @@ public sealed class MainWindow : Window
 
         AppWindow.SetIcon("Assets/AppIcon.ico");
 
-        // Start on a lightweight landing page and enter the heavier board surface explicitly.
-        RootFrame.Navigate(typeof(FrePage));
+        // Frame.Navigate(typeof(MainPage)) crashes natively for this pure-code
+        // Page (no MainPage.xaml) under WinAppSDK 2.2.0, so assign the page
+        // instance directly as the frame content instead.
+        RootFrame.Content = new MainPage();
     }
 
     private static Brush? ResolveBrush(string resourceKey)

@@ -22,12 +22,12 @@ public sealed class MainPage : Page
     private readonly TimerButton RefreshTimerButton;
     private readonly MainBoard MainBoardView;
     private readonly GlobalModal InspectModalView;
-    private readonly GlobalModal ConfigModalView;
     private readonly GlobalModal ChatModalView;
     private readonly GlobalModal SmokeModalView;
-    private readonly FloatingCircleButton BoardConfigButton;
+    private readonly PanelRail ConfigPanelView;
     private readonly Grid StartupOverlay;
     private readonly TextBlock StartupStatusText;
+    private AppConfigModal? configPanelContent;
 
     private BoardStore? boardStore;
     private EmbeddedBoardClient? boardClient;
@@ -57,18 +57,30 @@ public sealed class MainPage : Page
         RefreshTimerButton.Click += OnRefreshClick;
         MainBoardView = new MainBoard();
         InspectModalView = new GlobalModal();
-        ConfigModalView = new GlobalModal();
         ChatModalView = new GlobalModal();
         SmokeModalView = new GlobalModal();
-        BoardConfigButton = new FloatingCircleButton
-        {
-            SvgIconPath = "Assets/Icons/appconfig-settings.svg",
-            FloatPosition = FloatingButtonPosition.BottomRight,
-            Inset = 18,
-            Diameter = 48,
-            ToolTipText = "Board config",
-        };
-        BoardConfigButton.Click += OnBoardConfigClick;
+        ConfigPanelView = new PanelRail();
+        ConfigPanelView.Configure(new PanelRailOptions(
+            Side: PanelRailSide.Right,
+            ButtonPosition: FloatingButtonPosition.BottomRight,
+            PanelWidth: 448,
+            OpenToolTipText: "Open Board Settings",
+            CloseToolTipText: "Close Board Settings",
+            OpenGlyph: string.Empty,
+            CloseGlyph: "\uE711",
+            OpenSvgIconPath: "Assets/Icons/appconfig-settings.svg",
+            ButtonInset: 18,
+            ButtonDiameter: 48,
+            WrapContentInScrollViewer: false,
+            ButtonStyle: ResolveStyle("BoardFloatingCircleButtonStyle"),
+            ActiveButtonStyle: ResolveStyle("BoardFloatingCircleButtonActiveStyle"),
+            VisualStyle: new PanelRailVisualStyle(
+                PanelBackground: CreateVerticalGradientBrush(Windows.UI.Color.FromArgb(0xFD, 0xE2, 0xEA, 0xF1), Windows.UI.Color.FromArgb(0xFD, 0xD6, 0xDF, 0xE8)),
+                PanelBorderBrush: CreateSolidBrush(Windows.UI.Color.FromArgb(0x3D, 0x40, 0x60, 0x83)),
+                OverlayBrush: ResolveBrush("BoardOverlayBrush"),
+                PanelBorderThickness: new Thickness(1),
+                PanelCornerRadius: new CornerRadius(24, 0, 0, 24))));
+        ConfigPanelView.Opening += OnConfigPanelOpening;
         StartupStatusText = new TextBlock
         {
             Text = "Preparing board surface...",
@@ -83,7 +95,6 @@ public sealed class MainPage : Page
         Unloaded += OnUnloaded;
         refreshCountdownTimer.Tick += OnRefreshCountdownTick;
         InspectModalView.CloseRequested += OnInspectModalCloseRequested;
-        ConfigModalView.CloseRequested += OnConfigModalCloseRequested;
         ChatModalView.CloseRequested += OnChatModalCloseRequested;
         SmokeModalView.CloseRequested += OnSmokeModalCloseRequested;
         RefreshTimerButton.Label = string.Empty;
@@ -131,10 +142,9 @@ public sealed class MainPage : Page
         var root = new Grid { Background = ResolveBrush("BoardWindowBackgroundBrush") };
         root.Children.Add(contentGrid);
         root.Children.Add(InspectModalView);
-        root.Children.Add(ConfigModalView);
         root.Children.Add(ChatModalView);
         root.Children.Add(SmokeModalView);
-        root.Children.Add(BoardConfigButton);
+        root.Children.Add(ConfigPanelView);
         root.Children.Add(StartupOverlay);
         return root;
     }
@@ -415,11 +425,6 @@ public sealed class MainPage : Page
         boardStore?.SetInspectedCardId(null);
     }
 
-    private void OnConfigModalCloseRequested(object? sender, EventArgs e)
-    {
-        ConfigModalView.Hide();
-    }
-
     private void OnChatModalCloseRequested(object? sender, EventArgs e)
     {
         ChatModalView.Hide();
@@ -455,16 +460,26 @@ public sealed class MainPage : Page
         }
     }
 
-    private void OnBoardConfigClick(object sender, RoutedEventArgs e)
+    private void OnConfigPanelOpening(object? sender, EventArgs e)
     {
         if (boardStore is null)
         {
             return;
         }
 
-        var modal = new AppConfigModal();
-        modal.Render(boardStore.GetBoardInfo().BoardId, boardStore.State.ManagedBoardConfig);
-        ConfigModalView.Show("Board Configuration", modal);
+        if (configPanelContent is null)
+        {
+            configPanelContent = new AppConfigModal();
+            configPanelContent.CloseRequested += OnConfigPanelCloseRequested;
+        }
+
+        configPanelContent.Render(boardStore.GetBoardInfo().BoardId, boardStore.State.ManagedBoardConfig);
+        ConfigPanelView.SetPanelContent(configPanelContent);
+    }
+
+    private void OnConfigPanelCloseRequested(object? sender, EventArgs e)
+    {
+        ConfigPanelView.SetOpen(false);
     }
 
     public void ShowChatPopout(string cardId, string? title = null)
@@ -561,6 +576,30 @@ public sealed class MainPage : Page
         return Application.Current.Resources.TryGetValue(resourceKey, out object resource)
             ? resource as Brush
             : null;
+    }
+
+    private static Style? ResolveStyle(string resourceKey)
+    {
+        return Application.Current.Resources.TryGetValue(resourceKey, out object resource)
+            ? resource as Style
+            : null;
+    }
+
+    private static Brush CreateSolidBrush(Windows.UI.Color color)
+    {
+        return new SolidColorBrush(color);
+    }
+
+    private static Brush CreateVerticalGradientBrush(Windows.UI.Color start, Windows.UI.Color end)
+    {
+        var brush = new LinearGradientBrush
+        {
+            StartPoint = new Windows.Foundation.Point(0, 0),
+            EndPoint = new Windows.Foundation.Point(0, 1),
+        };
+        brush.GradientStops.Add(new GradientStop { Color = start, Offset = 0 });
+        brush.GradientStops.Add(new GradientStop { Color = end, Offset = 1 });
+        return brush;
     }
 
     private static string FormatCountdown(TimeSpan remaining)
