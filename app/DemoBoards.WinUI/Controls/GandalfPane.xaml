@@ -8,19 +8,42 @@
     xmlns:controls="using:DemoBoards_WinUI.Controls"
     mc:Ignorable="d">
 
-    <StackPanel Spacing="10">
-        <Button x:Name="ToggleButton" Content="Board Manager" Click="OnToggleClick" HorizontalAlignment="Stretch" />
-        <Border x:Name="PaneBorder" Padding="12" CornerRadius="14" Visibility="Collapsed" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
-            <StackPanel Spacing="10">
-                <TextBlock Text="Gandalf Pane" FontSize="18" FontWeight="SemiBold" />
-                <TextBlock x:Name="CountText" Opacity="0.72" />
-                <Grid>
-                    <Button x:Name="PrevButton" Content="Prev" Click="OnPrevClick" HorizontalAlignment="Left" />
-                    <TextBlock x:Name="CurrentTitleText" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="WrapWholeWords" />
-                    <Button x:Name="NextButton" Content="Next" Click="OnNextClick" HorizontalAlignment="Right" />
+    <Grid>
+        <controls:FloatingCircleButton
+            x:Name="ToggleButton"
+            IconGlyph="&#xE76C;"
+            FloatPosition="TopLeft"
+            Inset="0"
+            OffsetX="-10"
+            OffsetY="8"
+            Diameter="48"
+            ButtonStyle="{ThemeResource BoardEdgeToggleButtonStyle}"
+            ToolTipText="Open Board Manager"
+            Click="OnToggleClick" />
+        <Border x:Name="PaneBorder" Margin="0,56,0,0" Padding="0" CornerRadius="14" Visibility="Collapsed" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+            <StackPanel Spacing="0">
+                <Grid Padding="16,14,16,12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Board Manager" FontSize="11" FontWeight="Bold" Foreground="{ThemeResource BoardAccentStrongBrush}" VerticalAlignment="Center" />
+                    <TextBlock x:Name="CountText" Grid.Column="1" FontSize="12" Opacity="0.72" VerticalAlignment="Center" />
+                </Grid>
+                <Grid Padding="16,12" ColumnSpacing="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="CurrentTitleText" Grid.Column="0" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                    <Button x:Name="PrevButton" Grid.Column="1" Content="Prev" Click="OnPrevClick" HorizontalAlignment="Right" Style="{ThemeResource BoardToolbarButtonStyle}" />
+                    <TextBlock x:Name="CounterText" Grid.Column="2" FontSize="12" Opacity="0.72" VerticalAlignment="Center" Margin="8,0" />
+                    <Button x:Name="NextButton" Grid.Column="3" Content="Next" Click="OnNextClick" HorizontalAlignment="Right" Style="{ThemeResource BoardToolbarButtonStyle}" />
                 </Grid>
                 <controls:CardRenderer x:Name="PreviewCardView" />
             </StackPanel>
         </Border>
-    </StackPanel>
+    </Grid>
 </UserControl>

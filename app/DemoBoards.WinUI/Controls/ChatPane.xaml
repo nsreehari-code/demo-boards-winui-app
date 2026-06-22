@@ -21,7 +21,7 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <TextBlock x:Name="HeaderTitleText" FontWeight="SemiBold" VerticalAlignment="Center" />
-            <Button x:Name="PopoutButton" Grid.Column="1" Content="Open full chat" Click="OnPopoutClick" />
+            <Button x:Name="PopoutButton" Grid.Column="1" Click="OnPopoutClick" />
         </Grid>
 
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
@@ -54,7 +54,7 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <TextBlock x:Name="StatusText" Grid.Column="0" Opacity="0.72" TextWrapping="WrapWholeWords" VerticalAlignment="Center" />
-                <Button x:Name="AttachButton" Grid.Column="1" Content="Attach File" Click="OnAttachClick" />
+                <Button x:Name="AttachButton" Grid.Column="1" Click="OnAttachClick" />
                 <Button x:Name="SendButton" Grid.Column="2" Content="Send" Click="OnSendClick" />
             </Grid>
         </StackPanel>

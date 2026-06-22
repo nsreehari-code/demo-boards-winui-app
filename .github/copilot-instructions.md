@@ -12,6 +12,8 @@
 - Prefer Reactor-style composition and explicit state flow.
 - Keep behavior and styling separated: reusable visual treatment should live in shared theme resources or styles, not duplicated inline.
 - Use imperative bridges only where migration seams still exist and avoid expanding those seams.
+- For WinUI iconography, prefer packaged SVG assets that match the existing frontend icon style and visual philosophy.
+- If WinUI needs a new icon, add a matching SVG asset in the host icon set rather than falling back to unrelated platform glyphs.
 
 ## Documentation
 

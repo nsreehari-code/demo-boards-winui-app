@@ -33,7 +33,7 @@
                             <Button x:Name="RefreshButton" Grid.Column="0" Content="Refresh card" />
                             <Button x:Name="RunCycleButton" Grid.Column="1" Content="Run full card preflight" />
                         </Grid>
-                        <Button x:Name="DeleteButton" Content="Delete card" HorizontalAlignment="Stretch" />
+                        <Button x:Name="DeleteButton" HorizontalAlignment="Stretch" />
                         <TextBlock x:Name="ActionStatusText" TextWrapping="WrapWholeWords" Opacity="0.8" />
                     </StackPanel>
                 </Border>

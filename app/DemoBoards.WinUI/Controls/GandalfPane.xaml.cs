@@ -7,6 +7,9 @@ namespace DemoBoards_WinUI.Controls;
 
 public sealed partial class GandalfPane : UserControl
 {
+    private const string OpenGlyph = "\uE76C";
+    private const string CloseGlyph = "\uE76B";
+
     private readonly List<BoardCard> cards = new();
     private int currentIndex;
     private bool visible;
@@ -27,6 +30,7 @@ public sealed partial class GandalfPane : UserControl
         CountText.Text = cards.Count == 0 ? "No matching cards" : $"{cards.Count} cards";
         ToggleButton.Visibility = cards.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         PaneBorder.Visibility = visible && cards.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        UpdateToggleButtonState();
         RenderCurrentCard();
     }
 
@@ -34,6 +38,7 @@ public sealed partial class GandalfPane : UserControl
     {
         PrevButton.IsEnabled = currentIndex > 0;
         NextButton.IsEnabled = currentIndex < cards.Count - 1;
+        CounterText.Text = cards.Count == 0 ? "-" : $"{currentIndex + 1} / {cards.Count}";
 
         if (cards.Count == 0)
         {
@@ -54,6 +59,7 @@ public sealed partial class GandalfPane : UserControl
     {
         visible = !visible;
         PaneBorder.Visibility = visible && cards.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        UpdateToggleButtonState();
     }
 
     private void OnPrevClick(object sender, RoutedEventArgs e)
@@ -89,5 +95,11 @@ public sealed partial class GandalfPane : UserControl
         }
 
         return System.Math.Min(previousIndex, nextCards.Count - 1);
+    }
+
+    private void UpdateToggleButtonState()
+    {
+        ToggleButton.IconGlyph = visible ? CloseGlyph : OpenGlyph;
+        ToggleButton.ToolTipText = visible ? "Close Board Manager" : "Open Board Manager";
     }
 }

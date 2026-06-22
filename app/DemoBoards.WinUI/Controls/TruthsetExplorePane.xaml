@@ -8,30 +8,46 @@
     xmlns:controls="using:DemoBoards_WinUI.Controls"
     mc:Ignorable="d">
 
-    <StackPanel Spacing="10">
-        <Button x:Name="ToggleButton" Content="Truthset Explorer" Click="OnToggleClick" HorizontalAlignment="Stretch" />
-        <Border x:Name="PaneBorder" Padding="12" CornerRadius="14" Visibility="Collapsed" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
-            <StackPanel Spacing="10">
-                <TextBlock Text="Truthset Explore Pane" FontSize="18" FontWeight="SemiBold" />
-                <TextBlock x:Name="CountText" Opacity="0.72" />
-                <Grid>
+    <Grid>
+        <controls:FloatingCircleButton
+            x:Name="ToggleButton"
+            IconGlyph="&#xE76B;"
+            FloatPosition="TopRight"
+            Inset="0"
+            OffsetX="-10"
+            OffsetY="8"
+            Diameter="48"
+            ButtonStyle="{ThemeResource BoardEdgeToggleButtonStyle}"
+            ToolTipText="Open Truthset Explorer"
+            Click="OnToggleClick" />
+        <Border x:Name="PaneBorder" Margin="0,56,0,0" Padding="0" CornerRadius="14" Visibility="Collapsed" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+            <StackPanel Spacing="0">
+                <Grid Padding="16,14,16,12">
                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Truthset Explore" FontSize="11" FontWeight="Bold" Foreground="{ThemeResource BoardAccentStrongBrush}" VerticalAlignment="Center" />
+                    <TextBlock x:Name="CountText" Grid.Column="1" FontSize="12" Opacity="0.72" VerticalAlignment="Center" />
+                </Grid>
+                <Grid Padding="16,12" ColumnSpacing="10">
+                    <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <Button x:Name="PrevButton" Content="Prev" Click="OnPrevClick" HorizontalAlignment="Left" />
-                    <TextBlock x:Name="CurrentTitleText" Grid.Column="1" Margin="10,0" VerticalAlignment="Center" TextWrapping="WrapWholeWords" />
-                    <Border x:Name="PhaseBadge" Grid.Column="2" Margin="8,0" Padding="8,2" CornerRadius="10" VerticalAlignment="Center" Visibility="Collapsed">
+                    <TextBlock x:Name="CurrentTitleText" Grid.Column="0" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                    <Border x:Name="PhaseBadge" Grid.Column="1" Margin="4,0" Padding="8,2" CornerRadius="10" VerticalAlignment="Center" Visibility="Collapsed">
                         <TextBlock x:Name="PhaseText" FontSize="11" FontWeight="SemiBold" />
                     </Border>
-                    <TextBlock x:Name="CounterText" Grid.Column="3" Margin="10,0" VerticalAlignment="Center" Opacity="0.72" />
-                    <Button x:Name="NextButton" Grid.Column="4" Content="Next" Click="OnNextClick" HorizontalAlignment="Right" />
+                    <Button x:Name="PrevButton" Grid.Column="2" Content="Prev" Click="OnPrevClick" HorizontalAlignment="Right" Style="{ThemeResource BoardToolbarButtonStyle}" />
+                    <TextBlock x:Name="CounterText" Grid.Column="3" FontSize="12" Margin="8,0" VerticalAlignment="Center" Opacity="0.72" />
+                    <Button x:Name="NextButton" Grid.Column="4" Content="Next" Click="OnNextClick" HorizontalAlignment="Right" Style="{ThemeResource BoardToolbarButtonStyle}" />
                 </Grid>
                 <controls:CardRenderer x:Name="PreviewCard" />
             </StackPanel>
         </Border>
-    </StackPanel>
+    </Grid>
 </UserControl>

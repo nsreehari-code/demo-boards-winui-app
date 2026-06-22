@@ -15,20 +15,19 @@
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
-            <Border Padding="20,10,20,10" Background="{ThemeResource BoardTopBarBackgroundBrush}" BorderBrush="{ThemeResource BoardTopBarBorderBrush}" BorderThickness="0,0,0,1">
-                <Grid ColumnSpacing="12">
+            <Border Padding="14,6,14,6" Background="{ThemeResource BoardTopBarBackgroundBrush}" BorderBrush="{ThemeResource BoardTopBarBorderBrush}" BorderThickness="0,0,0,1">
+                <Grid ColumnSpacing="10" MinHeight="48">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
-                    <StackPanel Spacing="2">
-                        <TextBlock x:Name="PageTitleText" FontSize="22" FontWeight="SemiBold" Foreground="{ThemeResource BoardTextBrush}" TextTrimming="CharacterEllipsis" />
-                        <TextBlock x:Name="PageSubtitleText" Opacity="0.92" Foreground="{ThemeResource BoardTextMutedBrush}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                    <StackPanel Spacing="1" VerticalAlignment="Center">
+                        <TextBlock x:Name="PageTitleText" FontSize="15" FontWeight="Bold" Foreground="{ThemeResource BoardTextBrush}" TextTrimming="CharacterEllipsis" />
+                        <TextBlock x:Name="PageSubtitleText" FontSize="11" Opacity="0.92" Foreground="{ThemeResource BoardTextMutedBrush}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
                     </StackPanel>
 
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
-                        <Button x:Name="BoardConfigButton" Style="{ThemeResource BoardToolbarButtonStyle}" Content="Board config" Click="OnBoardConfigClick" />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right" VerticalAlignment="Center">
                         <controls:TimerButton x:Name="RefreshTimerButton" Click="OnRefreshClick" />
                     </StackPanel>
                 </Grid>
@@ -41,6 +40,14 @@
         <controls:GlobalModal x:Name="ConfigModalView" />
         <controls:GlobalModal x:Name="ChatModalView" />
         <controls:GlobalModal x:Name="SmokeModalView" />
+        <controls:FloatingCircleButton
+            x:Name="BoardConfigButton"
+            SvgIconPath="Assets/Icons/appconfig-plus.svg"
+            FloatPosition="BottomRight"
+            Inset="18"
+            Diameter="48"
+            ToolTipText="Board config"
+            Click="OnBoardConfigClick" />
 
         <Grid x:Name="StartupOverlay" Background="{ThemeResource BoardWindowBackgroundBrush}">
             <Border

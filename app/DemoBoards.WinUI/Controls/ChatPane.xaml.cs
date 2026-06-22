@@ -3,12 +3,14 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using DemoBoards.RuntimeHost;
+using DemoBoards_WinUI.Assets;
 using DemoBoards_WinUI.State;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage;
 
@@ -422,11 +424,34 @@ public sealed partial class ChatPane : UserControl
         HeaderRow.Visibility = isCompact ? Visibility.Visible : Visibility.Collapsed;
         HeaderTitleText.Text = paneTitle;
         PopoutButton.Visibility = canPopout ? Visibility.Visible : Visibility.Collapsed;
-        PopoutButton.Content = isCompact ? "Pop out" : "Open full chat";
+        PopoutButton.Content = BuildIconButtonContent(HostIconSources.ChatPopout, isCompact ? "Pop out" : "Open full chat");
         DropZoneBorder.Visibility = isCompact ? Visibility.Collapsed : Visibility.Visible;
         ComposerTextBox.MinHeight = isCompact ? 40 : 84;
         ComposerTextBox.PlaceholderText = isCompact ? "Send a message" : "Type a message";
-        AttachButton.Content = isCompact ? "Attach" : "Attach File";
+        AttachButton.Content = BuildIconButtonContent(HostIconSources.ChatAttach, isCompact ? "Attach" : "Attach File");
+    }
+
+    private static object BuildIconButtonContent(string svgPath, string label)
+    {
+        var stack = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 6,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        stack.Children.Add(new Image
+        {
+            Width = 14,
+            Height = 14,
+            Source = HostIconSources.CreateSvg(svgPath),
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        stack.Children.Add(new TextBlock
+        {
+            Text = label,
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        return stack;
     }
 
     private static UIElement BuildWatchpartySection(string title, string text, string tone)

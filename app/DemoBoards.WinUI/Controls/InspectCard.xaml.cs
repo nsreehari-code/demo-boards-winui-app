@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using DemoBoards.RuntimeHost;
+using DemoBoards_WinUI.Assets;
 using DemoBoards_WinUI.State;
 using Microsoft.UI;
 using Microsoft.UI.Text;
@@ -28,6 +29,7 @@ public sealed partial class InspectCard : UserControl
         RefreshButton.Click += OnRefreshClick;
         RunCycleButton.Click += OnRunCycleClick;
         DeleteButton.Click += OnDeleteClick;
+        DeleteButton.Content = BuildDeleteButtonContent();
     }
 
     public void Render(BoardStore boardStore, string cardId)
@@ -503,6 +505,29 @@ public sealed partial class InspectCard : UserControl
     private async void OnRunCycleClick(object sender, RoutedEventArgs e)
     {
         await RunCardFlightAsync();
+    }
+
+    private static object BuildDeleteButtonContent()
+    {
+        var stack = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 6,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        stack.Children.Add(new Image
+        {
+            Width = 14,
+            Height = 14,
+            Source = HostIconSources.CreateSvg(HostIconSources.InspectDeleteCard),
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        stack.Children.Add(new TextBlock
+        {
+            Text = "Delete card",
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        return stack;
     }
 
     private async System.Threading.Tasks.Task RunCardFlightAsync()

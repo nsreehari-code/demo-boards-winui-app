@@ -56,13 +56,39 @@
     <SolidColorBrush x:Key="BoardToolbarButtonBackgroundBrush" Color="#00000000" />
     <SolidColorBrush x:Key="BoardToolbarButtonForegroundBrush" Color="{StaticResource BoardColorText}" />
     <SolidColorBrush x:Key="BoardToolbarButtonBorderBrush" Color="{StaticResource BoardColorBorderStrong}" />
+    <SolidColorBrush x:Key="BoardFloatingButtonBackgroundBrush" Color="#F0142034" />
+    <SolidColorBrush x:Key="BoardFloatingButtonForegroundBrush" Color="{StaticResource BoardColorText}" />
+    <SolidColorBrush x:Key="BoardFloatingButtonBorderBrush" Color="#9D7DC7FF" />
+    <SolidColorBrush x:Key="BoardEdgeToggleButtonBackgroundBrush" Color="#F0121D30" />
+    <SolidColorBrush x:Key="BoardEdgeToggleButtonForegroundBrush" Color="#FF7DC7FF" />
+    <SolidColorBrush x:Key="BoardEdgeToggleButtonBorderBrush" Color="#A66E9AD7" />
 
     <Style x:Key="BoardToolbarButtonStyle" TargetType="Button">
-        <Setter Property="Padding" Value="10,4" />
-        <Setter Property="MinHeight" Value="30" />
+        <Setter Property="Padding" Value="8,3" />
+        <Setter Property="MinHeight" Value="28" />
         <Setter Property="Background" Value="{ThemeResource BoardToolbarButtonBackgroundBrush}" />
         <Setter Property="Foreground" Value="{ThemeResource BoardToolbarButtonForegroundBrush}" />
         <Setter Property="BorderBrush" Value="{ThemeResource BoardToolbarButtonBorderBrush}" />
         <Setter Property="BorderThickness" Value="1" />
+    </Style>
+
+    <Style x:Key="BoardFloatingCircleButtonStyle" TargetType="Button">
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Background" Value="{ThemeResource BoardFloatingButtonBackgroundBrush}" />
+        <Setter Property="Foreground" Value="{ThemeResource BoardFloatingButtonForegroundBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource BoardFloatingButtonBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="MinWidth" Value="42" />
+        <Setter Property="MinHeight" Value="42" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+
+    <Style x:Key="BoardEdgeToggleButtonStyle" TargetType="Button" BasedOn="{StaticResource BoardFloatingCircleButtonStyle}">
+        <Setter Property="Background" Value="{ThemeResource BoardEdgeToggleButtonBackgroundBrush}" />
+        <Setter Property="Foreground" Value="{ThemeResource BoardEdgeToggleButtonForegroundBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource BoardEdgeToggleButtonBorderBrush}" />
+        <Setter Property="Width" Value="48" />
+        <Setter Property="Height" Value="48" />
     </Style>
 </ResourceDictionary>
