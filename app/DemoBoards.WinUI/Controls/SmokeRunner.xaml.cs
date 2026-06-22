@@ -8,13 +8,48 @@ using Microsoft.UI.Xaml.Controls;
 
 namespace DemoBoards_WinUI.Controls;
 
-public sealed partial class SmokeRunner : UserControl
+public sealed class SmokeRunner : UserControl
 {
+    private readonly TextBlock StatusText;
+    private readonly Button RunButton;
+    private readonly TextBox OutputTextBox;
     private bool running;
 
     public SmokeRunner()
     {
-        InitializeComponent();
+        StatusText = new TextBlock
+        {
+            Opacity = 0.72,
+            Text = "Run the embedded GoldenHarness smoke suite from inside the WinUI app.",
+            TextWrapping = TextWrapping.WrapWholeWords,
+        };
+        RunButton = new Button { Content = "Run Tests" };
+        RunButton.Click += OnRunClick;
+        OutputTextBox = new TextBox
+        {
+            IsReadOnly = true,
+            AcceptsReturn = true,
+            TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
+            PlaceholderText = "Smoke output will appear here.",
+        };
+        var root = new Grid { RowSpacing = 10, MinWidth = 760, MinHeight = 520 };
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        root.Children.Add(new StackPanel
+        {
+            Spacing = 8,
+            Children =
+            {
+                new TextBlock { Text = "Smoke Runner", FontSize = 20, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold },
+                StatusText,
+                new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { RunButton } }
+            }
+        });
+        Grid.SetRow(OutputTextBox, 1);
+        root.Children.Add(OutputTextBox);
+        Content = root;
     }
 
     private async void OnRunClick(object sender, RoutedEventArgs e)

@@ -3,11 +3,14 @@ using Microsoft.UI.Xaml.Controls;
 
 namespace DemoBoards_WinUI.Controls;
 
-public sealed partial class GandalfChatPane : UserControl
+public sealed class GandalfChatPane : UserControl
 {
+    private readonly ChatPane InnerChatPane;
+
     public GandalfChatPane()
     {
-        InitializeComponent();
+        InnerChatPane = new ChatPane();
+        Content = InnerChatPane;
     }
 
     public event EventHandler<ChatPopoutRequestedEventArgs> PopoutRequested

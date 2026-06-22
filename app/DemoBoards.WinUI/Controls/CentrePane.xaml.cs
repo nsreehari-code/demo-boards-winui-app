@@ -8,13 +8,34 @@ using DemoBoards_WinUI.State;
 
 namespace DemoBoards_WinUI.Controls;
 
-public sealed partial class CentrePane : UserControl
+public sealed class CentrePane : UserControl
 {
     private const string InfiniteCanvasLayout = "infinite-canvas";
+    private readonly BoardCanvas BoardCanvasView;
+    private readonly ScrollViewer FlowingCardsView;
+    private readonly Grid FlowGrid;
 
     public CentrePane()
     {
-        InitializeComponent();
+        BoardCanvasView = new BoardCanvas();
+        FlowGrid = new Grid
+        {
+            Padding = new Thickness(12)
+        };
+        FlowingCardsView = new ScrollViewer
+        {
+            Visibility = Visibility.Collapsed,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Content = FlowGrid
+        };
+        Content = new Grid
+        {
+            Children =
+            {
+                BoardCanvasView,
+                FlowingCardsView,
+            }
+        };
     }
 
     public void Render(

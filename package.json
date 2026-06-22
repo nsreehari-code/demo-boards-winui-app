@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "goldenharness": "dotnet run --project engine/GoldenHarness/GoldenHarness.csproj",
+    "winui:guard:xaml": "node ./scripts/check-xaml-drift.mjs",
     "winui:stop": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/stop-winui.ps1",
     "winui:build": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/build-winui.ps1",
     "winui:clean": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/clean-winui.ps1",

@@ -47,10 +47,188 @@ public sealed partial class BoardCanvas : UserControl
     private IReadOnlyList<RendererRule>? lastRendererRules;
     private IReadOnlyDictionary<string, string> lastDataObjects = new Dictionary<string, string>(System.StringComparer.Ordinal);
     private IReadOnlyDictionary<string, BoardCanvasPlacement> lastPlacements = new Dictionary<string, BoardCanvasPlacement>(System.StringComparer.Ordinal);
+    private readonly TextBlock BoardTitleText;
+    private readonly TextBlock BoardSummaryText;
+    private readonly ScrollViewer CanvasScrollViewer;
+    private readonly Grid CanvasSurface;
+    private readonly Canvas BackgroundGridHost;
+    private readonly Canvas CardsHost;
+    private readonly Button ZoomOutButton;
+    private readonly Button ZoomInButton;
+    private readonly Button FitCanvasButton;
+    private readonly Button ResetCanvasButton;
+    private readonly TextBlock ZoomStatusText;
+    private readonly Border TokenFocusBanner;
+    private readonly Button ClearTokenFocusButton;
+    private readonly Canvas MiniMapHost;
+    private readonly Border MiniMapViewport;
 
     public BoardCanvas()
     {
-        InitializeComponent();
+        BoardTitleText = new TextBlock
+        {
+            FontSize = 20,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+        };
+        BoardSummaryText = new TextBlock
+        {
+            Opacity = 0.75,
+            TextWrapping = TextWrapping.WrapWholeWords
+        };
+        BackgroundGridHost = new Canvas { IsHitTestVisible = false };
+        CardsHost = new Canvas();
+        CanvasSurface = new Grid
+        {
+            Children =
+            {
+                BackgroundGridHost,
+                CardsHost,
+            }
+        };
+        CanvasScrollViewer = new ScrollViewer
+        {
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollMode = ScrollMode.Enabled,
+            VerticalScrollMode = ScrollMode.Enabled,
+            ZoomMode = ZoomMode.Enabled,
+            MinZoomFactor = 0.35f,
+            MaxZoomFactor = 1.35f,
+            Content = CanvasSurface,
+        };
+        ZoomOutButton = new Button { Content = "-", Width = 34, Padding = new Thickness(0) };
+        ZoomInButton = new Button { Content = "+", Width = 34, Padding = new Thickness(0) };
+        FitCanvasButton = new Button { Content = "Fit", Padding = new Thickness(10, 2, 10, 2) };
+        ResetCanvasButton = new Button { Content = "Reset", Padding = new Thickness(10, 2, 10, 2) };
+        ZoomStatusText = new TextBlock { FontSize = 11, Opacity = 0.68 };
+        ClearTokenFocusButton = new Button { Padding = new Thickness(10, 2, 10, 2) };
+        TokenFocusBanner = new Border
+        {
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Top,
+            Padding = new Thickness(10, 6, 10, 6),
+            Margin = new Thickness(12),
+            CornerRadius = new CornerRadius(10),
+            Background = BoardTheme.ResolveBrush("BoardCanvasPanelBrush", Colors.WhiteSmoke),
+            BorderBrush = BoardTheme.ResolveBrush("BoardCanvasPanelBorderBrush", Colors.LightGray),
+            BorderThickness = new Thickness(1),
+            Visibility = Visibility.Collapsed,
+            Child = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                VerticalAlignment = VerticalAlignment.Center,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = "Token focus",
+                        FontSize = 12,
+                        Opacity = 0.72,
+                        VerticalAlignment = VerticalAlignment.Center
+                    },
+                    ClearTokenFocusButton,
+                }
+            }
+        };
+        MiniMapHost = new Canvas
+        {
+            Width = 200,
+            Height = 128
+        };
+        MiniMapViewport = new Border
+        {
+            BorderBrush = BoardTheme.ResolveBrush("BoardCanvasMiniMapViewportBorderBrush", Colors.SteelBlue),
+            BorderThickness = new Thickness(1.5),
+            Background = BoardTheme.ResolveBrush("BoardCanvasMiniMapViewportBrush", Colors.LightBlue),
+            IsHitTestVisible = false
+        };
+
+        var zoomPanel = new Border
+        {
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+            Padding = new Thickness(10, 8, 10, 8),
+            Margin = new Thickness(12),
+            CornerRadius = new CornerRadius(12),
+            Background = BoardTheme.ResolveBrush("BoardCanvasPanelBrush", Colors.WhiteSmoke),
+            BorderBrush = BoardTheme.ResolveBrush("BoardCanvasPanelBorderBrush", Colors.LightGray),
+            BorderThickness = new Thickness(1),
+            Child = new StackPanel
+            {
+                Spacing = 8,
+                Children =
+                {
+                    new TextBlock { Text = "Canvas", FontSize = 12, Opacity = 0.72 },
+                    new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal,
+                        Spacing = 6,
+                        Children =
+                        {
+                            ZoomOutButton,
+                            ZoomInButton,
+                            FitCanvasButton,
+                            ResetCanvasButton,
+                        }
+                    },
+                    ZoomStatusText,
+                }
+            }
+        };
+
+        var miniMapPanel = new Border
+        {
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Padding = new Thickness(8),
+            Margin = new Thickness(12),
+            CornerRadius = new CornerRadius(12),
+            Background = BoardTheme.ResolveBrush("BoardCanvasMiniMapBrush", Colors.WhiteSmoke),
+            BorderBrush = BoardTheme.ResolveBrush("BoardCanvasMiniMapBorderBrush", Colors.LightGray),
+            BorderThickness = new Thickness(1),
+            Child = new StackPanel
+            {
+                Spacing = 6,
+                Children =
+                {
+                    new TextBlock { Text = "Mini map", FontSize = 11, Opacity = 0.68 },
+                    new Grid
+                    {
+                        Width = 200,
+                        Height = 128,
+                        Children =
+                        {
+                            MiniMapHost,
+                            MiniMapViewport,
+                        }
+                    }
+                }
+            }
+        };
+
+        var canvasLayer = new Grid();
+        canvasLayer.Children.Add(CanvasScrollViewer);
+        canvasLayer.Children.Add(zoomPanel);
+        canvasLayer.Children.Add(TokenFocusBanner);
+        canvasLayer.Children.Add(miniMapPanel);
+
+        var root = new Grid { RowSpacing = 12 };
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        root.Children.Add(new StackPanel
+        {
+            Spacing = 4,
+            Children =
+            {
+                BoardTitleText,
+                BoardSummaryText,
+            }
+        });
+        Grid.SetRow(canvasLayer, 1);
+        root.Children.Add(canvasLayer);
+        Content = root;
+
         Unloaded += OnUnloaded;
         CanvasScrollViewer.ViewChanged += OnCanvasViewChanged;
         CanvasScrollViewer.SizeChanged += (_, _) => UpdateMiniMapViewport();

@@ -6,14 +6,63 @@ using Microsoft.UI.Xaml.Media;
 
 namespace DemoBoards_WinUI.Controls;
 
-public sealed partial class CardShell : UserControl
+public sealed class CardShell : UserControl
 {
     private string currentCardId = string.Empty;
     private bool miniChatOpen;
+    private readonly Border ShellBorder;
+    private readonly Grid FrontHost;
+    private readonly CardBackface BackfaceView;
+    private readonly Button InspectButton;
+    private readonly Button ChatButton;
+    private readonly Button BackButton;
 
     public CardShell()
     {
-        InitializeComponent();
+        FrontHost = new Grid();
+        BackfaceView = new CardBackface
+        {
+            Visibility = Visibility.Collapsed
+        };
+        InspectButton = new Button { Content = "Inspect" };
+        ChatButton = new Button { Content = "Chat" };
+        BackButton = new Button
+        {
+            Content = "Back",
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Visibility = Visibility.Collapsed,
+            Margin = new Thickness(0, 12, 0, 0)
+        };
+
+        var overlayButtons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Spacing = 8,
+            Margin = new Thickness(0, 12, 0, 0),
+            Children =
+            {
+                InspectButton,
+                ChatButton,
+            }
+        };
+
+        var layout = new Grid();
+        layout.Children.Add(FrontHost);
+        layout.Children.Add(BackfaceView);
+        layout.Children.Add(overlayButtons);
+        layout.Children.Add(BackButton);
+
+        ShellBorder = new Border
+        {
+            Padding = new Thickness(16),
+            CornerRadius = new CornerRadius(14),
+            BorderThickness = new Thickness(1),
+            Child = layout
+        };
+        Content = ShellBorder;
         BackButton.Click += (_, _) => ShowFront();
         InspectButton.Click += (_, _) =>
         {

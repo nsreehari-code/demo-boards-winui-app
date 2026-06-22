@@ -8,7 +8,7 @@ using Microsoft.UI.Xaml.Media;
 
 namespace DemoBoards_WinUI.Controls;
 
-public sealed partial class CardBackface : UserControl
+public sealed class CardBackface : UserControl
 {
     private Action? runCardFlight;
     private Action<int, string?>? runSourceFlight;
@@ -17,10 +17,16 @@ public sealed partial class CardBackface : UserControl
     private bool flightDisabled;
     private bool cardFlightLoading;
     private IReadOnlyDictionary<int, bool> loadingBySource = new Dictionary<int, bool>();
+    private readonly StackPanel ContentHost;
 
     public CardBackface()
     {
-        InitializeComponent();
+        ContentHost = new StackPanel { Spacing = 12 };
+        Content = new ScrollViewer
+        {
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Content = ContentHost
+        };
     }
 
     public void Render(

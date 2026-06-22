@@ -4,9 +4,13 @@ using Microsoft.UI.Xaml.Controls;
 
 namespace DemoBoards_WinUI.Controls;
 
-public sealed partial class TimerButton : UserControl
+public sealed class TimerButton : UserControl
 {
     private const string DefaultRefreshGlyph = "\uE72C";
+    private readonly Button RootButton;
+    private readonly ProgressRing BusyRing;
+    private readonly FontIcon RefreshIcon;
+    private readonly TextBlock LabelText;
     private string label = "Refresh";
     private string timeText = string.Empty;
     private bool isBusy;
@@ -17,7 +21,21 @@ public sealed partial class TimerButton : UserControl
 
     public TimerButton()
     {
-        InitializeComponent();
+        BusyRing = new ProgressRing { Width = 14, Height = 14, IsActive = false, Visibility = Visibility.Collapsed };
+        RefreshIcon = new FontIcon { FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
+        LabelText = new TextBlock { VerticalAlignment = VerticalAlignment.Center, FontSize = 11 };
+        RootButton = new Button
+        {
+            Content = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 7,
+                VerticalAlignment = VerticalAlignment.Center,
+                Children = { BusyRing, RefreshIcon, LabelText }
+            }
+        };
+        RootButton.Click += OnButtonClick;
+        Content = RootButton;
         UpdateVisualState();
     }
 

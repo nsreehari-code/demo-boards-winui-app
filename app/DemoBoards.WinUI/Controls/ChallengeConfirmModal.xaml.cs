@@ -2,16 +2,61 @@ using System;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 
 namespace DemoBoards_WinUI.Controls;
 
-public sealed partial class ChallengeConfirmModal : UserControl
+public sealed class ChallengeConfirmModal : UserControl
 {
+    private readonly TextBlock PromptText;
+    private readonly TextBlock ChallengeText;
+    private readonly TextBox AnswerTextBox;
+    private readonly TextBlock ValidationText;
+    private readonly Button CancelButton;
+    private readonly Button ConfirmButton;
+
     private int expectedAnswer;
 
     public ChallengeConfirmModal()
     {
-        InitializeComponent();
+        PromptText = new TextBlock { TextWrapping = TextWrapping.WrapWholeWords };
+        ChallengeText = new TextBlock { Opacity = 0.78, TextWrapping = TextWrapping.WrapWholeWords };
+        AnswerTextBox = new TextBox { PlaceholderText = "Enter the sum...", InputScope = new InputScope { Names = { new InputScopeName(InputScopeNameValue.Number) } } };
+        AnswerTextBox.TextChanged += OnAnswerTextChanged;
+        AnswerTextBox.KeyDown += OnAnswerTextBoxKeyDown;
+        ValidationText = new TextBlock
+        {
+            Foreground = new SolidColorBrush(Microsoft.UI.Colors.IndianRed),
+            Opacity = 0,
+            Text = "Incorrect - try again.",
+            TextWrapping = TextWrapping.WrapWholeWords,
+        };
+        CancelButton = new Button { Content = "Cancel" };
+        CancelButton.Click += OnCancelClick;
+        ConfirmButton = new Button { Content = "Confirm", IsEnabled = false };
+        ConfirmButton.Click += OnConfirmClick;
+
+        Content = new StackPanel
+        {
+            Spacing = 12,
+            Children =
+            {
+                PromptText,
+                ChallengeText,
+                new StackPanel
+                {
+                    Spacing = 6,
+                    Children = { AnswerTextBox, ValidationText }
+                },
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 8,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    Children = { CancelButton, ConfirmButton }
+                }
+            }
+        };
         Loaded += OnLoaded;
     }
 

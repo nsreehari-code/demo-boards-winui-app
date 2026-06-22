@@ -33,9 +33,12 @@ public partial class App : Application
     /// </summary>
     public App()
     {
-        InitializeComponent();
+        Resources = new ResourceDictionary();
+        Resources.MergedDictionaries.Add(new XamlControlsResources());
+        currentThemeDictionary = BoardTheme.CreateThemeDictionary(BoardTheme.DefaultThemePackId);
+        Resources.MergedDictionaries.Add(currentThemeDictionary);
         LogStartup("App constructor initialized.");
-        LogStartup("Default theme pack provided by App.xaml merged dictionaries.");
+        LogStartup("Default theme pack provided by code-created merged dictionaries.");
 
         UnhandledException += OnUnhandledException;
     }
@@ -88,20 +91,7 @@ public partial class App : Application
             return;
         }
 
-        var dictionary = new ResourceDictionary
-        {
-            Source = BoardTheme.GetThemeDictionaryUri(normalizedTheme)
-        };
-
-        if (currentThemeDictionary is null)
-        {
-            foreach (ResourceDictionary existingDictionary in Resources.MergedDictionaries
-                         .Where(IsThemeDictionary)
-                         .ToList())
-            {
-                Resources.MergedDictionaries.Remove(existingDictionary);
-            }
-        }
+        var dictionary = BoardTheme.CreateThemeDictionary(normalizedTheme);
 
         if (currentThemeDictionary is not null)
         {
@@ -153,17 +143,5 @@ public partial class App : Application
         catch
         {
         }
-    }
-
-    private static bool IsThemeDictionary(ResourceDictionary dictionary)
-    {
-        string? source = dictionary.Source?.OriginalString;
-        if (string.IsNullOrWhiteSpace(source))
-        {
-            return false;
-        }
-
-        return source.EndsWith("Themes/MistOps.xaml", StringComparison.OrdinalIgnoreCase)
-            || source.EndsWith("Themes/SignalRoom.xaml", StringComparison.OrdinalIgnoreCase);
     }
 }

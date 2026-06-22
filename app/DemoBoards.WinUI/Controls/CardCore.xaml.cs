@@ -11,11 +11,14 @@ using System.Threading.Tasks;
 
 namespace DemoBoards_WinUI.Controls;
 
-public sealed partial class CardCore : UserControl
+public sealed class CardCore : UserControl
 {
+    private readonly StackPanel LayoutHost;
+
     public CardCore()
     {
-        InitializeComponent();
+        LayoutHost = new StackPanel { Spacing = 10 };
+        Content = LayoutHost;
     }
 
     public void Render(BoardStore store, BoardCard card)

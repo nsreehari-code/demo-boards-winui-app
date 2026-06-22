@@ -5,11 +5,44 @@ using Microsoft.UI.Xaml.Media;
 
 namespace DemoBoards_WinUI.Controls;
 
-public sealed partial class IngestCard : UserControl
+public sealed class IngestCard : UserControl
 {
+    private readonly Border ShellBorder;
+    private readonly TextBlock TitleText;
+    private readonly TextBlock SubtitleText;
+    private readonly GandalfChatPane ChatPaneView;
+
     public IngestCard()
     {
-        InitializeComponent();
+        TitleText = new TextBlock { FontSize = 17, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextWrapping = TextWrapping.WrapWholeWords };
+        SubtitleText = new TextBlock { FontSize = 12, Opacity = 0.68, TextWrapping = TextWrapping.WrapWholeWords };
+        ChatPaneView = new GandalfChatPane();
+        ShellBorder = new Border
+        {
+            Padding = new Thickness(14),
+            CornerRadius = new CornerRadius(14),
+            BorderThickness = new Thickness(1),
+            Child = new Grid
+            {
+                RowSpacing = 10,
+                RowDefinitions =
+                {
+                    new RowDefinition { Height = GridLength.Auto },
+                    new RowDefinition { Height = new GridLength(1, GridUnitType.Star) },
+                },
+                Children =
+                {
+                    new StackPanel
+                    {
+                        Spacing = 3,
+                        Children = { TitleText, SubtitleText }
+                    }
+                }
+            }
+        };
+        Grid.SetRow(ChatPaneView, 1);
+        ((Grid)ShellBorder.Child).Children.Add(ChatPaneView);
+        Content = ShellBorder;
         ChatPaneView.PopoutRequested += OnChatPopoutRequested;
     }
 

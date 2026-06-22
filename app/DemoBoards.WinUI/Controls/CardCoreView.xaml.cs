@@ -15,7 +15,7 @@ using Windows.UI;
 
 namespace DemoBoards_WinUI.Controls;
 
-public sealed partial class CardCoreView : UserControl
+public sealed class CardCoreView : UserControl
 {
     private static readonly string[] ChartPalette =
     {
@@ -44,10 +44,12 @@ public sealed partial class CardCoreView : UserControl
         string? DiscardLabel,
         string? SaveLabel);
     private sealed record SingleFieldConfig(string? WriteTo, string FieldKey, object? CurrentValue, FieldConfig Field);
+    private readonly StackPanel Root;
 
     public CardCoreView()
     {
-        InitializeComponent();
+        Root = new StackPanel { Spacing = 6 };
+        Content = Root;
     }
 
     public void Render(string kind, string label, JsonElement data, string rawRenderDefJson, Func<object?, SaveRequest, Task>? onSave = null)

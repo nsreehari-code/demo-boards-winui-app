@@ -3,11 +3,14 @@ using Microsoft.UI.Xaml.Controls;
 
 namespace DemoBoards_WinUI.Controls;
 
-public sealed partial class MiniChatPane : UserControl
+public sealed class MiniChatPane : UserControl
 {
+    private readonly ChatPane InnerChatPane;
+
     public MiniChatPane()
     {
-        InitializeComponent();
+        InnerChatPane = new ChatPane();
+        Content = InnerChatPane;
         InnerChatPane.Configure(compact: true, enablePopout: true, title: "Chat");
     }
 

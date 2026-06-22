@@ -14,7 +14,7 @@ using Microsoft.UI.Xaml.Media;
 
 namespace DemoBoards_WinUI.Controls;
 
-public sealed partial class InspectCard : UserControl
+public sealed class InspectCard : UserControl
 {
     private static readonly JsonSerializerOptions PrettyJsonOptions = new() { WriteIndented = true };
 
@@ -22,14 +22,217 @@ public sealed partial class InspectCard : UserControl
     private EmbeddedBoardClient? boardClient;
     private string currentCardId = string.Empty;
     private BoardCard? currentCard;
+    private readonly TextBlock CardTitleText;
+    private readonly TextBlock CardSubtitleText;
+    private readonly StackPanel SummaryHost;
+    private readonly Button RefreshButton;
+    private readonly Button RunCycleButton;
+    private readonly Button DeleteButton;
+    private readonly TextBlock ActionStatusText;
+    private readonly CardShell PreviewShell;
+    private readonly StackPanel SourcesHost;
+    private readonly StackPanel FilesHost;
+    private readonly StackPanel FlightSummaryHost;
+    private readonly TextBlock FlightStatusText;
+    private readonly StackPanel FlightSectionsHost;
+    private readonly CardBackface BackfaceView;
+    private readonly ChatPane ChatPaneView;
+    private readonly StackPanel MetadataHost;
+    private readonly StackPanel FieldsHost;
+    private readonly StackPanel ComputedHost;
+    private readonly StackPanel RequiresHost;
+    private readonly StackPanel ProvidesHost;
+    private readonly TextBlock DefinitionText;
+    private readonly TextBlock RuntimeText;
 
     public InspectCard()
     {
-        InitializeComponent();
+        CardTitleText = new TextBlock
+        {
+            FontSize = 20,
+            FontWeight = FontWeights.SemiBold,
+            TextWrapping = TextWrapping.WrapWholeWords
+        };
+        CardSubtitleText = new TextBlock
+        {
+            Opacity = 0.72,
+            TextWrapping = TextWrapping.WrapWholeWords
+        };
+        SummaryHost = new StackPanel { Spacing = 6 };
+        RefreshButton = new Button { Content = "Refresh card" };
+        RunCycleButton = new Button { Content = "Run full card preflight" };
+        DeleteButton = new Button { HorizontalAlignment = HorizontalAlignment.Stretch };
+        ActionStatusText = new TextBlock
+        {
+            TextWrapping = TextWrapping.WrapWholeWords,
+            Opacity = 0.8
+        };
+        PreviewShell = new CardShell();
+        SourcesHost = new StackPanel { Spacing = 8 };
+        FilesHost = new StackPanel { Spacing = 8 };
+        FlightSummaryHost = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        FlightStatusText = new TextBlock
+        {
+            Opacity = 0.72,
+            TextWrapping = TextWrapping.WrapWholeWords
+        };
+        FlightSectionsHost = new StackPanel { Spacing = 8 };
+        BackfaceView = new CardBackface();
+        ChatPaneView = new ChatPane();
+        MetadataHost = new StackPanel { Spacing = 6 };
+        FieldsHost = new StackPanel { Spacing = 6 };
+        ComputedHost = new StackPanel { Spacing = 6 };
+        RequiresHost = new StackPanel { Spacing = 6 };
+        ProvidesHost = new StackPanel { Spacing = 6 };
+        DefinitionText = new TextBlock
+        {
+            TextWrapping = TextWrapping.WrapWholeWords,
+            IsTextSelectionEnabled = true,
+            FontFamily = new FontFamily("Consolas")
+        };
+        RuntimeText = new TextBlock
+        {
+            TextWrapping = TextWrapping.WrapWholeWords,
+            IsTextSelectionEnabled = true,
+            FontFamily = new FontFamily("Consolas")
+        };
+
+        var actionGrid = new Grid { ColumnSpacing = 8 };
+        actionGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        actionGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        actionGrid.Children.Add(RefreshButton);
+        Grid.SetColumn(RunCycleButton, 1);
+        actionGrid.Children.Add(RunCycleButton);
+
+        var leftStack = new StackPanel
+        {
+            Spacing = 12,
+            Children =
+            {
+                new Border
+                {
+                    Padding = new Thickness(14),
+                    CornerRadius = new CornerRadius(14),
+                    Background = BoardTheme.ResolveBrush("CardBackgroundFillColorDefaultBrush", Colors.White),
+                    Child = new StackPanel
+                    {
+                        Spacing = 10,
+                        Children =
+                        {
+                            new StackPanel
+                            {
+                                Spacing = 4,
+                                Children =
+                                {
+                                    CardTitleText,
+                                    CardSubtitleText,
+                                }
+                            },
+                            SummaryHost,
+                            actionGrid,
+                            DeleteButton,
+                            ActionStatusText,
+                        }
+                    }
+                },
+                PreviewShell,
+                BuildSectionCard("Sources", SourcesHost),
+                BuildSectionCard("Files", FilesHost),
+                new Border
+                {
+                    Padding = new Thickness(14),
+                    CornerRadius = new CornerRadius(14),
+                    Background = BoardTheme.ResolveBrush("CardBackgroundFillColorDefaultBrush", Colors.White),
+                    Child = new StackPanel
+                    {
+                        Spacing = 8,
+                        Children =
+                        {
+                            new TextBlock { Text = "Trial Run Output", FontSize = 18, FontWeight = FontWeights.SemiBold },
+                            FlightSummaryHost,
+                            FlightStatusText,
+                            FlightSectionsHost,
+                        }
+                    }
+                }
+            }
+        };
+
+        var tokenFlows = new StackPanel
+        {
+            Spacing = 8,
+            Children =
+            {
+                new TextBlock { Text = "Token Flows", FontSize = 18, FontWeight = FontWeights.SemiBold },
+                new TextBlock { Text = "Requires", FontWeight = FontWeights.SemiBold, Opacity = 0.8 },
+                RequiresHost,
+                new TextBlock { Text = "Provides", FontWeight = FontWeights.SemiBold, Opacity = 0.8, Margin = new Thickness(0, 6, 0, 0) },
+                ProvidesHost,
+            }
+        };
+
+        var rightStack = new StackPanel
+        {
+            Spacing = 14,
+            Children =
+            {
+                BuildSectionCard("Backface", BackfaceView),
+                BuildSectionCard("Chat", ChatPaneView),
+                BuildSectionCard("Metadata", MetadataHost),
+                BuildSectionCard("Card Data", FieldsHost),
+                BuildSectionCard("Computed Values", ComputedHost),
+                new Border
+                {
+                    Padding = new Thickness(14),
+                    CornerRadius = new CornerRadius(14),
+                    Background = BoardTheme.ResolveBrush("CardBackgroundFillColorDefaultBrush", Colors.White),
+                    Child = tokenFlows
+                },
+                BuildSectionCard("Raw Definition", DefinitionText),
+                BuildSectionCard("Raw Runtime", RuntimeText),
+            }
+        };
+
+        var root = new Grid { ColumnSpacing = 16 };
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(380) });
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        root.Children.Add(new ScrollViewer
+        {
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Content = leftStack
+        });
+        var rightScroll = new ScrollViewer
+        {
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Content = rightStack
+        };
+        Grid.SetColumn(rightScroll, 1);
+        root.Children.Add(rightScroll);
+        Content = root;
+
         RefreshButton.Click += OnRefreshClick;
         RunCycleButton.Click += OnRunCycleClick;
         DeleteButton.Click += OnDeleteClick;
         DeleteButton.Content = BuildDeleteButtonContent();
+    }
+
+    private static Border BuildSectionCard(string title, UIElement content)
+    {
+        return new Border
+        {
+            Padding = new Thickness(14),
+            CornerRadius = new CornerRadius(14),
+            Background = BoardTheme.ResolveBrush("CardBackgroundFillColorDefaultBrush", Colors.White),
+            Child = new StackPanel
+            {
+                Spacing = 8,
+                Children =
+                {
+                    new TextBlock { Text = title, FontSize = 18, FontWeight = FontWeights.SemiBold },
+                    content,
+                }
+            }
+        };
     }
 
     public void Render(BoardStore boardStore, string cardId)

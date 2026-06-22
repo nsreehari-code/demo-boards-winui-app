@@ -5,11 +5,14 @@ using Microsoft.UI.Xaml.Controls;
 
 namespace DemoBoards_WinUI.Controls;
 
-public sealed partial class CardRenderer : UserControl
+public sealed class CardRenderer : UserControl
 {
+    private readonly Grid Host;
+
     public CardRenderer()
     {
-        InitializeComponent();
+        Host = new Grid();
+        Content = Host;
     }
 
     public void Render(BoardCard card, IReadOnlyList<RendererRule>? rendererRules = null)

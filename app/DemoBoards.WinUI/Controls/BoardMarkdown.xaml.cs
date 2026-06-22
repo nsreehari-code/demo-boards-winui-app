@@ -4,19 +4,32 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Markdig;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml;
 
 namespace DemoBoards_WinUI.Controls;
 
-public sealed partial class BoardMarkdown : UserControl
+public sealed class BoardMarkdown : UserControl
 {
     private static readonly Regex FootnoteLinkPattern = new("\\s*\\[(\\d+)\\]\\((https?:\\/\\/[^)]+)\\)", RegexOptions.Compiled);
     private static readonly MarkdownPipeline MarkdownPipeline = new MarkdownPipelineBuilder()
         .UseAdvancedExtensions()
         .Build();
 
+    private readonly TextBlock EmptyStateText;
+    private readonly WebView2 MarkdownWebView;
+
     public BoardMarkdown()
     {
-        InitializeComponent();
+        EmptyStateText = new TextBlock { Visibility = Visibility.Collapsed };
+        MarkdownWebView = new WebView2();
+        Content = new Grid
+        {
+            Children =
+            {
+                EmptyStateText,
+                MarkdownWebView,
+            }
+        };
     }
 
     public void Render(string? text, string? className = null, string? style = null)

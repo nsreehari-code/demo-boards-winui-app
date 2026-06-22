@@ -15,7 +15,7 @@ using Windows.Storage;
 
 namespace DemoBoards_WinUI.Controls;
 
-public sealed partial class PostboxCard : UserControl
+public sealed class PostboxCard : UserControl
 {
     private int historyRequestVersion;
     private string currentCardId = string.Empty;
@@ -23,12 +23,188 @@ public sealed partial class PostboxCard : UserControl
     private BoardStore? boardStore;
     private bool uploading;
     private string draftTurnId = CreateTurnId();
+    private readonly Border ShellBorder;
+    private readonly TextBlock TitleText;
+    private readonly TextBlock SubtitleText;
+    private readonly TextBlock HistoryStatusText;
+    private readonly StackPanel HistoryHost;
+    private readonly StackPanel FilesHost;
+    private readonly Border UploadDropZoneBorder;
+    private readonly TextBlock UploadDropHintText;
+    private readonly Button BrowseFilesButton;
+    private readonly StackPanel SelectedFilesHost;
+    private readonly TextBox CommentTextBox;
+    private readonly TextBlock UploadStatusText;
+    private readonly Button UploadButton;
+    private readonly ChatPane ChatPaneView;
 
     public PostboxCard()
     {
-        InitializeComponent();
+        TitleText = new TextBlock
+        {
+            FontSize = 17,
+            FontWeight = FontWeights.SemiBold,
+            TextWrapping = TextWrapping.WrapWholeWords
+        };
+        SubtitleText = new TextBlock
+        {
+            FontSize = 12,
+            Opacity = 0.68,
+            TextWrapping = TextWrapping.WrapWholeWords
+        };
+        HistoryStatusText = new TextBlock
+        {
+            Opacity = 0.68,
+            TextWrapping = TextWrapping.WrapWholeWords
+        };
+        HistoryHost = new StackPanel { Spacing = 8 };
+        FilesHost = new StackPanel { Spacing = 8 };
+        UploadDropHintText = new TextBlock
+        {
+            Opacity = 0.62,
+            Text = "Drop files here or browse to stage them for upload.",
+            TextWrapping = TextWrapping.WrapWholeWords
+        };
+        BrowseFilesButton = new Button
+        {
+            Content = "Browse Files",
+            HorizontalAlignment = HorizontalAlignment.Left
+        };
+        SelectedFilesHost = new StackPanel
+        {
+            Spacing = 6,
+            Visibility = Visibility.Collapsed
+        };
+        CommentTextBox = new TextBox
+        {
+            PlaceholderText = "Add comment (optional)",
+            TextWrapping = TextWrapping.Wrap,
+            AcceptsReturn = true,
+            MinHeight = 68
+        };
+        UploadStatusText = new TextBlock
+        {
+            Opacity = 0.68,
+            TextWrapping = TextWrapping.WrapWholeWords,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        UploadButton = new Button { Content = "Upload" };
+        ChatPaneView = new ChatPane();
+
+        var uploadFooter = new Grid { ColumnSpacing = 8 };
+        uploadFooter.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        uploadFooter.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        uploadFooter.Children.Add(UploadStatusText);
+        Grid.SetColumn(UploadButton, 1);
+        uploadFooter.Children.Add(UploadButton);
+
+        UploadDropZoneBorder = new Border
+        {
+            Padding = new Thickness(10),
+            CornerRadius = new CornerRadius(12),
+            AllowDrop = true,
+            Child = new StackPanel
+            {
+                Spacing = 8,
+                Children =
+                {
+                    new TextBlock { Text = "Upload submission", FontWeight = FontWeights.SemiBold },
+                    UploadDropHintText,
+                    BrowseFilesButton,
+                    SelectedFilesHost,
+                    CommentTextBox,
+                    uploadFooter,
+                }
+            }
+        };
+
+        var rootStack = new StackPanel
+        {
+            Spacing = 12,
+            Children =
+            {
+                new StackPanel
+                {
+                    Spacing = 3,
+                    Children =
+                    {
+                        TitleText,
+                        SubtitleText,
+                    }
+                },
+                new Border
+                {
+                    Padding = new Thickness(10),
+                    CornerRadius = new CornerRadius(12),
+                    Background = BoardTheme.ResolveBrush("BoardSurfaceStrongBrush", Colors.White),
+                    BorderBrush = BoardTheme.ResolveBrush("BoardBorderBrush", Colors.LightGray),
+                    BorderThickness = new Thickness(1),
+                    Child = new StackPanel
+                    {
+                        Spacing = 6,
+                        Children =
+                        {
+                            new TextBlock { Text = "Recent submissions", FontWeight = FontWeights.SemiBold },
+                            HistoryStatusText,
+                            HistoryHost,
+                        }
+                    }
+                },
+                new Border
+                {
+                    Padding = new Thickness(10),
+                    CornerRadius = new CornerRadius(12),
+                    Background = BoardTheme.ResolveBrush("BoardSurfaceStrongBrush", Colors.White),
+                    BorderBrush = BoardTheme.ResolveBrush("BoardBorderBrush", Colors.LightGray),
+                    BorderThickness = new Thickness(1),
+                    Child = new StackPanel
+                    {
+                        Spacing = 6,
+                        Children =
+                        {
+                            new TextBlock { Text = "Stored files", FontWeight = FontWeights.SemiBold },
+                            FilesHost,
+                        }
+                    }
+                },
+                UploadDropZoneBorder,
+                new Border
+                {
+                    Padding = new Thickness(10),
+                    CornerRadius = new CornerRadius(12),
+                    Background = BoardTheme.ResolveBrush("BoardSurfaceMutedBrush", Colors.Gainsboro),
+                    BorderBrush = BoardTheme.ResolveBrush("BoardBorderBrush", Colors.LightGray),
+                    BorderThickness = new Thickness(1),
+                    Child = new StackPanel
+                    {
+                        Spacing = 6,
+                        Children =
+                        {
+                            new TextBlock { Text = "Live conversation", FontWeight = FontWeights.SemiBold },
+                            ChatPaneView,
+                        }
+                    }
+                }
+            }
+        };
+
+        ShellBorder = new Border
+        {
+            Padding = new Thickness(14),
+            CornerRadius = new CornerRadius(14),
+            BorderThickness = new Thickness(1),
+            Child = new ScrollViewer
+            {
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Content = rootStack
+            }
+        };
+        Content = ShellBorder;
+
         BrowseFilesButton.Click += OnBrowseFilesClick;
         UploadButton.Click += OnUploadClick;
+        UploadDropZoneBorder.DragOver += OnUploadDragOver;
+        UploadDropZoneBorder.Drop += OnUploadDrop;
         ChatPaneView.Configure(compact: true, enablePopout: true, title: "Chat");
         ChatPaneView.PopoutRequested += OnChatPopoutRequested;
         Unloaded += OnUnloaded;

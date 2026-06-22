@@ -1,7 +1,7 @@
+using DemoBoards_WinUI.Assets;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Imaging;
-using DemoBoards_WinUI.Assets;
 
 namespace DemoBoards_WinUI.Controls;
 
@@ -13,9 +13,15 @@ public enum FloatingButtonPosition
     BottomRight
 }
 
-public sealed partial class FloatingCircleButton : UserControl
+public sealed class FloatingCircleButton : UserControl
 {
+        private readonly Button RootButton;
+        private readonly Image SvgIconView;
+        private readonly FontIcon GlyphIconView;
+
     private const string DefaultGlyph = "\uE713";
+    private const double RestingOpacity = 0.76d;
+    private const double HoverOpacity = 0.94d;
 
     public static readonly DependencyProperty IconGlyphProperty = DependencyProperty.Register(
         nameof(IconGlyph),
@@ -71,9 +77,72 @@ public sealed partial class FloatingCircleButton : UserControl
         typeof(FloatingCircleButton),
         new PropertyMetadata(null, OnVisualPropertyChanged));
 
+    public static readonly DependencyProperty ActiveButtonStyleProperty = DependencyProperty.Register(
+        nameof(ActiveButtonStyle),
+        typeof(Style),
+        typeof(FloatingCircleButton),
+        new PropertyMetadata(null, OnVisualPropertyChanged));
+
+    public static readonly DependencyProperty IsActiveProperty = DependencyProperty.Register(
+        nameof(IsActive),
+        typeof(bool),
+        typeof(FloatingCircleButton),
+        new PropertyMetadata(false, OnVisualPropertyChanged));
+
+    public static readonly DependencyProperty BaseOpacityProperty = DependencyProperty.Register(
+        nameof(BaseOpacity),
+        typeof(double),
+        typeof(FloatingCircleButton),
+        new PropertyMetadata(RestingOpacity, OnVisualPropertyChanged));
+
+    public static readonly DependencyProperty HoverButtonOpacityProperty = DependencyProperty.Register(
+        nameof(HoverButtonOpacity),
+        typeof(double),
+        typeof(FloatingCircleButton),
+        new PropertyMetadata(HoverOpacity, OnVisualPropertyChanged));
+
+    public static readonly DependencyProperty ActiveButtonOpacityProperty = DependencyProperty.Register(
+        nameof(ActiveButtonOpacity),
+        typeof(double),
+        typeof(FloatingCircleButton),
+        new PropertyMetadata(HoverOpacity, OnVisualPropertyChanged));
+
+    public static readonly DependencyProperty DisabledButtonOpacityProperty = DependencyProperty.Register(
+        nameof(DisabledButtonOpacity),
+        typeof(double),
+        typeof(FloatingCircleButton),
+        new PropertyMetadata(0.48d, OnVisualPropertyChanged));
+
     public FloatingCircleButton()
     {
-        InitializeComponent();
+        SvgIconView = new Image
+        {
+            Width = 18,
+            Height = 18,
+            Visibility = Visibility.Collapsed,
+        };
+
+        GlyphIconView = new FontIcon();
+
+        RootButton = new Button
+        {
+            Content = new Grid
+            {
+                Children =
+                {
+                    SvgIconView,
+                    GlyphIconView,
+                }
+            }
+        };
+
+        Content = RootButton;
+
+        RootButton.Click += OnButtonClick;
+        RootButton.PointerEntered += OnButtonPointerEntered;
+        RootButton.PointerExited += OnButtonPointerExited;
+        RootButton.GotFocus += OnButtonGotFocus;
+        RootButton.LostFocus += OnButtonLostFocus;
         UpdateVisualState();
     }
 
@@ -133,6 +202,42 @@ public sealed partial class FloatingCircleButton : UserControl
         set => SetValue(ButtonStyleProperty, value);
     }
 
+    public Style? ActiveButtonStyle
+    {
+        get => (Style?)GetValue(ActiveButtonStyleProperty);
+        set => SetValue(ActiveButtonStyleProperty, value);
+    }
+
+    public bool IsActive
+    {
+        get => (bool)GetValue(IsActiveProperty);
+        set => SetValue(IsActiveProperty, value);
+    }
+
+    public double BaseOpacity
+    {
+        get => (double)GetValue(BaseOpacityProperty);
+        set => SetValue(BaseOpacityProperty, value);
+    }
+
+    public double HoverButtonOpacity
+    {
+        get => (double)GetValue(HoverButtonOpacityProperty);
+        set => SetValue(HoverButtonOpacityProperty, value);
+    }
+
+    public double ActiveButtonOpacity
+    {
+        get => (double)GetValue(ActiveButtonOpacityProperty);
+        set => SetValue(ActiveButtonOpacityProperty, value);
+    }
+
+    public double DisabledButtonOpacity
+    {
+        get => (double)GetValue(DisabledButtonOpacityProperty);
+        set => SetValue(DisabledButtonOpacityProperty, value);
+    }
+
     private static void OnVisualPropertyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         ((FloatingCircleButton)d).UpdateVisualState();
@@ -147,6 +252,7 @@ public sealed partial class FloatingCircleButton : UserControl
         RootButton.Width = effectiveDiameter;
         RootButton.Height = effectiveDiameter;
         RootButton.CornerRadius = new CornerRadius(effectiveDiameter / 2d);
+        RootButton.Opacity = ResolveCurrentOpacity();
         UpdateIconState(effectiveDiameter);
         ToolTipService.SetToolTip(RootButton, string.IsNullOrWhiteSpace(ToolTipText) ? null : ToolTipText);
 
@@ -192,6 +298,18 @@ public sealed partial class FloatingCircleButton : UserControl
 
     private Style? ResolveButtonStyle()
     {
+        if (IsActive && ActiveButtonStyle is not null)
+        {
+            return ActiveButtonStyle;
+        }
+
+        if (IsActive
+            && Application.Current.Resources.TryGetValue("BoardFloatingCircleButtonActiveStyle", out object activeResource)
+            && activeResource is Style activeStyle)
+        {
+            return activeStyle;
+        }
+
         if (ButtonStyle is not null)
         {
             return ButtonStyle;
@@ -205,5 +323,49 @@ public sealed partial class FloatingCircleButton : UserControl
     private void OnButtonClick(object sender, RoutedEventArgs e)
     {
         Click?.Invoke(this, e);
+    }
+
+    private void OnButtonPointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        RootButton.Opacity = NormalizeOpacity(HoverButtonOpacity, HoverOpacity);
+    }
+
+    private void OnButtonPointerExited(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        RootButton.Opacity = RootButton.FocusState == FocusState.Unfocused
+            ? ResolveCurrentOpacity()
+            : NormalizeOpacity(HoverButtonOpacity, HoverOpacity);
+    }
+
+    private void OnButtonGotFocus(object sender, RoutedEventArgs e)
+    {
+        RootButton.Opacity = NormalizeOpacity(HoverButtonOpacity, HoverOpacity);
+    }
+
+    private void OnButtonLostFocus(object sender, RoutedEventArgs e)
+    {
+        RootButton.Opacity = ResolveCurrentOpacity();
+    }
+
+    private double ResolveCurrentOpacity()
+    {
+        if (!IsEnabled || !RootButton.IsEnabled)
+        {
+            return NormalizeOpacity(DisabledButtonOpacity, 0.48d);
+        }
+
+        return IsActive
+            ? NormalizeOpacity(ActiveButtonOpacity, HoverOpacity)
+            : NormalizeOpacity(BaseOpacity, RestingOpacity);
+    }
+
+    private static double NormalizeOpacity(double value, double fallback)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value))
+        {
+            return fallback;
+        }
+
+        return System.Math.Max(0d, System.Math.Min(1d, value));
     }
 }

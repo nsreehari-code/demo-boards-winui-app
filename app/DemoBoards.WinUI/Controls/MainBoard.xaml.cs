@@ -2,14 +2,32 @@ using DemoBoards.RuntimeHost;
 using DemoBoards_WinUI.State;
 using System.Linq;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml;
 
 namespace DemoBoards_WinUI.Controls;
 
-public sealed partial class MainBoard : UserControl
+public sealed class MainBoard : UserControl
 {
+    private readonly GandalfPane GandalfPaneView;
+    private readonly CentrePane CentrePaneView;
+    private readonly TruthsetExplorePane TruthsetPaneView;
+
     public MainBoard()
     {
-        InitializeComponent();
+        GandalfPaneView = new GandalfPane();
+        CentrePaneView = new CentrePane { MinHeight = 280 };
+        TruthsetPaneView = new TruthsetExplorePane();
+
+        var root = new Grid { ColumnSpacing = 18 };
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(320) });
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(320) });
+        root.Children.Add(GandalfPaneView);
+        Grid.SetColumn(CentrePaneView, 1);
+        root.Children.Add(CentrePaneView);
+        Grid.SetColumn(TruthsetPaneView, 2);
+        root.Children.Add(TruthsetPaneView);
+        Content = root;
     }
 
     public void Render(BoardStore boardStore)

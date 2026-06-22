@@ -7,13 +7,111 @@ using Microsoft.UI.Xaml.Media;
 
 namespace DemoBoards_WinUI.Controls;
 
-public sealed partial class StrategistCard : UserControl
+public sealed class StrategistCard : UserControl
 {
     private string currentCardId = string.Empty;
+    private readonly Border ShellBorder;
+    private readonly TextBlock TitleText;
+    private readonly TextBlock MetaText;
+    private readonly Border PathStateBadge;
+    private readonly TextBlock PathStateText;
+    private readonly Border StatusBadge;
+    private readonly TextBlock StatusText;
+    private readonly Button RefreshButton;
+    private readonly TextBlock RefreshStatusText;
+    private readonly Grid CoreHost;
 
     public StrategistCard()
     {
-        InitializeComponent();
+        TitleText = new TextBlock
+        {
+            FontSize = 17,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            TextWrapping = TextWrapping.WrapWholeWords
+        };
+        MetaText = new TextBlock
+        {
+            Opacity = 0.68,
+            FontSize = 12,
+            TextWrapping = TextWrapping.WrapWholeWords
+        };
+        PathStateText = new TextBlock
+        {
+            FontSize = 12,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+        };
+        PathStateBadge = new Border
+        {
+            Visibility = Visibility.Collapsed,
+            Padding = new Thickness(8, 3, 8, 3),
+            CornerRadius = new CornerRadius(10),
+            Child = PathStateText
+        };
+        StatusText = new TextBlock
+        {
+            FontSize = 12,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+        };
+        StatusBadge = new Border
+        {
+            Padding = new Thickness(8, 3, 8, 3),
+            CornerRadius = new CornerRadius(10),
+            Child = StatusText
+        };
+        RefreshButton = new Button { Content = "Refresh" };
+        RefreshStatusText = new TextBlock
+        {
+            Opacity = 0.72,
+            TextWrapping = TextWrapping.WrapWholeWords
+        };
+        CoreHost = new Grid();
+
+        var header = new Grid { ColumnSpacing = 8 };
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        header.Children.Add(new StackPanel
+        {
+            Spacing = 3,
+            Children =
+            {
+                TitleText,
+                MetaText,
+            }
+        });
+
+        var badges = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            VerticalAlignment = VerticalAlignment.Top,
+            Children =
+            {
+                PathStateBadge,
+                StatusBadge,
+                RefreshButton,
+            }
+        };
+        Grid.SetColumn(badges, 1);
+        header.Children.Add(badges);
+
+        var layout = new Grid { RowSpacing = 10 };
+        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        layout.Children.Add(header);
+        Grid.SetRow(RefreshStatusText, 1);
+        layout.Children.Add(RefreshStatusText);
+        Grid.SetRow(CoreHost, 2);
+        layout.Children.Add(CoreHost);
+
+        ShellBorder = new Border
+        {
+            Padding = new Thickness(16),
+            CornerRadius = new CornerRadius(14),
+            BorderThickness = new Thickness(1),
+            Child = layout
+        };
+        Content = ShellBorder;
         RefreshButton.Click += OnRefreshClick;
     }
 

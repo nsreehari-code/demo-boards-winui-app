@@ -6,14 +6,47 @@ using System.Text.Json;
 using DemoBoards_WinUI.Config;
 using DemoBoards.RuntimeHost;
 using DemoBoards_WinUI.State;
+using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 
 namespace DemoBoards_WinUI.Controls;
 
-public sealed partial class AppConfigModal : UserControl
+public sealed class AppConfigModal : UserControl
 {
     private static readonly JsonSerializerOptions PrettyJsonOptions = new() { WriteIndented = true };
+
+    private readonly TextBlock BoardIdText;
+    private readonly TextBlock StatusText;
+    private readonly TextBox AddBoardIdTextBox;
+    private readonly TextBox AddBoardLabelTextBox;
+    private readonly TextBox AddBoardPageTitleTextBox;
+    private readonly TextBox AddBoardPageSubtitleTextBox;
+    private readonly ComboBox AddBoardAiComboBox;
+    private readonly ComboBox AddBoardAiWorkspaceTemplateComboBox;
+    private readonly ComboBox AddBoardUiTemplateComboBox;
+    private readonly ComboBox AddBoardRefsTemplateComboBox;
+    private readonly ComboBox TemplateComboBox;
+    private readonly Button AddBoardButton;
+    private readonly TextBlock TemplateHelpText;
+    private readonly TextBlock HostConfigPathsText;
+    private readonly Button PreviewEffectiveConfigButton;
+    private readonly TextBox HostConfigPreviewTextBox;
+    private readonly TextBox EffectiveBoardConfigPreviewTextBox;
+    private readonly Button ImportBoardButton;
+    private readonly Button ExportBoardButton;
+    private readonly Button RefreshBoardButton;
+    private readonly Button RunSmokeButton;
+    private readonly ComboBox TemplateIngestComboBox;
+    private readonly Button PreviewTemplateButton;
+    private readonly Button ApplyTemplateButton;
+    private readonly TextBlock TemplatePreviewText;
+    private readonly ComboBox ThemePackComboBox;
+    private readonly TextBox UiJsonTextBox;
+    private readonly TextBox MetadataJsonTextBox;
+    private readonly TextBox LayoutJsonTextBox;
+    private readonly Button SaveButton;
 
     private string currentBoardId = string.Empty;
     private string currentRawBoardJson = "{}";
@@ -23,8 +56,279 @@ public sealed partial class AppConfigModal : UserControl
 
     public AppConfigModal()
     {
-        InitializeComponent();
+        BoardIdText = CreateSectionTitleBlock(20, FontWeights.SemiBold);
+        StatusText = CreateHintBlock();
+        AddBoardIdTextBox = new TextBox { PlaceholderText = "board-id" };
+        AddBoardLabelTextBox = new TextBox { PlaceholderText = "Label" };
+        AddBoardPageTitleTextBox = new TextBox { PlaceholderText = "Page Title" };
+        AddBoardPageSubtitleTextBox = new TextBox { PlaceholderText = "Page Subtitle" };
+        AddBoardAiComboBox = new ComboBox { PlaceholderText = "AI" };
+        AddBoardAiWorkspaceTemplateComboBox = new ComboBox { PlaceholderText = "AI Workspace Template" };
+        AddBoardUiTemplateComboBox = new ComboBox { PlaceholderText = "UI Template" };
+        AddBoardRefsTemplateComboBox = new ComboBox { PlaceholderText = "Refs Template" };
+        TemplateComboBox = new ComboBox { PlaceholderText = "Optional card template", DisplayMemberPath = nameof(SampleTemplateEntry.Label), SelectedValuePath = nameof(SampleTemplateEntry.Key) };
+        AddBoardButton = new Button { Content = "Add board" };
+        TemplateHelpText = CreateHintBlock();
+        HostConfigPathsText = CreateHintBlock();
+        PreviewEffectiveConfigButton = new Button { Content = "Preview effective board config" };
+        HostConfigPreviewTextBox = CreateEditorTextBox(120, true);
+        EffectiveBoardConfigPreviewTextBox = CreateEditorTextBox(180, true);
+        ImportBoardButton = new Button { Content = "Import board" };
+        ExportBoardButton = new Button { Content = "Export board" };
+        RefreshBoardButton = new Button { Content = "Refresh workspace bootstrap" };
+        RunSmokeButton = new Button { Content = "Run tests" };
+        TemplateIngestComboBox = new ComboBox { PlaceholderText = "Select template", DisplayMemberPath = nameof(SampleTemplateEntry.Label), SelectedValuePath = nameof(SampleTemplateEntry.Key) };
+        PreviewTemplateButton = new Button { Content = "Preview ingest" };
+        ApplyTemplateButton = new Button { Content = "Ingest template" };
+        TemplatePreviewText = new TextBlock { FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"), TextWrapping = TextWrapping.WrapWholeWords };
+        ThemePackComboBox = new ComboBox();
+        UiJsonTextBox = CreateEditorTextBox(160, false);
+        MetadataJsonTextBox = CreateEditorTextBox(140, false);
+        LayoutJsonTextBox = CreateEditorTextBox(180, false);
+        SaveButton = new Button { Content = "Save board config" };
+
+        ThemePackComboBox.SelectionChanged += OnThemePackSelectionChanged;
+        AddBoardButton.Click += OnAddBoardClick;
+        PreviewEffectiveConfigButton.Click += OnPreviewEffectiveConfigClick;
+        ImportBoardButton.Click += OnImportBoardClick;
+        ExportBoardButton.Click += OnExportBoardClick;
+        RefreshBoardButton.Click += OnRefreshBoardClick;
+        RunSmokeButton.Click += OnRunSmokeClick;
+        PreviewTemplateButton.Click += OnPreviewTemplateClick;
+        ApplyTemplateButton.Click += OnApplyTemplateClick;
+        SaveButton.Click += OnSaveClick;
+
+        Content = BuildContent();
         ThemePackComboBox.ItemsSource = BoardTheme.ThemePackIds;
+    }
+
+    private UIElement BuildContent()
+    {
+        var root = new StackPanel { Spacing = 14 };
+
+        root.Children.Add(CreateSectionCard(new Thickness(16, 14, 16, 14), new StackPanel
+        {
+            Spacing = 8,
+            Children =
+            {
+                CreateFieldLabel("Board"),
+                BoardIdText,
+                StatusText,
+            }
+        }));
+
+        var addBoardGrid = CreateTwoColumnGrid(5);
+        AddLabeledField(addBoardGrid, 0, 0, "Board id", AddBoardIdTextBox);
+        AddLabeledField(addBoardGrid, 0, 1, "Label", AddBoardLabelTextBox);
+        AddLabeledField(addBoardGrid, 1, 0, "Page title", AddBoardPageTitleTextBox);
+        AddLabeledField(addBoardGrid, 1, 1, "Page subtitle", AddBoardPageSubtitleTextBox);
+        AddLabeledField(addBoardGrid, 2, 0, "AI", AddBoardAiComboBox);
+        AddLabeledField(addBoardGrid, 2, 1, "AI workspace template", AddBoardAiWorkspaceTemplateComboBox);
+        AddLabeledField(addBoardGrid, 3, 0, "UI template", AddBoardUiTemplateComboBox);
+        AddLabeledField(addBoardGrid, 3, 1, "Refs template", AddBoardRefsTemplateComboBox);
+        AddLabeledField(addBoardGrid, 4, 0, "Optional card template", TemplateComboBox);
+        AddLabeledField(addBoardGrid, 4, 1, "Action", AddBoardButton, true);
+        root.Children.Add(CreateSectionCard(new Thickness(14), new StackPanel
+        {
+            Spacing = 10,
+            Children =
+            {
+                CreateSectionTitleBlock("Add Board"),
+                CreateHintBlock("Create a new managed board and optionally seed it from a template."),
+                addBoardGrid,
+                TemplateHelpText,
+            }
+        }));
+
+        root.Children.Add(CreateSectionCard(new Thickness(14), new StackPanel
+        {
+            Spacing = 10,
+            Children =
+            {
+                CreateSectionTitleBlock("Host Runtime Config"),
+                HostConfigPathsText,
+                new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { PreviewEffectiveConfigButton } },
+                CreateFieldLabel("Resolved host summary"),
+                HostConfigPreviewTextBox,
+                CreateFieldLabel("Resolved effective board config"),
+                EffectiveBoardConfigPreviewTextBox,
+            }
+        }));
+
+        var importExportGrid = CreateTwoColumnGrid(2);
+        importExportGrid.RowSpacing = 8;
+        importExportGrid.ColumnSpacing = 8;
+        Grid.SetRow(ImportBoardButton, 0);
+        Grid.SetColumn(ImportBoardButton, 0);
+        Grid.SetRow(ExportBoardButton, 0);
+        Grid.SetColumn(ExportBoardButton, 1);
+        Grid.SetRow(RefreshBoardButton, 1);
+        Grid.SetColumn(RefreshBoardButton, 0);
+        Grid.SetRow(RunSmokeButton, 1);
+        Grid.SetColumn(RunSmokeButton, 1);
+        importExportGrid.Children.Add(ImportBoardButton);
+        importExportGrid.Children.Add(ExportBoardButton);
+        importExportGrid.Children.Add(RefreshBoardButton);
+        importExportGrid.Children.Add(RunSmokeButton);
+        root.Children.Add(CreateSectionCard(new Thickness(14), new StackPanel
+        {
+            Spacing = 10,
+            Children =
+            {
+                CreateSectionTitleBlock("Board Import / Export"),
+                CreateHintBlock("Move runtime dumps in and out, refresh the workspace bootstrap, or run board smoke checks."),
+                importExportGrid,
+            }
+        }));
+
+        var templateGrid = new Grid { ColumnSpacing = 8 };
+        templateGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        templateGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        templateGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Grid.SetColumn(TemplateIngestComboBox, 0);
+        Grid.SetColumn(PreviewTemplateButton, 1);
+        Grid.SetColumn(ApplyTemplateButton, 2);
+        templateGrid.Children.Add(TemplateIngestComboBox);
+        templateGrid.Children.Add(PreviewTemplateButton);
+        templateGrid.Children.Add(ApplyTemplateButton);
+        root.Children.Add(CreateSectionCard(new Thickness(14), new StackPanel
+        {
+            Spacing = 10,
+            Children =
+            {
+                CreateSectionTitleBlock("Template Card Ingest"),
+                CreateHintBlock("Preview the card delta first, then ingest into the current board when the result looks right."),
+                templateGrid,
+                TemplatePreviewText,
+            }
+        }));
+
+        root.Children.Add(CreateSectionCard(new Thickness(14), new StackPanel
+        {
+            Spacing = 10,
+            Children =
+            {
+                CreateSectionTitleBlock("Board Presentation"),
+                CreateHintBlock("Edit the UI payload, metadata, theme pack, and saved canvas layout together so visual changes stay coherent."),
+                CreateFieldLabel("Theme pack"),
+                ThemePackComboBox,
+                CreateFieldLabel("UI config"),
+                UiJsonTextBox,
+                CreateFieldLabel("Metadata"),
+                MetadataJsonTextBox,
+                CreateFieldLabel("Canvas layout"),
+                LayoutJsonTextBox,
+                new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { SaveButton } },
+            }
+        }));
+
+        return new ScrollViewer
+        {
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            Content = root,
+        };
+    }
+
+    private static Grid CreateTwoColumnGrid(int rowCount)
+    {
+        var grid = new Grid { ColumnSpacing = 10, RowSpacing = 10 };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        for (int index = 0; index < rowCount; index += 1)
+        {
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        }
+
+        return grid;
+    }
+
+    private static void AddLabeledField(Grid grid, int row, int column, string label, Control control, bool alignBottom = false)
+    {
+        var host = new StackPanel { Spacing = 6 };
+        host.Children.Add(CreateFieldLabel(label));
+        host.Children.Add(control);
+        if (alignBottom)
+        {
+            host.VerticalAlignment = VerticalAlignment.Bottom;
+        }
+
+        Grid.SetRow(host, row);
+        Grid.SetColumn(host, column);
+        grid.Children.Add(host);
+    }
+
+    private static Border CreateSectionCard(Thickness padding, UIElement child)
+    {
+        return new Border
+        {
+            Padding = padding,
+            CornerRadius = new CornerRadius(14),
+            BorderThickness = new Thickness(1),
+            Background = ResolveBrush("CardBackgroundFillColorDefaultBrush"),
+            BorderBrush = ResolveBrush("BoardBorderStrongBrush"),
+            Child = child,
+        };
+    }
+
+    private static TextBlock CreateSectionTitleBlock(string text)
+    {
+        return new TextBlock
+        {
+            Text = text,
+            FontSize = 17,
+            FontWeight = FontWeights.SemiBold,
+        };
+    }
+
+    private static TextBlock CreateSectionTitleBlock(double fontSize, Windows.UI.Text.FontWeight fontWeight)
+    {
+        return new TextBlock
+        {
+            FontSize = fontSize,
+            FontWeight = fontWeight,
+            TextWrapping = TextWrapping.WrapWholeWords,
+        };
+    }
+
+    private static TextBlock CreateFieldLabel(string text)
+    {
+        return new TextBlock
+        {
+            Text = text,
+            FontSize = 12,
+            FontWeight = FontWeights.SemiBold,
+            Opacity = 0.82,
+        };
+    }
+
+    private static TextBlock CreateHintBlock(string? text = null)
+    {
+        return new TextBlock
+        {
+            Text = text ?? string.Empty,
+            Opacity = 0.68,
+            TextWrapping = TextWrapping.WrapWholeWords,
+        };
+    }
+
+    private static TextBox CreateEditorTextBox(double minHeight, bool isReadOnly)
+    {
+        return new TextBox
+        {
+            AcceptsReturn = true,
+            TextWrapping = TextWrapping.Wrap,
+            MinHeight = minHeight,
+            FontFamily = new FontFamily("Consolas"),
+            IsReadOnly = isReadOnly,
+        };
+    }
+
+    private static Brush? ResolveBrush(string resourceKey)
+    {
+        return Application.Current.Resources.TryGetValue(resourceKey, out object resource)
+            ? resource as Brush
+            : null;
     }
 
     public async void Render(string boardId, ManagedBoardConfigState? config)
@@ -35,7 +339,7 @@ public sealed partial class AppConfigModal : UserControl
         UiJsonTextBox.Text = PrettyJson(config?.RawUiJson ?? "{}");
         MetadataJsonTextBox.Text = PrettyJson(config?.RawMetadataJson ?? "{}");
         LayoutJsonTextBox.Text = PrettyJson(config?.RawLayoutJson ?? "null");
-        ThemePackComboBox.SelectedItem = BoardTheme.ResolveThemePackIdFromUiJson(config?.RawUiJson);
+        SetThemePackSelection(BoardTheme.ResolveThemePackIdFromUiJson(config?.RawUiJson));
         StatusText.Text = "Edit the managed board UI config, metadata, and persisted canvas layout for this board.";
         TemplatePreviewText.Text = string.Empty;
         HostConfigPreviewTextBox.Text = string.Empty;
@@ -383,7 +687,7 @@ public sealed partial class AppConfigModal : UserControl
         UiJsonTextBox.Text = PrettyJson(saved.RawUiJson);
         MetadataJsonTextBox.Text = PrettyJson(saved.RawMetadataJson);
         LayoutJsonTextBox.Text = PrettyJson(saved.RawLayoutJson);
-        ThemePackComboBox.SelectedItem = BoardTheme.ResolveThemePackIdFromUiJson(saved.RawUiJson);
+        SetThemePackSelection(BoardTheme.ResolveThemePackIdFromUiJson(saved.RawUiJson));
         await RefreshEffectiveBoardConfigPreviewAsync();
     }
 

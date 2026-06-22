@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Media;
 using DemoBoards_WinUI.State;
 using DemoBoards_WinUI.Controls;
 using DemoBoards.RuntimeHost;
@@ -12,9 +13,21 @@ namespace DemoBoards_WinUI;
 /// <summary>
 /// The main content page displayed inside the application window.
 /// </summary>
-public sealed partial class MainPage : Page
+public sealed class MainPage : Page
 {
     private const int DefaultRefreshAllIntervalSeconds = 30 * 60;
+
+    private readonly TextBlock PageTitleText;
+    private readonly TextBlock PageSubtitleText;
+    private readonly TimerButton RefreshTimerButton;
+    private readonly MainBoard MainBoardView;
+    private readonly GlobalModal InspectModalView;
+    private readonly GlobalModal ConfigModalView;
+    private readonly GlobalModal ChatModalView;
+    private readonly GlobalModal SmokeModalView;
+    private readonly FloatingCircleButton BoardConfigButton;
+    private readonly Grid StartupOverlay;
+    private readonly TextBlock StartupStatusText;
 
     private BoardStore? boardStore;
     private EmbeddedBoardClient? boardClient;
@@ -25,7 +38,47 @@ public sealed partial class MainPage : Page
 
     public MainPage()
     {
-        InitializeComponent();
+        PageTitleText = new TextBlock
+        {
+            FontSize = 15,
+            FontWeight = Microsoft.UI.Text.FontWeights.Bold,
+            Foreground = ResolveBrush("BoardTextBrush"),
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        };
+        PageSubtitleText = new TextBlock
+        {
+            FontSize = 11,
+            Opacity = 0.92,
+            Foreground = ResolveBrush("BoardTextMutedBrush"),
+            TextWrapping = TextWrapping.NoWrap,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        };
+        RefreshTimerButton = new TimerButton();
+        RefreshTimerButton.Click += OnRefreshClick;
+        MainBoardView = new MainBoard();
+        InspectModalView = new GlobalModal();
+        ConfigModalView = new GlobalModal();
+        ChatModalView = new GlobalModal();
+        SmokeModalView = new GlobalModal();
+        BoardConfigButton = new FloatingCircleButton
+        {
+            SvgIconPath = "Assets/Icons/appconfig-settings.svg",
+            FloatPosition = FloatingButtonPosition.BottomRight,
+            Inset = 18,
+            Diameter = 48,
+            ToolTipText = "Board config",
+        };
+        BoardConfigButton.Click += OnBoardConfigClick;
+        StartupStatusText = new TextBlock
+        {
+            Text = "Preparing board surface...",
+            TextAlignment = TextAlignment.Center,
+            TextWrapping = TextWrapping.WrapWholeWords,
+            Foreground = ResolveBrush("BoardTextMutedBrush"),
+        };
+        StartupOverlay = BuildStartupOverlay();
+
+        Content = BuildPageContent();
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
         refreshCountdownTimer.Tick += OnRefreshCountdownTick;
@@ -35,6 +88,87 @@ public sealed partial class MainPage : Page
         SmokeModalView.CloseRequested += OnSmokeModalCloseRequested;
         RefreshTimerButton.Label = string.Empty;
         RefreshTimerButton.ToolTipText = "Refresh all cards";
+    }
+
+    private UIElement BuildPageContent()
+    {
+        var titleStack = new StackPanel { Spacing = 1, VerticalAlignment = VerticalAlignment.Center };
+        titleStack.Children.Add(PageTitleText);
+        titleStack.Children.Add(PageSubtitleText);
+
+        var refreshStack = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 6,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        refreshStack.Children.Add(RefreshTimerButton);
+
+        var topBarGrid = new Grid { ColumnSpacing = 10, MinHeight = 48 };
+        topBarGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        topBarGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        topBarGrid.Children.Add(titleStack);
+        Grid.SetColumn(refreshStack, 1);
+        topBarGrid.Children.Add(refreshStack);
+
+        var topBar = new Border
+        {
+            Padding = new Thickness(14, 6, 14, 6),
+            Background = ResolveBrush("BoardTopBarBackgroundBrush"),
+            BorderBrush = ResolveBrush("BoardTopBarBorderBrush"),
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            Child = topBarGrid,
+        };
+
+        var contentGrid = new Grid { RowSpacing = 0 };
+        contentGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        contentGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        contentGrid.Children.Add(topBar);
+        Grid.SetRow(MainBoardView, 1);
+        contentGrid.Children.Add(MainBoardView);
+
+        var root = new Grid { Background = ResolveBrush("BoardWindowBackgroundBrush") };
+        root.Children.Add(contentGrid);
+        root.Children.Add(InspectModalView);
+        root.Children.Add(ConfigModalView);
+        root.Children.Add(ChatModalView);
+        root.Children.Add(SmokeModalView);
+        root.Children.Add(BoardConfigButton);
+        root.Children.Add(StartupOverlay);
+        return root;
+    }
+
+    private Grid BuildStartupOverlay()
+    {
+        var statusStack = new StackPanel { Spacing = 14, Width = 320 };
+        statusStack.Children.Add(new ProgressRing { IsActive = true, Width = 40, Height = 40, HorizontalAlignment = HorizontalAlignment.Center });
+        statusStack.Children.Add(new TextBlock
+        {
+            Text = "Loading DemoBoards",
+            FontSize = 22,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Foreground = ResolveBrush("BoardTextBrush"),
+        });
+        statusStack.Children.Add(StartupStatusText);
+
+        return new Grid
+        {
+            Background = ResolveBrush("BoardWindowBackgroundBrush"),
+            Children =
+            {
+                new Border
+                {
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Padding = new Thickness(24),
+                    CornerRadius = new CornerRadius(18),
+                    Background = ResolveBrush("CardBackgroundFillColorSecondaryBrush"),
+                    Child = statusStack,
+                }
+            }
+        };
     }
 
     public static MainPage? TryGetCurrent()
@@ -420,6 +554,13 @@ public sealed partial class MainPage : Page
         }
 
         return DefaultRefreshAllIntervalSeconds;
+    }
+
+    private static Brush? ResolveBrush(string resourceKey)
+    {
+        return Application.Current.Resources.TryGetValue(resourceKey, out object resource)
+            ? resource as Brush
+            : null;
     }
 
     private static string FormatCountdown(TimeSpan remaining)

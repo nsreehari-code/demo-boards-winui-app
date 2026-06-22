@@ -7,10 +7,21 @@ using Microsoft.UI.Xaml.Media;
 
 namespace DemoBoards_WinUI.Controls;
 
-public sealed partial class TruthsetExplorePane : UserControl
+public sealed class TruthsetExplorePane : UserControl
 {
     private const string OpenGlyph = "\uE76B";
     private const string CloseGlyph = "\uE76C";
+
+    private readonly FloatingCircleButton ToggleButton;
+    private readonly Border PaneBorder;
+    private readonly TextBlock CountText;
+    private readonly TextBlock CurrentTitleText;
+    private readonly Border PhaseBadge;
+    private readonly TextBlock PhaseText;
+    private readonly Button PrevButton;
+    private readonly TextBlock CounterText;
+    private readonly Button NextButton;
+    private readonly CardRenderer PreviewCard;
 
     private readonly List<BoardCard> cards = new();
     private int currentIndex;
@@ -19,7 +30,103 @@ public sealed partial class TruthsetExplorePane : UserControl
 
     public TruthsetExplorePane()
     {
-        InitializeComponent();
+        ToggleButton = new FloatingCircleButton
+        {
+            IconGlyph = OpenGlyph,
+            FloatPosition = FloatingButtonPosition.TopRight,
+            Inset = 0,
+            OffsetX = -10,
+            OffsetY = 8,
+            Diameter = 48,
+            ButtonStyle = ResolveStyle("BoardEdgeToggleButtonStyle"),
+            ActiveButtonStyle = ResolveStyle("BoardEdgeToggleButtonActiveStyle"),
+            ToolTipText = "Open Truthset Explorer",
+        };
+        ToggleButton.Click += OnToggleClick;
+
+        CountText = new TextBlock { FontSize = 12, Opacity = 0.72, VerticalAlignment = VerticalAlignment.Center };
+        CurrentTitleText = new TextBlock
+        {
+            FontSize = 13,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = TextWrapping.NoWrap,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        };
+        PhaseText = new TextBlock { FontSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold };
+        PhaseBadge = new Border
+        {
+            Margin = new Thickness(4, 0, 4, 0),
+            Padding = new Thickness(8, 2, 8, 2),
+            CornerRadius = new CornerRadius(10),
+            VerticalAlignment = VerticalAlignment.Center,
+            Visibility = Visibility.Collapsed,
+            Child = PhaseText,
+        };
+        PrevButton = new Button { Content = "Prev", HorizontalAlignment = HorizontalAlignment.Right, Style = ResolveStyle("BoardToolbarButtonStyle") };
+        PrevButton.Click += OnPrevClick;
+        CounterText = new TextBlock { FontSize = 12, Margin = new Thickness(8, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center, Opacity = 0.72 };
+        NextButton = new Button { Content = "Next", HorizontalAlignment = HorizontalAlignment.Right, Style = ResolveStyle("BoardToolbarButtonStyle") };
+        NextButton.Click += OnNextClick;
+        PreviewCard = new CardRenderer();
+
+        var headerGrid = new Grid { Padding = new Thickness(16, 14, 16, 12) };
+        headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        headerGrid.Children.Add(new TextBlock
+        {
+            Text = "Truthset Explore",
+            FontSize = 11,
+            FontWeight = Microsoft.UI.Text.FontWeights.Bold,
+            Foreground = ResolveBrush("BoardAccentStrongBrush"),
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        Grid.SetColumn(CountText, 1);
+        headerGrid.Children.Add(CountText);
+
+        var navGrid = new Grid { Padding = new Thickness(16, 12, 16, 12), ColumnSpacing = 10 };
+        navGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        navGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        navGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        navGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        navGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        navGrid.Children.Add(CurrentTitleText);
+        Grid.SetColumn(PhaseBadge, 1);
+        navGrid.Children.Add(PhaseBadge);
+        Grid.SetColumn(PrevButton, 2);
+        navGrid.Children.Add(PrevButton);
+        Grid.SetColumn(CounterText, 3);
+        navGrid.Children.Add(CounterText);
+        Grid.SetColumn(NextButton, 4);
+        navGrid.Children.Add(NextButton);
+
+        PaneBorder = new Border
+        {
+            Margin = new Thickness(0, 56, 0, 0),
+            Padding = new Thickness(0),
+            CornerRadius = new CornerRadius(14),
+            Visibility = Visibility.Collapsed,
+            Background = ResolveBrush("CardBackgroundFillColorDefaultBrush"),
+            Child = new StackPanel
+            {
+                Spacing = 0,
+                Children =
+                {
+                    headerGrid,
+                    navGrid,
+                    PreviewCard,
+                }
+            }
+        };
+
+        Content = new Grid
+        {
+            Children =
+            {
+                ToggleButton,
+                PaneBorder,
+            }
+        };
     }
 
     public void Render(IReadOnlyList<BoardCard> nextCards, IReadOnlyList<RendererRule>? rendererRules = null)
@@ -131,7 +238,22 @@ public sealed partial class TruthsetExplorePane : UserControl
 
     private void UpdateToggleButtonState()
     {
+        ToggleButton.IsActive = visible;
         ToggleButton.IconGlyph = visible ? CloseGlyph : OpenGlyph;
         ToggleButton.ToolTipText = visible ? "Close Truthset Explorer" : "Open Truthset Explorer";
+    }
+
+    private static Style? ResolveStyle(string resourceKey)
+    {
+        return Application.Current.Resources.TryGetValue(resourceKey, out object resource)
+            ? resource as Style
+            : null;
+    }
+
+    private static Brush? ResolveBrush(string resourceKey)
+    {
+        return Application.Current.Resources.TryGetValue(resourceKey, out object resource)
+            ? resource as Brush
+            : null;
     }
 }

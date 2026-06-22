@@ -16,7 +16,7 @@ using Windows.Storage;
 
 namespace DemoBoards_WinUI.Controls;
 
-public sealed partial class ChatPane : UserControl
+public sealed class ChatPane : UserControl
 {
     private const string AgentOutputChannel = "agent-output";
     private const string AgentToolsChannel = "agent-tools";
@@ -37,10 +37,173 @@ public sealed partial class ChatPane : UserControl
     private string paneTitle = "Chat";
     private readonly List<string> draftAttachmentNames = new();
     private readonly List<BoardChatMessage> historyMessages = new();
+    private readonly Grid HeaderRow;
+    private readonly TextBlock HeaderTitleText;
+    private readonly Button PopoutButton;
+    private readonly Button HistoryButton;
+    private readonly StackPanel HistoryHost;
+    private readonly StackPanel MessagesHost;
+    private readonly Border WorkingBubbleBorder;
+    private readonly TextBlock WorkingTitleText;
+    private readonly TextBlock WorkingStatusText;
+    private readonly StackPanel WorkingDetailsHost;
+    private readonly Border DropZoneBorder;
+    private readonly TextBox ComposerTextBox;
+    private readonly TextBlock DropHintText;
+    private readonly StackPanel AttachmentHost;
+    private readonly TextBlock StatusText;
+    private readonly Button AttachButton;
+    private readonly Button SendButton;
 
     public ChatPane()
     {
-        InitializeComponent();
+        HeaderTitleText = new TextBlock
+        {
+            FontWeight = FontWeights.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        PopoutButton = new Button();
+        HeaderRow = new Grid
+        {
+            ColumnSpacing = 8,
+            Visibility = Visibility.Collapsed
+        };
+        HeaderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        HeaderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        HeaderRow.Children.Add(HeaderTitleText);
+        Grid.SetColumn(PopoutButton, 1);
+        HeaderRow.Children.Add(PopoutButton);
+
+        HistoryButton = new Button
+        {
+            Content = "Show previous messages",
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Visibility = Visibility.Collapsed
+        };
+        HistoryHost = new StackPanel { Spacing = 10 };
+        MessagesHost = new StackPanel { Spacing = 10 };
+        WorkingTitleText = new TextBlock { FontWeight = FontWeights.SemiBold };
+        WorkingStatusText = new TextBlock
+        {
+            Opacity = 0.72,
+            TextWrapping = TextWrapping.WrapWholeWords
+        };
+        WorkingDetailsHost = new StackPanel { Spacing = 6 };
+        WorkingBubbleBorder = new Border
+        {
+            Padding = new Thickness(10),
+            CornerRadius = new CornerRadius(12),
+            Visibility = Visibility.Collapsed,
+            Child = new StackPanel
+            {
+                Spacing = 6,
+                Children =
+                {
+                    WorkingTitleText,
+                    WorkingStatusText,
+                    WorkingDetailsHost,
+                }
+            }
+        };
+
+        ComposerTextBox = new TextBox
+        {
+            AcceptsReturn = true,
+            TextWrapping = TextWrapping.Wrap,
+            MinHeight = 84,
+            PlaceholderText = "Type a message"
+        };
+        DropHintText = new TextBlock
+        {
+            Opacity = 0.6,
+            Text = "Drop files here or use Attach file to stage them for the next send.",
+            TextWrapping = TextWrapping.WrapWholeWords
+        };
+        DropZoneBorder = new Border
+        {
+            Padding = new Thickness(8),
+            CornerRadius = new CornerRadius(12),
+            AllowDrop = true,
+            Child = new StackPanel
+            {
+                Spacing = 6,
+                Children =
+                {
+                    ComposerTextBox,
+                    DropHintText,
+                }
+            }
+        };
+        AttachmentHost = new StackPanel
+        {
+            Spacing = 6,
+            Visibility = Visibility.Collapsed
+        };
+        StatusText = new TextBlock
+        {
+            Opacity = 0.72,
+            TextWrapping = TextWrapping.WrapWholeWords,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        AttachButton = new Button();
+        SendButton = new Button { Content = "Send" };
+
+        var messageStack = new StackPanel
+        {
+            Spacing = 10,
+            Children =
+            {
+                HistoryButton,
+                HistoryHost,
+                MessagesHost,
+                WorkingBubbleBorder,
+            }
+        };
+
+        var footerGrid = new Grid { ColumnSpacing = 8 };
+        footerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        footerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        footerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        footerGrid.Children.Add(StatusText);
+        Grid.SetColumn(AttachButton, 1);
+        footerGrid.Children.Add(AttachButton);
+        Grid.SetColumn(SendButton, 2);
+        footerGrid.Children.Add(SendButton);
+
+        var composerStack = new StackPanel
+        {
+            Spacing = 6,
+            Children =
+            {
+                DropZoneBorder,
+                AttachmentHost,
+                footerGrid,
+            }
+        };
+
+        var root = new Grid { RowSpacing = 10 };
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.Children.Add(HeaderRow);
+        var scrollViewer = new ScrollViewer
+        {
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Content = messageStack
+        };
+        Grid.SetRow(scrollViewer, 1);
+        root.Children.Add(scrollViewer);
+        Grid.SetRow(composerStack, 2);
+        root.Children.Add(composerStack);
+        Content = root;
+
+        PopoutButton.Click += OnPopoutClick;
+        HistoryButton.Click += OnLoadHistoryClick;
+        ComposerTextBox.TextChanged += OnComposerTextChanged;
+        DropZoneBorder.DragOver += OnComposerDragOver;
+        DropZoneBorder.Drop += OnComposerDrop;
+        AttachButton.Click += OnAttachClick;
+        SendButton.Click += OnSendClick;
         Unloaded += OnUnloaded;
         ApplyPresentationMode();
     }
