@@ -1,0 +1,12 @@
+{
+  "name": "demo-boards-winui-app",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "goldenharness": "dotnet run --project engine/GoldenHarness/GoldenHarness.csproj",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
+}

@@ -211,22 +211,26 @@ function createRuntimeOptions(boardId, bundle, invocationAdapter, extras) {
   if (!bundle.boardAdapter.callbackTransport) {
     bundle.boardAdapter.callbackTransport = createNoopCallbackTransport();
   }
+  var boardConfig = {
+    label: 'base',
+    boardAdapter: bundle.boardAdapter,
+    baseRef: refs.baseRef,
+    boardRuntimeStoreRef: refs.boardRuntimeStoreRef,
+    cardStoreRef: refs.cardStoreRef,
+    outputsStoreRef: refs.outputsStoreRef,
+    queueStoreRef: refs.queueStoreRef,
+    artifactsStoreRef: refs.artifactsStoreRef,
+    fetchedSourcesStoreRef: refs.fetchedSourcesStoreRef,
+    chatStoreRef: refs.chatStoreRef,
+    scratchStoreRef: refs.scratchStoreRef,
+    taskExecutorRef: createHostTaskExecutorRef(boardId),
+    chatHandlerFlow: createHostedChatHandlerFlow(),
+  };
   return Object.assign({
     boardId: boardId,
-    boards: [{
-      label: 'base',
-      boardAdapter: bundle.boardAdapter,
-      baseRef: refs.baseRef,
-      boardRuntimeStoreRef: refs.boardRuntimeStoreRef,
-      cardStoreRef: refs.cardStoreRef,
-      outputsStoreRef: refs.outputsStoreRef,
-      queueStoreRef: refs.queueStoreRef,
-      artifactsStoreRef: refs.artifactsStoreRef,
-      fetchedSourcesStoreRef: refs.fetchedSourcesStoreRef,
-      chatStoreRef: refs.chatStoreRef,
-      scratchStoreRef: refs.scratchStoreRef,
-    }],
+    boards: [boardConfig],
     invocationAdapter: invocationAdapter || { invoke: async function () { return { dispatched: false }; } },
+    chatFlowRunner: createHostChatFlowRunner(),
     serverUrl: 'http://localhost:3000',
     logger: { info: function () {}, warn: function () {}, error: function () {} },
   }, extras || {});
@@ -510,8 +514,15 @@ function createHostBridgeBundle(boardId) {
       journalStorageForRef: function (ref) { return createJournalStorage(ref + ':journal'); },
       lock: createRelayLock(),
       callbackTransport: createNoopCallbackTransport(),
-      dispatchExecution: async function () {
-        return { dispatched: false, error: 'dispatchExecution is not configured for this embedded harness' };
+      dispatchExecution: async function (ref, args) {
+        if (!globalThis.HostInvocationBridge) {
+          throw new Error('HostInvocationBridge is required for embedded executor dispatch');
+        }
+        var result = JSON.parse(HostInvocationBridge.Invoke(JSON.stringify(ref), JSON.stringify(args || {})));
+        if (!result || result.dispatched !== true) {
+          throw new Error(result && result.error ? String(result.error) : 'embedded executor dispatch failed');
+        }
+        return result;
       },
       resolveBlob: async function (ref) {
         var raw = HostStorageBridge.ResolveBlobRef(ref.kind, ref.value);
@@ -542,6 +553,45 @@ function createHostInvocationAdapter() {
     describe: async function (ref) {
       var raw = HostInvocationBridge.Describe(JSON.stringify(ref));
       return raw ? JSON.parse(raw) : null;
+    },
+  };
+}
+
+function createHostTaskExecutorRef(boardId) {
+  return {
+    meta: 'task-executor',
+    howToRun: 'embedded-host',
+    whatToRun: {
+      kind: 'embedded-host',
+      value: 'board-worker',
+    },
+    extra: { boardId: boardId },
+  };
+}
+
+function createHostedChatHandlerFlow() {
+  return { kind: 'hosted-chat-agent' };
+}
+
+function createHostChatFlowRunner() {
+  if (!globalThis.HostInvocationBridge) {
+    return {
+      run: async function () {
+        return { dispatched: false, error: 'HostInvocationBridge missing' };
+      },
+    };
+  }
+
+  return {
+    run: async function (handlerFlow, args) {
+      var ref = {
+        meta: 'chat-handler-flow',
+        howToRun: 'embedded-host',
+        whatToRun: handlerFlow && typeof handlerFlow === 'object'
+          ? handlerFlow
+          : { kind: 'hosted-chat-agent' },
+      };
+      return JSON.parse(HostInvocationBridge.Invoke(JSON.stringify(ref), JSON.stringify(args || {})));
     },
   };
 }

@@ -1,0 +1,21 @@
+{
+  "repoRoot": "${repoRoot}",
+  "frontend": {
+    "canvasLayout": {
+      "defaultCardWidth": 360,
+      "defaultCardHeight": 240,
+      "columnGap": 420,
+      "rowGap": 280,
+      "originX": 40,
+      "originY": 40
+    }
+  },
+  "backend": {
+    "hostConfigPath": "${repoRoot}/demo-boards-ns-code/demo-board/server/hosted-board-runtime/hosted-board-runtime.localfs.config.json",
+    "templatesConfigPath": "${repoRoot}/demo-boards-ns-code/demo-board/server/hosted-board-runtime/templates-config.json",
+    "localFsConfigLoaderPath": "${repoRoot}/demo-boards-ns-code/demo-board/server/hosted-board-runtime/localfs-adapter/load-config.js",
+    "hostedPrestartScriptPath": "${repoRoot}/demo-boards-ns-code/demo-board/server/hosted-board-runtime/scripts/prestart.js",
+    "setupSingleAiWorkspaceScriptPath": "${repoRoot}/demo-boards-ns-code/demo-board/server/hosted-board-runtime/scripts/setup-single-ai-workspace.js",
+    "assistantRegistryPath": "${repoRoot}/demo-boards-ns-code/demo-board/server/chat-flow/assistant_registry.json"
+  }
+}

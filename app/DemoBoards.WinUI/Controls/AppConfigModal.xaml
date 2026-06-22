@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<UserControl
+    x:Class="DemoBoards_WinUI.Controls.AppConfigModal"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Spacing="12">
+            <TextBlock Text="Board Configuration" FontSize="20" FontWeight="SemiBold" />
+            <TextBlock x:Name="BoardIdText" Opacity="0.72" TextWrapping="WrapWholeWords" />
+            <TextBlock x:Name="StatusText" Opacity="0.72" TextWrapping="WrapWholeWords" />
+
+            <Border Padding="12" CornerRadius="12" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Add Board" FontSize="18" FontWeight="SemiBold" />
+                    <Grid ColumnSpacing="8" RowSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBox x:Name="AddBoardIdTextBox" Grid.Row="0" Grid.Column="0" PlaceholderText="Board Id" />
+                        <TextBox x:Name="AddBoardLabelTextBox" Grid.Row="0" Grid.Column="1" PlaceholderText="Label" />
+                        <TextBox x:Name="AddBoardPageTitleTextBox" Grid.Row="1" Grid.Column="0" PlaceholderText="Page Title" />
+                        <TextBox x:Name="AddBoardPageSubtitleTextBox" Grid.Row="1" Grid.Column="1" PlaceholderText="Page Subtitle" />
+                        <ComboBox x:Name="AddBoardAiComboBox" Grid.Row="2" Grid.Column="0" PlaceholderText="AI" />
+                        <ComboBox x:Name="AddBoardAiWorkspaceTemplateComboBox" Grid.Row="2" Grid.Column="1" PlaceholderText="AI Workspace Template" />
+                        <ComboBox x:Name="AddBoardUiTemplateComboBox" Grid.Row="3" Grid.Column="0" PlaceholderText="UI Template" />
+                        <ComboBox x:Name="AddBoardRefsTemplateComboBox" Grid.Row="3" Grid.Column="1" PlaceholderText="Refs Template" />
+                        <ComboBox x:Name="TemplateComboBox" Grid.Row="4" Grid.Column="0" PlaceholderText="Optional card template" DisplayMemberPath="Label" SelectedValuePath="Key" />
+                        <Button x:Name="AddBoardButton" Grid.Row="4" Grid.Column="1" Content="Add board" Click="OnAddBoardClick" />
+                    </Grid>
+                    <TextBlock x:Name="TemplateHelpText" Opacity="0.6" TextWrapping="WrapWholeWords" Text="If selected, the template cards will be ingested into the newly created board." />
+                </StackPanel>
+            </Border>
+
+            <Border Padding="12" CornerRadius="12" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Host Runtime Config" FontSize="18" FontWeight="SemiBold" />
+                    <TextBlock x:Name="HostConfigPathsText" Opacity="0.72" TextWrapping="WrapWholeWords" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button x:Name="PreviewEffectiveConfigButton" Content="Preview effective board config" Click="OnPreviewEffectiveConfigClick" />
+                    </StackPanel>
+                    <TextBlock Text="Resolved host summary" FontWeight="SemiBold" />
+                    <TextBox x:Name="HostConfigPreviewTextBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="120" FontFamily="Consolas" IsReadOnly="True" />
+                    <TextBlock Text="Resolved effective board config" FontWeight="SemiBold" />
+                    <TextBox x:Name="EffectiveBoardConfigPreviewTextBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="180" FontFamily="Consolas" IsReadOnly="True" />
+                </StackPanel>
+            </Border>
+
+            <Border Padding="12" CornerRadius="12" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Board Import / Export" FontSize="18" FontWeight="SemiBold" />
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Button x:Name="ImportBoardButton" Grid.Column="0" Content="Import board" Click="OnImportBoardClick" />
+                        <Button x:Name="ExportBoardButton" Grid.Column="1" Content="Export board" Click="OnExportBoardClick" />
+                        <Button x:Name="RefreshBoardButton" Grid.Column="2" Content="Refresh workspace bootstrap" Click="OnRefreshBoardClick" />
+                        <Button x:Name="RunSmokeButton" Grid.Column="3" Content="Run tests" Click="OnRunSmokeClick" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <Border Padding="12" CornerRadius="12" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Template Card Ingest" FontSize="18" FontWeight="SemiBold" />
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <ComboBox x:Name="TemplateIngestComboBox" Grid.Column="0" PlaceholderText="Select template" DisplayMemberPath="Label" SelectedValuePath="Key" />
+                        <Button x:Name="PreviewTemplateButton" Grid.Column="1" Content="Preview ingest" Click="OnPreviewTemplateClick" />
+                        <Button x:Name="ApplyTemplateButton" Grid.Column="2" Content="Ingest template" Click="OnApplyTemplateClick" />
+                    </Grid>
+                    <TextBlock x:Name="TemplatePreviewText" FontFamily="Consolas" TextWrapping="WrapWholeWords" />
+                </StackPanel>
+            </Border>
+
+            <TextBlock Text="UI Config" FontWeight="SemiBold" />
+            <TextBox x:Name="UiJsonTextBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="160" FontFamily="Consolas" />
+
+            <TextBlock Text="Metadata" FontWeight="SemiBold" />
+            <TextBox x:Name="MetadataJsonTextBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="140" FontFamily="Consolas" />
+
+            <TextBlock Text="Theme Pack" FontWeight="SemiBold" />
+            <ComboBox x:Name="ThemePackComboBox" SelectionChanged="OnThemePackSelectionChanged" />
+
+            <TextBlock Text="Canvas Layout" FontWeight="SemiBold" />
+            <TextBox x:Name="LayoutJsonTextBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="180" FontFamily="Consolas" />
+
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button x:Name="SaveButton" Content="Save board config" Click="OnSaveClick" />
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

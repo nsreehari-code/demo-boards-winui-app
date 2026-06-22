@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Globalization;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -437,80 +437,69 @@ public sealed class HostStorageBridge
 
 public sealed class CopilotFoundryInvocationBridge
 {
-    private readonly InvocationExecutorConfig config;
+    private readonly HostControlfaceBridge controlfaceBridge;
+    private readonly string serverUrl;
+    private readonly string mcpServerUrl;
+    private readonly string runnerPath;
+    private readonly string repoRoot;
     private string? lastInvocationJson;
 
-    public CopilotFoundryInvocationBridge(InvocationExecutorConfig? config = null)
+    public CopilotFoundryInvocationBridge(HostControlfaceBridge controlfaceBridge, string serverUrl)
     {
-        this.config = config ?? InvocationExecutorConfig.FromEnvironment();
+        this.controlfaceBridge = controlfaceBridge ?? throw new ArgumentNullException(nameof(controlfaceBridge));
+        if (string.IsNullOrWhiteSpace(serverUrl))
+        {
+            throw new ArgumentException("Server URL is required.", nameof(serverUrl));
+        }
+
+        this.serverUrl = serverUrl.TrimEnd('/');
+        mcpServerUrl = this.serverUrl + "/agent/mcp";
+        runnerPath = Path.Combine(AppContext.BaseDirectory, "node", "host-invocation-runner.mjs");
+        repoRoot = ResolveRepoRoot(AppContext.BaseDirectory)
+            ?? throw new InvalidOperationException("Unable to locate the ai-tool-evolver repo root from the WinUI runtime host.");
     }
 
     public string Invoke(string refJson, string argsJson)
     {
-        JsonNode? refNode = JsonNode.Parse(refJson);
-        JsonNode? argsNode = JsonNode.Parse(argsJson);
-        string kind = refNode?["whatToRun"]?["kind"]?.GetValue<string>() ?? "";
-        string? command = config.ResolveCommand(kind);
-
-        var record = new JsonObject
+        lastInvocationJson = new JsonObject
         {
-            ["ref"] = refNode?.DeepClone(),
-            ["args"] = argsNode?.DeepClone(),
+            ["ref"] = JsonNode.Parse(refJson),
+            ["args"] = JsonNode.Parse(argsJson),
             ["provider"] = "copilot-foundry",
-            ["kind"] = kind,
-        };
-
-        if (string.IsNullOrWhiteSpace(command))
-        {
-            // No external executor configured — record the dispatch intent. The
-            // in-process model treats this as a successful queue for the host.
-            record["mode"] = "recorded";
-            lastInvocationJson = record.ToJsonString();
-            return "{\"dispatched\":true,\"mode\":\"recorded\"}";
-        }
-
-        var invocationPayload = new JsonObject
-        {
-            ["ref"] = refNode?.DeepClone(),
-            ["args"] = argsNode?.DeepClone(),
         }.ToJsonString();
 
-        ExecutorResult result = RunExecutor(command!, invocationPayload, config.TimeoutMs);
-        record["mode"] = "executed";
-        record["command"] = command;
-        record["exitCode"] = result.ExitCode;
-        record["output"] = Truncate(result.Output, 4000);
-        if (!string.IsNullOrEmpty(result.Error))
+        try
         {
-            record["error"] = Truncate(result.Error, 2000);
+            JsonObject invocationRef = ParseRequiredJsonObject(refJson, "Invocation ref must be a JSON object.");
+            JsonObject args = ParseOptionalJsonObject(argsJson);
+            JsonObject payload = BuildRunnerPayload(invocationRef, args);
+            JsonObject result = ExecuteRunner(payload);
+            return result.ToJsonString();
         }
-        lastInvocationJson = record.ToJsonString();
-
-        var response = new JsonObject
+        catch (Exception ex)
         {
-            ["dispatched"] = result.ExitCode == 0,
-            ["mode"] = "executed",
-            ["exitCode"] = result.ExitCode,
-        };
-        if (result.ExitCode != 0)
-        {
-            response["error"] = string.IsNullOrEmpty(result.Error)
-                ? $"executor exited with code {result.ExitCode}"
-                : Truncate(result.Error, 2000);
+            return new JsonObject
+            {
+                ["dispatched"] = false,
+                ["error"] = ex.Message,
+            }.ToJsonString();
         }
-        return response.ToJsonString();
     }
 
     public string Describe(string refJson)
     {
+        JsonObject invocationRef = ParseOptionalJsonObject(refJson);
+        string kind = invocationRef["meta"]?.GetValue<string>()
+            ?? invocationRef["howToRun"]?.GetValue<string>()
+            ?? "chat-handler";
+
         return new JsonObject
         {
             ["name"] = "copilot-foundry-host",
-            ["kind"] = "chat-handler",
+            ["kind"] = kind,
             ["protocolVersion"] = "1.0",
-            ["ref"] = JsonNode.Parse(refJson),
+            ["ref"] = invocationRef,
             ["supports"] = new JsonArray("invoke", "describe"),
-            ["executor"] = config.IsConfigured ? "configured" : "recorded",
         }.ToJsonString();
     }
 
@@ -524,121 +513,202 @@ public sealed class CopilotFoundryInvocationBridge
         lastInvocationJson = null;
     }
 
-    private static ExecutorResult RunExecutor(string command, string stdinPayload, int timeoutMs)
+    private JsonObject BuildRunnerPayload(JsonObject invocationRef, JsonObject args)
     {
-        try
+        string meta = invocationRef["meta"]?.GetValue<string>()?.Trim() ?? string.Empty;
+        string boardId = ResolveBoardId(invocationRef, args);
+        JsonObject boardRecord = GetBoardRecord(boardId);
+
+        if (string.Equals(meta, "task-executor", StringComparison.Ordinal))
         {
-            var startInfo = new ProcessStartInfo
+            JsonObject request = args.DeepClone() as JsonObject ?? new JsonObject();
+            JsonObject extra = request["extra"] as JsonObject ?? new JsonObject();
+            foreach ((string key, JsonNode? value) in BuildTaskExecutorExtra(boardId, boardRecord))
             {
-                RedirectStandardInput = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
+                extra[key] = value?.DeepClone();
+            }
+
+            request["extra"] = extra;
+            return new JsonObject
+            {
+                ["mode"] = "task",
+                ["repoRoot"] = repoRoot,
+                ["boardId"] = boardId,
+                ["request"] = request,
             };
+        }
 
-            // The command comes from trusted host configuration; board-supplied
-            // data is delivered only via stdin (never interpolated into argv).
-            if (OperatingSystem.IsWindows())
+        if (string.Equals(meta, "chat-handler", StringComparison.Ordinal)
+            || string.Equals(meta, "chat-handler-flow", StringComparison.Ordinal))
+        {
+            return new JsonObject
             {
-                startInfo.FileName = "cmd.exe";
-                startInfo.ArgumentList.Add("/c");
-                startInfo.ArgumentList.Add(command);
-            }
-            else
+                ["mode"] = "chat",
+                ["repoRoot"] = repoRoot,
+                ["boardId"] = boardId,
+                ["serverUrl"] = serverUrl,
+                ["mcpServerUrl"] = mcpServerUrl,
+                ["agentFaceMcp"] = "/agent/mcp",
+                ["boardRecord"] = boardRecord,
+                ["request"] = new JsonObject
+                {
+                    ["ref"] = invocationRef.DeepClone(),
+                    ["args"] = args.DeepClone(),
+                },
+            };
+        }
+
+        throw new InvalidOperationException($"Unsupported host invocation meta '{meta}'.");
+    }
+
+    private JsonObject BuildTaskExecutorExtra(string boardId, JsonObject boardRecord)
+    {
+        JsonObject extra = new()
+        {
+            ["boardId"] = boardId,
+            ["serverUrl"] = serverUrl,
+        };
+
+        string aiWorkspaceRoot = boardRecord["aiWorkspaceRoot"]?.GetValue<string>()?.Trim() ?? string.Empty;
+        if (aiWorkspaceRoot.Length > 0)
+        {
+            extra["aiWorkspaceRoot"] = aiWorkspaceRoot;
+        }
+
+        return extra;
+    }
+
+    private JsonObject ExecuteRunner(JsonObject payload)
+    {
+        if (!File.Exists(runnerPath))
+        {
+            throw new FileNotFoundException("The host invocation runner is missing from the runtime output.", runnerPath);
+        }
+
+        ProcessStartInfo startInfo = new("node")
+        {
+            WorkingDirectory = Path.Combine(repoRoot, "demo-boards-ns-code"),
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        startInfo.ArgumentList.Add(runnerPath);
+
+        using Process process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("Failed to launch node for host invocation.");
+
+        process.StandardInput.Write(payload.ToJsonString());
+        process.StandardInput.Close();
+
+        string stdout = process.StandardOutput.ReadToEnd();
+        string stderr = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+
+        if (process.ExitCode != 0)
+        {
+            string errorText = string.IsNullOrWhiteSpace(stderr) ? stdout : stderr;
+            throw new InvalidOperationException(string.IsNullOrWhiteSpace(errorText)
+                ? $"Host invocation runner exited with code {process.ExitCode}."
+                : errorText.Trim());
+        }
+
+        JsonNode? parsed = JsonNode.Parse(string.IsNullOrWhiteSpace(stdout) ? "{}" : stdout);
+        if (parsed is not JsonObject result)
+        {
+            throw new InvalidOperationException("Host invocation runner returned invalid JSON.");
+        }
+
+        if (result["dispatched"]?.GetValue<bool?>() == false)
+        {
+            string errorText = result["error"]?.GetValue<string>()?.Trim() ?? "Host invocation runner reported a dispatch failure.";
+            throw new InvalidOperationException(errorText);
+        }
+
+        result["dispatched"] = true;
+        return result;
+    }
+
+    private JsonObject GetBoardRecord(string boardId)
+    {
+        if (string.IsNullOrWhiteSpace(boardId))
+        {
+            return new JsonObject();
+        }
+
+        string? raw = controlfaceBridge.GetBoardContainerRecordJson(boardId);
+        return ParseOptionalJsonObject(raw);
+    }
+
+    private static string ResolveBoardId(JsonObject invocationRef, JsonObject args)
+    {
+        return FirstNonEmpty(
+                args["boardId"]?.GetValue<string>(),
+                args["board_id"]?.GetValue<string>(),
+                invocationRef["extra"]?["boardId"]?.GetValue<string>(),
+                invocationRef["extra"]?["board_id"]?.GetValue<string>())
+            ?? "winui-board";
+    }
+
+    private static string? ResolveRepoRoot(string startPath)
+    {
+        foreach (string seed in new[] { startPath, Directory.GetCurrentDirectory() })
+        {
+            DirectoryInfo? current = Directory.Exists(seed)
+                ? new DirectoryInfo(seed)
+                : Path.GetDirectoryName(seed) is string parentPath
+                    ? new DirectoryInfo(parentPath)
+                    : null;
+            while (current is not null)
             {
-                startInfo.FileName = "/bin/sh";
-                startInfo.ArgumentList.Add("-c");
-                startInfo.ArgumentList.Add(command);
+                bool hasDemoBoards = Directory.Exists(Path.Combine(current.FullName, "demo-boards-ns-code"));
+                bool hasYamlFlow = Directory.Exists(Path.Combine(current.FullName, "yaml-flow"));
+                bool hasWinUi = Directory.Exists(Path.Combine(current.FullName, "demo-boards-winui-app"));
+                if (hasDemoBoards && hasYamlFlow && hasWinUi)
+                {
+                    return current.FullName;
+                }
+
+                current = current.Parent;
             }
+        }
 
-            using var process = new Process { StartInfo = startInfo };
-            process.Start();
-            process.StandardInput.Write(stdinPayload);
-            process.StandardInput.Close();
+        return null;
+    }
 
-            string output = process.StandardOutput.ReadToEnd();
-            string error = process.StandardError.ReadToEnd();
+    private static JsonObject ParseRequiredJsonObject(string json, string errorMessage)
+    {
+        JsonNode? parsed = JsonNode.Parse(json);
+        if (parsed is not JsonObject jsonObject)
+        {
+            throw new InvalidOperationException(errorMessage);
+        }
 
-            if (!process.WaitForExit(timeoutMs))
+        return jsonObject;
+    }
+
+    private static JsonObject ParseOptionalJsonObject(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return new JsonObject();
+        }
+
+        JsonNode? parsed = JsonNode.Parse(json);
+        return parsed as JsonObject ?? new JsonObject();
+    }
+
+    private static string? FirstNonEmpty(params string?[] values)
+    {
+        foreach (string? value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
             {
-                try { process.Kill(entireProcessTree: true); } catch { /* best effort */ }
-                return new ExecutorResult(-1, output, "executor timed out after " + timeoutMs + "ms");
+                return value.Trim();
             }
-
-            return new ExecutorResult(process.ExitCode, output, error);
-        }
-        catch (Exception ex)
-        {
-            return new ExecutorResult(-1, string.Empty, ex.Message);
-        }
-    }
-
-    private static string Truncate(string? value, int max)
-    {
-        if (string.IsNullOrEmpty(value)) return string.Empty;
-        return value.Length <= max ? value : value.Substring(0, max) + "…";
-    }
-
-    private readonly record struct ExecutorResult(int ExitCode, string Output, string Error);
-}
-
-/// <summary>
-/// Resolves which external command (if any) backs the invocation executor. The
-/// command is read from trusted host environment configuration; when none is
-/// set the bridge stays in record-only mode (no process is spawned).
-/// </summary>
-public sealed class InvocationExecutorConfig
-{
-    private readonly string? copilotCommand;
-    private readonly string? foundryCommand;
-    private readonly string? defaultCommand;
-
-    public InvocationExecutorConfig(string? copilotCommand, string? foundryCommand, string? defaultCommand, int timeoutMs)
-    {
-        this.copilotCommand = Normalize(copilotCommand);
-        this.foundryCommand = Normalize(foundryCommand);
-        this.defaultCommand = Normalize(defaultCommand);
-        TimeoutMs = timeoutMs > 0 ? timeoutMs : 30000;
-    }
-
-    public int TimeoutMs { get; }
-
-    public bool IsConfigured => copilotCommand is not null || foundryCommand is not null || defaultCommand is not null;
-
-    public string? ResolveCommand(string kind)
-    {
-        if (string.Equals(kind, "copilot", StringComparison.OrdinalIgnoreCase) && copilotCommand is not null)
-        {
-            return copilotCommand;
         }
 
-        if (string.Equals(kind, "foundry", StringComparison.OrdinalIgnoreCase) && foundryCommand is not null)
-        {
-            return foundryCommand;
-        }
-
-        return defaultCommand;
-    }
-
-    public static InvocationExecutorConfig FromEnvironment()
-    {
-        int timeoutMs = 30000;
-        string? rawTimeout = Environment.GetEnvironmentVariable("DEMO_BOARDS_EXECUTOR_TIMEOUT_MS");
-        if (!string.IsNullOrWhiteSpace(rawTimeout) && int.TryParse(rawTimeout, out int parsed) && parsed > 0)
-        {
-            timeoutMs = parsed;
-        }
-
-        return new InvocationExecutorConfig(
-            Environment.GetEnvironmentVariable("DEMO_BOARDS_COPILOT_COMMAND"),
-            Environment.GetEnvironmentVariable("DEMO_BOARDS_FOUNDRY_COMMAND"),
-            Environment.GetEnvironmentVariable("DEMO_BOARDS_EXECUTOR_COMMAND"),
-            timeoutMs);
-    }
-
-    private static string? Normalize(string? value)
-    {
-        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        return null;
     }
 }

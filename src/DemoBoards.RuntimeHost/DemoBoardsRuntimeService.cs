@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.ClearScript.V8;
@@ -15,6 +17,7 @@ public sealed class DemoBoardsRuntimeService : IAsyncDisposable
 
     private readonly RuntimePaths paths;
     private readonly HostStorageBridge storageBridge;
+    private readonly HostControlfaceBridge controlfaceBridge;
     private readonly CopilotFoundryInvocationBridge invocationBridge;
     private readonly HostBoardNotifier boardNotifier;
     private readonly V8ScriptEngine engine;
@@ -31,6 +34,7 @@ public sealed class DemoBoardsRuntimeService : IAsyncDisposable
     /// re-renders). Fires for both shell-initiated and agentface-initiated edits.
     /// </summary>
     public event EventHandler<BoardSnapshot>? BoardSnapshotChanged;
+    public event EventHandler<string>? RuntimeNotificationsReceived;
 
     public DemoBoardsRuntimeService(RuntimePaths? paths = null)
     {
@@ -38,9 +42,11 @@ public sealed class DemoBoardsRuntimeService : IAsyncDisposable
         Directory.CreateDirectory(this.paths.RootDir);
 
         storageBridge = new HostStorageBridge(this.paths.HostStorageDir);
-        invocationBridge = new CopilotFoundryInvocationBridge();
+        controlfaceBridge = new HostControlfaceBridge(this.paths.RootDir, AppContext.BaseDirectory);
+        invocationBridge = new CopilotFoundryInvocationBridge(controlfaceBridge, AgentfacePrefix.TrimEnd('/'));
         boardNotifier = new HostBoardNotifier();
         boardNotifier.BoardChanged += () => Interlocked.Increment(ref boardChangeNotifications);
+        boardNotifier.BoardNotificationsReceived += HandleBoardNotificationsReceived;
         engine = new V8ScriptEngine(V8ScriptEngineFlags.EnableTaskPromiseConversion | V8ScriptEngineFlags.EnableValueTaskPromiseConversion);
         httpListener = new HttpListener();
         httpListener.Prefixes.Add(AgentfacePrefix);
@@ -62,6 +68,11 @@ public sealed class DemoBoardsRuntimeService : IAsyncDisposable
     public BoardSnapshot GetBoardSnapshot()
     {
         return BoardSnapshot.Parse(lastBoardSnapshotJson);
+    }
+
+    public IReadOnlyDictionary<string, BoardWatchpartyState> GetCardWatchparties()
+    {
+        return BoardSnapshot.ParseWatchparties(lastBoardSnapshotJson);
     }
 
     public int BoardChangeNotificationCount => boardChangeNotifications;
@@ -86,12 +97,55 @@ public sealed class DemoBoardsRuntimeService : IAsyncDisposable
         return PublishSnapshot(payload);
     }
 
+    public async Task<(int StatusCode, string Body, IReadOnlyDictionary<string, string> Headers)> ProxyRuntimeApiAsync(string method, string path, string? bodyJson = null, IReadOnlyDictionary<string, string>? requestHeaders = null)
+    {
+        string requestHeadersJson = JsonSerializer.Serialize(requestHeaders ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+        string payload = await InvokeJsAsync("winuiHandleRuntimeApi", method, path, bodyJson ?? string.Empty, requestHeadersJson).ConfigureAwait(false);
+        using JsonDocument document = JsonDocument.Parse(payload);
+        JsonElement root = document.RootElement;
+        int statusCode = root.TryGetProperty("statusCode", out JsonElement statusElement)
+            && statusElement.ValueKind == JsonValueKind.Number
+            ? statusElement.GetInt32()
+            : 200;
+        string body = root.TryGetProperty("body", out JsonElement bodyElement)
+            && bodyElement.ValueKind == JsonValueKind.String
+            ? bodyElement.GetString() ?? string.Empty
+            : string.Empty;
+        Dictionary<string, string> headers = new(StringComparer.OrdinalIgnoreCase);
+        if (root.TryGetProperty("headers", out JsonElement headersElement)
+            && headersElement.ValueKind == JsonValueKind.Object)
+        {
+            foreach (JsonProperty property in headersElement.EnumerateObject())
+            {
+                if (property.Value.ValueKind == JsonValueKind.String)
+                {
+                    headers[property.Name] = property.Value.GetString() ?? string.Empty;
+                }
+            }
+        }
+
+        if (method.Equals("POST", StringComparison.OrdinalIgnoreCase)
+            || method.Equals("PATCH", StringComparison.OrdinalIgnoreCase)
+            || method.Equals("PUT", StringComparison.OrdinalIgnoreCase)
+            || method.Equals("DELETE", StringComparison.OrdinalIgnoreCase))
+        {
+            await RefreshAsync().ConfigureAwait(false);
+        }
+
+        return (statusCode, body, headers);
+    }
+
     private BoardSnapshot PublishSnapshot(string payload)
     {
         lastBoardSnapshotJson = payload;
         BoardSnapshot snapshot = BoardSnapshot.Parse(payload);
         BoardSnapshotChanged?.Invoke(this, snapshot);
         return snapshot;
+    }
+
+    private void HandleBoardNotificationsReceived(string notificationsJson)
+    {
+        RuntimeNotificationsReceived?.Invoke(this, notificationsJson);
     }
 
     private async Task<string> InvokeJsAsync(string function, params object[] args)
@@ -165,6 +219,7 @@ public sealed class DemoBoardsRuntimeService : IAsyncDisposable
     private void InitializeEngine()
     {
         engine.AddHostObject("HostStorageBridge", storageBridge);
+        engine.AddHostObject("HostControlfaceBridge", controlfaceBridge);
         engine.AddHostObject("HostInvocationBridge", invocationBridge);
         engine.AddHostObject("HostNotifier", boardNotifier);
         engine.Execute("polyfills.js", @"
@@ -230,6 +285,8 @@ if (typeof atob === 'undefined') {
         var jsDir = Path.Combine(baseDir, "js");
         engine.Execute("compute-jsonata.js", File.ReadAllText(Path.Combine(jsDir, "compute-jsonata.js")));
         engine.Execute("golden-driver.js", File.ReadAllText(Path.Combine(jsDir, "golden-driver.js")));
+        engine.Execute("controlface-embedded-shared.js", File.ReadAllText(Path.Combine(jsDir, "controlface-embedded-shared.js")));
+        engine.Execute("agentface-embedded-shared.js", File.ReadAllText(Path.Combine(jsDir, "agentface-embedded-shared.js")));
         engine.Execute("server-runtime-controlface.js", File.ReadAllText(Path.Combine(jsDir, "server-runtime-controlface.js")));
         engine.Execute("producer-driver.js", File.ReadAllText(Path.Combine(jsDir, "producer-driver.js")));
     }
@@ -239,22 +296,7 @@ if (typeof atob === 'undefined') {
         const string cardsJson = "["
             + "{\"id\":\"welcome-card\",\"card_data\":{\"title\":\"Demo Boards Runtime\",\"body\":\"WinUI host is running the embedded V8 brain.\",\"host\":\"embedded-v8\"},\"view\":{\"elements\":[]}},"
             + "{\"id\":\"runtime-status-card\",\"card_data\":{\"title\":\"Mounted Adapters\",\"storage\":\"KV / Journal / Queue / Blob\",\"surface\":\"agentface\"},\"view\":{\"elements\":[]}},"
-            + "{\"id\":\"metrics-card\",\"card_data\":{"
-            + "\"title\":\"Quarter Metrics\",\"revenue\":4250.5,\"status_note\":\"On track for Q3 close.\","
-            + "\"tasks\":[\"Draft report\",\"Review numbers\",\"Publish summary\"]},"
-            + "\"view\":{\"elements\":["
-            + "{\"kind\":\"metric\",\"label\":\"Revenue\",\"data\":{\"bind\":\"card_data.revenue\"}},"
-            + "{\"kind\":\"narrative\",\"data\":{\"bind\":\"card_data.status_note\"}},"
-            + "{\"kind\":\"list\",\"label\":\"Tasks\",\"data\":{\"bind\":\"card_data.tasks\"}}"
-            + "]}},"
-            + "{\"id\":\"insights-card\",\"card_data\":{"
-            + "\"title\":\"Insights\","
-            + "\"summary\":\"# Pipeline\\n**Throughput** is up this week.\\n- Ingest healthy\\n- Review on track\","
-            + "\"series\":[{\"label\":\"Mon\",\"value\":12},{\"label\":\"Tue\",\"value\":19},{\"label\":\"Wed\",\"value\":8},{\"label\":\"Thu\",\"value\":24}]},"
-            + "\"view\":{\"elements\":["
-            + "{\"kind\":\"markdown\",\"data\":{\"bind\":\"card_data.summary\"}},"
-            + "{\"kind\":\"chart\",\"label\":\"Daily volume\",\"data\":{\"bind\":\"card_data.series\"}}"
-            + "]}}"
+            + "{\"id\":\"gandalf-ingest-card\",\"card_data\":{\"title\":\"Gandalf Ingest\",\"mode\":\"ingest\",\"owner\":\"board-manager\",\"requires\":[\"source.report\"],\"provides\":[{\"bindTo\":\"report.summary\"}]},\"source_defs\":[{\"bindTo\":\"source.report\",\"url\":\"https://example.invalid/report.json\",\"kind\":\"http\",\"timeout\":30000}],\"view\":{\"elements\":[{\"kind\":\"ingest\"},{\"kind\":\"markdown\"}]}}"
             + "]";
         lastBoardSnapshotJson = await InvokeJsAsync("initWinuiRuntime", "winui-board", cardsJson).ConfigureAwait(false);
     }
@@ -286,41 +328,49 @@ if (typeof atob === 'undefined') {
         try
         {
             var path = context.Request.Url?.AbsolutePath ?? "/";
-            var pathAndQuery = context.Request.Url?.PathAndQuery ?? "/";
-            var method = context.Request.HttpMethod;
-
-            if (method == "GET" && path == "/healthz")
+            var pathAndQuery = context.Request.Url?.PathAndQuery ?? path;
+            if (context.Request.HttpMethod == "GET" && path == "/healthz")
             {
                 await WriteJsonAsync(context.Response, 200, "{\"status\":\"ok\"}").ConfigureAwait(false);
                 return;
             }
 
-            if (method == "GET" && (path == "/mcp" || path == "/mcp-raw"))
+            if (context.Request.HttpMethod == "GET" && (path == "/mcp" || path == "/mcp-raw"))
             {
-                await WriteJsonAsync(context.Response, 200, "{\"status\":\"ok\",\"surface\":\"agentface\",\"transport\":\"localhost-http\",\"post\":\"" + path + "\"}").ConfigureAwait(false);
+                await WriteJsonAsync(context.Response, 200, "{\"status\":\"ok\",\"surface\":\"agentface\",\"transport\":\"localhost-http\"}").ConfigureAwait(false);
                 return;
             }
 
-            // Convenience MCP routes map onto the runtime's real agentface paths.
-            if (method == "POST" && (path == "/mcp" || path == "/mcp-raw"))
+            if (ShouldProxyRequest(path, context.Request.HttpMethod))
             {
-                string body = await ReadBodyAsync(context.Request).ConfigureAwait(false);
-                await ProxyToRuntimeApiAsync(context, method, "/api/board" + path, body).ConfigureAwait(false);
+                string body;
+                using (var reader = new StreamReader(context.Request.InputStream, context.Request.ContentEncoding ?? Encoding.UTF8))
+                {
+                    body = await reader.ReadToEndAsync().ConfigureAwait(false);
+                }
+
+                Dictionary<string, string> requestHeaders = new(StringComparer.OrdinalIgnoreCase);
+                foreach (string? key in context.Request.Headers.AllKeys)
+                {
+                    if (!string.IsNullOrWhiteSpace(key))
+                    {
+                        requestHeaders[key] = context.Request.Headers[key] ?? string.Empty;
+                    }
+                }
+
+                (int statusCode, string responseBody, IReadOnlyDictionary<string, string> headers) = await ProxyRuntimeApiAsync(context.Request.HttpMethod, pathAndQuery, body, requestHeaders).ConfigureAwait(false);
+                await WriteResponseAsync(context.Response, statusCode, string.IsNullOrWhiteSpace(responseBody) ? "{}" : responseBody, headers).ConfigureAwait(false);
                 return;
             }
 
-            // Full runtime API surface (MCP, SSE one-shot, card files, …) proxied
-            // verbatim into the long-lived runtime — real semantics, no stubs.
-            if (path.StartsWith("/api/", StringComparison.Ordinal))
+            if (context.Request.HttpMethod == "POST" && path == "/board/cards")
             {
-                string body = await ReadBodyAsync(context.Request).ConfigureAwait(false);
-                await ProxyToRuntimeApiAsync(context, method, pathAndQuery, body).ConfigureAwait(false);
-                return;
-            }
+                string body;
+                using (var reader = new StreamReader(context.Request.InputStream, context.Request.ContentEncoding ?? Encoding.UTF8))
+                {
+                    body = await reader.ReadToEndAsync().ConfigureAwait(false);
+                }
 
-            if (method == "POST" && path == "/board/cards")
-            {
-                string body = await ReadBodyAsync(context.Request).ConfigureAwait(false);
                 if (string.IsNullOrWhiteSpace(body))
                 {
                     await WriteJsonAsync(context.Response, 400, "{\"error\":\"card body required\"}").ConfigureAwait(false);
@@ -345,54 +395,55 @@ if (typeof atob === 'undefined') {
         }
     }
 
-    private static async Task<string> ReadBodyAsync(HttpListenerRequest request)
+    private static bool ShouldProxyRequest(string path, string? httpMethod)
     {
-        using var reader = new StreamReader(request.InputStream, request.ContentEncoding ?? Encoding.UTF8);
-        return await reader.ReadToEndAsync().ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Forwards an HTTP request into the runtime's handleRuntimeApi via the
-    /// embedded JS bridge and relays the runtime's status + body back to the
-    /// caller. Mutating verbs trigger a snapshot re-publish so the UI stays live.
-    /// </summary>
-    private async Task ProxyToRuntimeApiAsync(HttpListenerContext context, string method, string pathAndQuery, string body)
-    {
-        string raw = await InvokeJsAsync("winuiHandleRuntimeApi", method, pathAndQuery, body ?? string.Empty).ConfigureAwait(false);
-
-        int status = 200;
-        string responseBody = raw;
-        try
+        string method = httpMethod?.ToUpperInvariant() ?? "GET";
+        if (path.StartsWith("/api/boards/", StringComparison.Ordinal))
         {
-            using JsonDocument document = JsonDocument.Parse(raw);
-            JsonElement root = document.RootElement;
-            if (root.TryGetProperty("status", out JsonElement statusElement) && statusElement.ValueKind == JsonValueKind.Number)
-            {
-                status = statusElement.GetInt32();
-            }
-            if (root.TryGetProperty("body", out JsonElement bodyElement) && bodyElement.ValueKind == JsonValueKind.String)
-            {
-                responseBody = bodyElement.GetString() ?? string.Empty;
-            }
-        }
-        catch (JsonException)
-        {
-            // Relay the raw JS return as-is if it is not the {status, body} envelope.
+            return method is "GET" or "POST" or "PATCH" or "PUT" or "DELETE";
         }
 
-        if (!string.Equals(method, "GET", StringComparison.OrdinalIgnoreCase))
-        {
-            await RefreshAsync().ConfigureAwait(false);
-        }
-
-        await WriteJsonAsync(context.Response, status, string.IsNullOrEmpty(responseBody) ? "{}" : responseBody).ConfigureAwait(false);
+        return path is "/mcp"
+            or "/mcp-raw"
+            or "/mcp-actions"
+            or "/mcp-controlplane"
+            or "/mcp-webhooks"
+            or "/mcp-extras"
+            or "/manage-boards"
+            or "/agent/mcp"
+            or "/agent/mcp/manifest";
     }
 
     private static async Task WriteJsonAsync(HttpListenerResponse response, int statusCode, string payload)
     {
+        await WriteResponseAsync(response, statusCode, payload, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["content-type"] = "application/json; charset=utf-8"
+        }).ConfigureAwait(false);
+    }
+
+    private static async Task WriteResponseAsync(HttpListenerResponse response, int statusCode, string payload, IReadOnlyDictionary<string, string>? headers)
+    {
         response.StatusCode = statusCode;
-        response.ContentType = "application/json; charset=utf-8";
-        var bytes = Encoding.UTF8.GetBytes(payload);
+
+        string contentType = "application/json; charset=utf-8";
+        if (headers is not null)
+        {
+            foreach ((string key, string value) in headers)
+            {
+                if (string.Equals(key, "content-type", StringComparison.OrdinalIgnoreCase))
+                {
+                    contentType = value;
+                }
+                else if (!string.Equals(key, "content-length", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(value))
+                {
+                    response.Headers[key] = value;
+                }
+            }
+        }
+
+        response.ContentType = contentType;
+        byte[] bytes = Encoding.UTF8.GetBytes(payload);
         response.ContentLength64 = bytes.Length;
         await response.OutputStream.WriteAsync(bytes, 0, bytes.Length).ConfigureAwait(false);
     }
@@ -418,9 +469,15 @@ if (typeof atob === 'undefined') {
 public sealed class HostBoardNotifier
 {
     public event Action? BoardChanged;
+    public event Action<string>? BoardNotificationsReceived;
 
     public void NotifyBoardChanged()
     {
         BoardChanged?.Invoke();
+    }
+
+    public void NotifyBoardNotifications(string notificationsJson)
+    {
+        BoardNotificationsReceived?.Invoke(notificationsJson ?? "[]");
     }
 }

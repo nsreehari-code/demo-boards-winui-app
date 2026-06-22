@@ -1,12 +1,14 @@
-using System;
-using System.Collections.Generic;
 using DemoBoards.RuntimeHost;
-using Microsoft.UI;
-using Microsoft.UI.Text;
-using Microsoft.UI.Xaml;
+using System.Collections.Generic;
+using System.Linq;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Input;
 using Microsoft.UI.Xaml.Media;
-using Windows.UI;
+using Microsoft.UI.Xaml.Shapes;
+using Microsoft.UI;
+using DemoBoards_WinUI.State;
+using Windows.Foundation;
 
 namespace DemoBoards_WinUI.Controls;
 
@@ -17,700 +19,902 @@ namespace DemoBoards_WinUI.Controls;
 /// </summary>
 public sealed partial class BoardCanvas : UserControl
 {
+    private const double MinCardWidth = 280;
+    private const double MaxCardWidth = 960;
+    private const double MiniMapWidth = 200;
+    private const double MiniMapHeight = 128;
+    private const double BackgroundGridGap = 24;
+
+    private string currentBoardId = string.Empty;
+    private bool suppressViewportUpdates;
+    private string? draggingCardId;
+    private FrameworkElement? draggingHost;
+    private Point dragStartPoint;
+    private double dragStartLeft;
+    private double dragStartTop;
+    private string? resizingCardId;
+    private FrameworkElement? resizingHost;
+    private Point resizeStartPoint;
+    private double resizeStartWidth;
+    private string? selectedToken;
+    private string? focusedCardId;
+    private BoardCanvasViewportState? savedViewportBeforeTokenFocus;
+    private BoardCanvasViewportState? savedViewportBeforeCardFocus;
+    private BoardInfoState? lastBoardInfo;
+    private BoardSummaryState? lastSummary;
+    private IReadOnlyList<BoardCard> lastCards = System.Array.Empty<BoardCard>();
+    private BoardCanvasLayoutState lastLayoutState = BoardCanvasLayoutState.Empty;
+    private IReadOnlyList<RendererRule>? lastRendererRules;
+    private IReadOnlyDictionary<string, string> lastDataObjects = new Dictionary<string, string>(System.StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, BoardCanvasPlacement> lastPlacements = new Dictionary<string, BoardCanvasPlacement>(System.StringComparer.Ordinal);
+
     public BoardCanvas()
     {
         InitializeComponent();
+        Unloaded += OnUnloaded;
+        CanvasScrollViewer.ViewChanged += OnCanvasViewChanged;
+        CanvasScrollViewer.SizeChanged += (_, _) => UpdateMiniMapViewport();
+        ClearTokenFocusButton.Click += (_, _) => ToggleTokenFocus(null);
+        ZoomInButton.Click += (_, _) => AdjustZoom(1.1f);
+        ZoomOutButton.Click += (_, _) => AdjustZoom(1f / 1.1f);
+        FitCanvasButton.Click += (_, _) => FitToCards(lastCards.Select(card => card.Id));
+        ResetCanvasButton.Click += (_, _) => ResetViewport();
+        MiniMapHost.PointerPressed += OnMiniMapPointerPressed;
     }
 
-    public void Render(BoardSnapshot snapshot)
+    public void Render(
+        BoardInfoState boardInfo,
+        BoardSummaryState summary,
+        IReadOnlyList<BoardCard> cards,
+        BoardCanvasLayoutState layoutState,
+        IReadOnlyDictionary<string, string> dataObjects,
+        IReadOnlyList<RendererRule>? rendererRules = null)
     {
-        CardsHost.Children.Clear();
+        lastBoardInfo = boardInfo;
+        lastSummary = summary;
+        lastCards = cards;
+        lastLayoutState = layoutState;
+        lastRendererRules = rendererRules;
+        lastDataObjects = dataObjects;
 
-        if (snapshot is null || snapshot.CardCount == 0)
+        bool boardChanged = !string.Equals(currentBoardId, boardInfo.BoardId, System.StringComparison.Ordinal);
+        currentBoardId = boardInfo.BoardId;
+        if (boardChanged)
+        {
+            selectedToken = null;
+            focusedCardId = null;
+            savedViewportBeforeTokenFocus = null;
+            savedViewportBeforeCardFocus = null;
+        }
+
+        CardsHost.Children.Clear();
+        CardsHost.Width = 0;
+        CardsHost.Height = 0;
+
+        if (cards.Count == 0)
         {
             BoardTitleText.Text = "No board snapshot";
             BoardSummaryText.Text = "The embedded runtime has not published any cards yet.";
             return;
         }
 
-        BoardTitleText.Text = snapshot.BoardId;
+        BoardTitleText.Text = boardInfo.BoardId;
         BoardSummaryText.Text =
-            $"{snapshot.CardCount} card(s)  •  Pending {snapshot.Pending}  •  In progress {snapshot.InProgress}  •  Completed {snapshot.Completed}  •  Failed {snapshot.Failed}";
+            $"{summary.CardCount} card(s)  •  Pending {summary.Pending}  •  In progress {summary.InProgress}  •  Completed {summary.Completed}  •  Failed {summary.Failed}";
 
-        if (snapshot.Edges.Count > 0)
-        {
-            CardsHost.Children.Add(CreateDependencyTile(snapshot.Edges));
-        }
+        IReadOnlyDictionary<string, BoardCanvasPlacement> placements = BoardCanvasLayoutEngine.BuildPlacements(cards, layoutState);
+        lastPlacements = placements;
+        HashSet<string> highlightedCardIds = selectedToken is null
+            ? cards.Select(card => card.Id).ToHashSet(System.StringComparer.Ordinal)
+            : cards.Where(card => card.Requires.Contains(selectedToken, System.StringComparer.Ordinal) || card.Provides.Contains(selectedToken, System.StringComparer.Ordinal))
+                .Select(card => card.Id)
+                .ToHashSet(System.StringComparer.Ordinal);
+        RenderBackgroundGrid();
 
-        foreach (BoardCard card in snapshot.Cards)
-        {
-            CardsHost.Children.Add(CreateCardView(card));
-        }
-    }
+        double maxRight = 0;
+        double maxBottom = 0;
 
-    private static UIElement CreateDependencyTile(IReadOnlyList<BoardEdge> edges)
-    {
-        var stack = new StackPanel { Spacing = 6 };
-        stack.Children.Add(new TextBlock
+        foreach (BoardCard card in cards)
         {
-            Text = "Dependencies",
-            FontSize = 16,
-            FontWeight = FontWeights.SemiBold
-        });
-        stack.Children.Add(new TextBlock
-        {
-            Text = $"{edges.Count} edge(s) across the board",
-            FontSize = 12,
-            Opacity = 0.6
-        });
+            bool isHighlighted = highlightedCardIds.Contains(card.Id);
+            bool isFocused = string.Equals(focusedCardId, card.Id, System.StringComparison.Ordinal);
+            bool hasCardFocus = !string.IsNullOrWhiteSpace(focusedCardId);
+            bool isDimmed = (selectedToken is not null && !isHighlighted) || (hasCardFocus && !isFocused);
 
-        foreach (BoardEdge edge in edges)
-        {
-            var row = new StackPanel
+            var cardSummary = new StackPanel
             {
-                Orientation = Orientation.Horizontal,
-                Spacing = 6
+                Spacing = 8,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = card.Title,
+                        FontSize = 16,
+                        FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                        TextWrapping = TextWrapping.WrapWholeWords
+                    },
+                    new TextBlock
+                    {
+                        Text = card.ViewKinds.Count > 0 ? $"{card.Id}  •  {string.Join(", ", card.ViewKinds)}" : card.Id,
+                        Opacity = 0.72,
+                        TextWrapping = TextWrapping.WrapWholeWords
+                    },
+                    new TextBlock
+                    {
+                        Text = string.IsNullOrWhiteSpace(card.Status) ? "Ready" : $"Status: {card.Status}",
+                        Opacity = 0.76,
+                        TextWrapping = TextWrapping.WrapWholeWords
+                    }
+                }
             };
-            row.Children.Add(new TextBlock { Text = edge.From, FontWeight = FontWeights.SemiBold, FontSize = 12 });
-            row.Children.Add(new Border
+            var host = new Border
             {
-                Padding = new Thickness(6, 1, 6, 1),
-                CornerRadius = new CornerRadius(8),
-                Background = new SolidColorBrush(Color.FromArgb(0x33, Colors.SteelBlue.R, Colors.SteelBlue.G, Colors.SteelBlue.B)),
-                Child = new TextBlock { Text = "→ " + edge.Token + " →", FontSize = 12 }
-            });
-            row.Children.Add(new TextBlock { Text = edge.To, FontWeight = FontWeights.SemiBold, FontSize = 12 });
-            stack.Children.Add(row);
-        }
-
-        return new Border
-        {
-            Margin = new Thickness(8),
-            Padding = new Thickness(16),
-            CornerRadius = new CornerRadius(14),
-            BorderThickness = new Thickness(1),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(0x66, Colors.SteelBlue.R, Colors.SteelBlue.G, Colors.SteelBlue.B)),
-            Background = (Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"],
-            Child = new ScrollViewer { Content = stack, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }
-        };
-    }
-
-    private static UIElement CreateCardView(BoardCard card)
-    {
-        var container = new Border
-        {
-            Margin = new Thickness(8),
-            Padding = new Thickness(16),
-            CornerRadius = new CornerRadius(14),
-            BorderThickness = new Thickness(1),
-            BorderBrush = ToneBrush(card.Status, 0x66),
-            Background = (Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"]
-        };
-
-        var frontPanel = BuildFront(card);
-        var backPanel = BuildBack(card);
-        backPanel.Visibility = Visibility.Collapsed;
-
-        var flipHost = new Grid();
-        flipHost.Children.Add(frontPanel);
-        flipHost.Children.Add(backPanel);
-
-        AttachFlip(frontPanel, backPanel);
-        container.Child = flipHost;
-        return container;
-    }
-
-    private static FrameworkElement BuildFront(BoardCard card)
-    {
-        var stack = new StackPanel { Spacing = 8 };
-
-        var header = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 8
-        };
-        header.Children.Add(BuildStatusPill(card.Status));
-        header.Children.Add(new TextBlock
-        {
-            Text = card.Title,
-            FontSize = 16,
-            FontWeight = FontWeights.SemiBold,
-            TextWrapping = TextWrapping.WrapWholeWords,
-            VerticalAlignment = VerticalAlignment.Center
-        });
-        stack.Children.Add(header);
-
-        stack.Children.Add(new TextBlock
-        {
-            Text = card.Id,
-            FontSize = 12,
-            Opacity = 0.6,
-            TextWrapping = TextWrapping.WrapWholeWords
-        });
-
-        if (card.Elements.Count > 0)
-        {
-            foreach (BoardCardElement element in card.Elements)
+                Child = new Border
+                {
+                    MinHeight = 120,
+                    Padding = new Thickness(14),
+                    Background = BoardTheme.CreateResourceBrush("CardBackgroundFillColorSecondaryBrush", 0x55, Colors.Transparent),
+                    CornerRadius = new CornerRadius(12),
+                    Child = cardSummary
+                },
+                Tag = card.Id,
+                Padding = new Thickness(4),
+                CornerRadius = new CornerRadius(16),
+                Opacity = isDimmed ? 0.42 : 1,
+                BorderThickness = isFocused
+                    ? new Thickness(2.5)
+                    : isHighlighted && selectedToken is not null ? new Thickness(2) : new Thickness(0),
+                BorderBrush = isFocused
+                    ? BoardTheme.CreateResourceBrush("BoardColorAccentStrong", 0xCC, Colors.CornflowerBlue)
+                    : isHighlighted && selectedToken is not null ? BoardTheme.CreateResourceBrush("BoardColorAccent", 0xAA, Colors.SteelBlue) : null,
+            };
+            if (placements.TryGetValue(card.Id, out BoardCanvasPlacement? placement))
             {
-                stack.Children.Add(BuildElement(element));
+                host.Width = placement.Width;
+                host.MinHeight = placement.Height;
+                Canvas.SetLeft(host, placement.X);
+                Canvas.SetTop(host, placement.Y);
+                maxRight = System.Math.Max(maxRight, placement.X + placement.Width);
+                maxBottom = System.Math.Max(maxBottom, placement.Y + placement.Height);
             }
-        }
-        else if (card.Fields.Count > 0)
-        {
-            stack.Children.Add(BuildFieldList(card.Fields));
-        }
-
-        if (card.Requires.Count > 0 || card.Provides.Count > 0)
-        {
-            stack.Children.Add(BuildTokenRow(card.Requires, card.Provides));
+            host.PointerPressed += OnCardPointerPressed;
+            host.PointerMoved += OnCardPointerMoved;
+            host.PointerReleased += OnCardPointerReleased;
+            host.PointerCanceled += OnCardPointerCanceled;
+            host.DoubleTapped += OnCardDoubleTapped;
+            CardsHost.Children.Add(host);
         }
 
-        return WrapWithFlipButton(stack, "Details");
-    }
+        CardsHost.Width = System.Math.Max(maxRight + 80, 960);
+        CardsHost.Height = System.Math.Max(maxBottom + 80, 540);
+        BackgroundGridHost.Width = CardsHost.Width;
+        BackgroundGridHost.Height = CardsHost.Height;
+        CanvasSurface.Width = CardsHost.Width;
+        CanvasSurface.Height = CardsHost.Height;
+        RenderBackgroundGrid();
+        UpdateMiniMap();
+        UpdateZoomStatus();
 
-    private static FrameworkElement BuildElement(BoardCardElement element)
-    {
-        return element.Kind switch
+        if (selectedToken is null)
         {
-            "metric" => BuildMetricElement(element),
-            "list" => BuildListElement(element),
-            "table" or "editable-table" => BuildTableElement(element),
-            "badge" => BuildBadgeElement(element),
-            "alert" => BuildAlertElement(element),
-            "chart" => BuildChartElement(element),
-            "markdown" or "markup" => BuildMarkdownElement(element),
-            _ => BuildTextElement(element)
-        };
-    }
-
-    private static FrameworkElement BuildElementLabel(string? label)
-    {
-        return new TextBlock
-        {
-            Text = label,
-            FontSize = 12,
-            Opacity = 0.6,
-            FontWeight = FontWeights.SemiBold
-        };
-    }
-
-    private static FrameworkElement BuildMetricElement(BoardCardElement element)
-    {
-        var stack = new StackPanel { Spacing = 2 };
-        if (!string.IsNullOrWhiteSpace(element.Label))
-        {
-            stack.Children.Add(BuildElementLabel(element.Label));
-        }
-
-        stack.Children.Add(new TextBlock
-        {
-            Text = string.IsNullOrWhiteSpace(element.Text) ? "—" : element.Text,
-            FontSize = 24,
-            FontWeight = FontWeights.SemiBold
-        });
-
-        return stack;
-    }
-
-    private static FrameworkElement BuildListElement(BoardCardElement element)
-    {
-        var stack = new StackPanel { Spacing = 2 };
-        if (!string.IsNullOrWhiteSpace(element.Label))
-        {
-            stack.Children.Add(BuildElementLabel(element.Label));
-        }
-
-        if (element.Items.Count == 0)
-        {
-            stack.Children.Add(new TextBlock { Text = "No items.", Opacity = 0.6 });
+            TokenFocusBanner.Visibility = Visibility.Collapsed;
         }
         else
         {
-            foreach (string item in element.Items)
+            TokenFocusBanner.Visibility = Visibility.Visible;
+            ClearTokenFocusButton.Content = $"{selectedToken} ×";
+        }
+
+        if (boardChanged && layoutState.Viewport is not null)
+        {
+            suppressViewportUpdates = true;
+            CanvasScrollViewer.ChangeView(layoutState.Viewport.X, layoutState.Viewport.Y, (float)layoutState.Viewport.Zoom, true);
+        }
+    }
+
+    private async void PersistLayoutAsync()
+    {
+        if (string.IsNullOrWhiteSpace(currentBoardId))
+        {
+            return;
+        }
+
+        var app = (App)Application.Current;
+        try
+        {
+            await app.BoardClient.SaveLayoutAsync(currentBoardId, app.BoardStore.GetCanvasLayout());
+        }
+        catch
+        {
+            // Ignore persistence failures; the in-memory layout state remains authoritative for the current session.
+        }
+    }
+
+    private void OnCanvasViewChanged(object? sender, ScrollViewerViewChangedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(currentBoardId))
+        {
+            return;
+        }
+
+        if (suppressViewportUpdates)
+        {
+            if (!e.IsIntermediate)
             {
-                stack.Children.Add(new TextBlock
+                suppressViewportUpdates = false;
+            }
+            return;
+        }
+
+        var app = (App)Application.Current;
+        app.BoardStore.SetCanvasViewport(CanvasScrollViewer.HorizontalOffset, CanvasScrollViewer.VerticalOffset, CanvasScrollViewer.ZoomFactor);
+        UpdateMiniMapViewport();
+        UpdateZoomStatus();
+        if (!e.IsIntermediate)
+        {
+            PersistLayoutAsync();
+        }
+    }
+
+    private void OnCardPointerPressed(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        if (resizingHost is not null)
+        {
+            return;
+        }
+
+        if (e.OriginalSource is DependencyObject source
+            && FindAncestor<Button>(source) is not null)
+        {
+            return;
+        }
+
+        if (sender is not FrameworkElement host || host.Tag is not string cardId || string.IsNullOrWhiteSpace(cardId))
+        {
+            return;
+        }
+
+        draggingHost = host;
+        draggingCardId = cardId;
+        dragStartPoint = e.GetCurrentPoint(CardsHost).Position;
+        dragStartLeft = Canvas.GetLeft(host);
+        dragStartTop = Canvas.GetTop(host);
+        host.CapturePointer(e.Pointer);
+        e.Handled = true;
+    }
+
+    private void OnCardPointerMoved(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        if (draggingHost is null || !ReferenceEquals(sender, draggingHost) || draggingCardId is null)
+        {
+            return;
+        }
+
+        PointerPoint point = e.GetCurrentPoint(CardsHost);
+        if (!point.Properties.IsLeftButtonPressed)
+        {
+            return;
+        }
+
+        double nextLeft = System.Math.Max(0, dragStartLeft + (point.Position.X - dragStartPoint.X));
+        double nextTop = System.Math.Max(0, dragStartTop + (point.Position.Y - dragStartPoint.Y));
+        Canvas.SetLeft(draggingHost, nextLeft);
+        Canvas.SetTop(draggingHost, nextTop);
+        e.Handled = true;
+    }
+
+    private void OnCardPointerReleased(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        CommitDrag();
+        e.Handled = true;
+    }
+
+    private void OnCardPointerCanceled(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        CommitDrag();
+        e.Handled = true;
+    }
+
+    private void CommitDrag()
+    {
+        if (draggingHost is null || draggingCardId is null)
+        {
+            return;
+        }
+
+        double left = Canvas.GetLeft(draggingHost);
+        double top = Canvas.GetTop(draggingHost);
+        draggingHost.ReleasePointerCaptures();
+        ((App)Application.Current).BoardStore.SetCanvasCardPosition(draggingCardId, left, top);
+        draggingHost = null;
+        draggingCardId = null;
+        PersistLayoutAsync();
+    }
+
+    private void OnResizePointerPressed(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement handle || handle.Tag is not FrameworkElement host || host.Tag is not string cardId)
+        {
+            return;
+        }
+
+        resizingHost = host;
+        resizingCardId = cardId;
+        resizeStartPoint = e.GetCurrentPoint(CardsHost).Position;
+        resizeStartWidth = host.Width > 0 ? host.Width : host.ActualWidth;
+        handle.CapturePointer(e.Pointer);
+        e.Handled = true;
+    }
+
+    private void OnResizePointerMoved(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        if (resizingHost is null || resizingCardId is null)
+        {
+            return;
+        }
+
+        PointerPoint point = e.GetCurrentPoint(CardsHost);
+        if (!point.Properties.IsLeftButtonPressed)
+        {
+            return;
+        }
+
+        double nextWidth = ClampCardWidth(resizeStartWidth + (point.Position.X - resizeStartPoint.X));
+        resizingHost.Width = nextWidth;
+        e.Handled = true;
+    }
+
+    private void OnResizePointerReleased(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        CommitResize();
+        e.Handled = true;
+    }
+
+    private void OnResizePointerCanceled(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        CommitResize();
+        e.Handled = true;
+    }
+
+    private void CommitResize()
+    {
+        if (resizingHost is null || resizingCardId is null)
+        {
+            return;
+        }
+
+        double width = resizingHost.Width > 0 ? resizingHost.Width : resizingHost.ActualWidth;
+        resizingHost.ReleasePointerCaptures();
+        ((App)Application.Current).BoardStore.SetCanvasCardWidth(resizingCardId, width);
+        resizingHost = null;
+        resizingCardId = null;
+        PersistLayoutAsync();
+    }
+
+    private static double ClampCardWidth(double width)
+    {
+        return System.Math.Max(MinCardWidth, System.Math.Min(MaxCardWidth, System.Math.Round(width)));
+    }
+
+    private void OnUnloaded(object sender, RoutedEventArgs e)
+    {
+        PersistLayoutAsync();
+    }
+
+    private void AdjustZoom(float multiplier)
+    {
+        float targetZoom = (float)System.Math.Max(0.24, System.Math.Min(1.35, CanvasScrollViewer.ZoomFactor * multiplier));
+        suppressViewportUpdates = true;
+        CanvasScrollViewer.ChangeView(CanvasScrollViewer.HorizontalOffset, CanvasScrollViewer.VerticalOffset, targetZoom, false);
+    }
+
+    private void ResetViewport()
+    {
+        if (lastLayoutState.Viewport is not null)
+        {
+            RestoreViewport(lastLayoutState.Viewport);
+            return;
+        }
+
+        FitToCards(lastCards.Select(card => card.Id));
+    }
+
+    private void OnMiniMapPointerPressed(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        if (CardsHost.Width <= 0 || CardsHost.Height <= 0)
+        {
+            return;
+        }
+
+        Point point = e.GetCurrentPoint(MiniMapHost).Position;
+        double scale = System.Math.Min(MiniMapWidth / CardsHost.Width, MiniMapHeight / CardsHost.Height);
+        if (scale <= 0)
+        {
+            return;
+        }
+
+        double contentX = point.X / scale;
+        double contentY = point.Y / scale;
+        double zoom = CanvasScrollViewer.ZoomFactor > 0 ? CanvasScrollViewer.ZoomFactor : 1;
+        double targetHorizontal = System.Math.Max(0, (contentX * zoom) - (CanvasScrollViewer.ActualWidth / 2));
+        double targetVertical = System.Math.Max(0, (contentY * zoom) - (CanvasScrollViewer.ActualHeight / 2));
+        suppressViewportUpdates = true;
+        CanvasScrollViewer.ChangeView(targetHorizontal, targetVertical, CanvasScrollViewer.ZoomFactor, false);
+        e.Handled = true;
+    }
+
+    private void OnCardDoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement host || host.Tag is not string cardId)
+        {
+            return;
+        }
+
+        ToggleCardFocus(cardId, host);
+        e.Handled = true;
+    }
+
+    private void ToggleTokenFocus(string? token)
+    {
+        string? normalized = string.IsNullOrWhiteSpace(token) ? null : token.Trim();
+        if (string.Equals(selectedToken, normalized, System.StringComparison.Ordinal))
+        {
+            selectedToken = null;
+            if (savedViewportBeforeTokenFocus is not null)
+            {
+                RestoreViewport(savedViewportBeforeTokenFocus);
+                savedViewportBeforeTokenFocus = null;
+            }
+        }
+        else
+        {
+            if (selectedToken is null)
+            {
+                savedViewportBeforeTokenFocus = CaptureViewport();
+            }
+            selectedToken = normalized;
+        }
+
+        RerenderCurrentState();
+        if (selectedToken is not null)
+        {
+            FitToCards(lastCards.Where(card => card.Requires.Contains(selectedToken, System.StringComparer.Ordinal) || card.Provides.Contains(selectedToken, System.StringComparer.Ordinal)).Select(card => card.Id));
+        }
+    }
+
+    private void ToggleCardFocus(string cardId, FrameworkElement host)
+    {
+        if (string.Equals(focusedCardId, cardId, System.StringComparison.Ordinal))
+        {
+            focusedCardId = null;
+            RerenderCurrentState();
+            if (savedViewportBeforeCardFocus is not null)
+            {
+                RestoreViewport(savedViewportBeforeCardFocus);
+                savedViewportBeforeCardFocus = null;
+            }
+            return;
+        }
+
+        if (focusedCardId is null)
+        {
+            savedViewportBeforeCardFocus = CaptureViewport();
+        }
+        focusedCardId = cardId;
+        RerenderCurrentState();
+        FocusHost(host);
+    }
+
+    private void FocusHost(FrameworkElement host)
+    {
+        double viewportWidth = CanvasScrollViewer.ActualWidth > 0 ? CanvasScrollViewer.ActualWidth : 1200;
+        double viewportHeight = CanvasScrollViewer.ActualHeight > 0 ? CanvasScrollViewer.ActualHeight : 800;
+        double nodeWidth = host.Width > 0 ? host.Width : host.ActualWidth;
+        double nodeHeight = host.ActualHeight > 0 ? host.ActualHeight : host.Height;
+        if (nodeWidth <= 0 || nodeHeight <= 0)
+        {
+            return;
+        }
+
+        double zoomForHeight = (viewportHeight * 0.9) / nodeHeight;
+        double zoomForWidth = (viewportWidth * 0.95) / nodeWidth;
+        double targetZoom = System.Math.Min(zoomForHeight, zoomForWidth);
+        targetZoom = System.Math.Max(0.35, System.Math.Min(1.35, targetZoom));
+        double centerX = Canvas.GetLeft(host) + (nodeWidth / 2);
+        double centerY = Canvas.GetTop(host) + (nodeHeight / 2);
+        double targetHorizontal = System.Math.Max(0, (centerX * targetZoom) - (viewportWidth / 2));
+        double targetVertical = System.Math.Max(0, (centerY * targetZoom) - (viewportHeight / 2));
+        suppressViewportUpdates = true;
+        CanvasScrollViewer.ChangeView(targetHorizontal, targetVertical, (float)targetZoom, false);
+    }
+
+    private void FitToCards(IEnumerable<string> cardIds)
+    {
+        HashSet<string> ids = cardIds.Where(id => !string.IsNullOrWhiteSpace(id)).ToHashSet(System.StringComparer.Ordinal);
+        if (ids.Count == 0)
+        {
+            return;
+        }
+
+        FrameworkElement[] hosts = CardsHost.Children
+            .OfType<FrameworkElement>()
+            .Where(element => element.Tag is string cardId && ids.Contains(cardId))
+            .ToArray();
+        if (hosts.Length == 0)
+        {
+            return;
+        }
+
+        double minLeft = hosts.Min(host => Canvas.GetLeft(host));
+        double minTop = hosts.Min(host => Canvas.GetTop(host));
+        double maxRight = hosts.Max(host => Canvas.GetLeft(host) + (host.Width > 0 ? host.Width : host.ActualWidth));
+        double maxBottom = hosts.Max(host => Canvas.GetTop(host) + (host.ActualHeight > 0 ? host.ActualHeight : host.Height));
+        double boundsWidth = System.Math.Max(1, maxRight - minLeft);
+        double boundsHeight = System.Math.Max(1, maxBottom - minTop);
+        double viewportWidth = CanvasScrollViewer.ActualWidth > 0 ? CanvasScrollViewer.ActualWidth : 1200;
+        double viewportHeight = CanvasScrollViewer.ActualHeight > 0 ? CanvasScrollViewer.ActualHeight : 800;
+        double targetZoom = System.Math.Min((viewportWidth * 0.7) / boundsWidth, (viewportHeight * 0.7) / boundsHeight);
+        targetZoom = System.Math.Max(0.5, System.Math.Min(1.08, targetZoom));
+        double centerX = minLeft + (boundsWidth / 2);
+        double centerY = minTop + (boundsHeight / 2);
+        double targetHorizontal = System.Math.Max(0, (centerX * targetZoom) - (viewportWidth / 2));
+        double targetVertical = System.Math.Max(0, (centerY * targetZoom) - (viewportHeight / 2));
+        suppressViewportUpdates = true;
+        CanvasScrollViewer.ChangeView(targetHorizontal, targetVertical, (float)targetZoom, false);
+    }
+
+    private BoardCanvasViewportState CaptureViewport()
+    {
+        return new BoardCanvasViewportState(CanvasScrollViewer.HorizontalOffset, CanvasScrollViewer.VerticalOffset, CanvasScrollViewer.ZoomFactor);
+    }
+
+    private void RestoreViewport(BoardCanvasViewportState viewport)
+    {
+        suppressViewportUpdates = true;
+        CanvasScrollViewer.ChangeView(viewport.X, viewport.Y, (float)viewport.Zoom, false);
+    }
+
+    private void RerenderCurrentState()
+    {
+        if (lastBoardInfo is null || lastSummary is null)
+        {
+            return;
+        }
+
+        Render(lastBoardInfo, lastSummary, lastCards, lastLayoutState, lastDataObjects, lastRendererRules);
+    }
+
+    private static IReadOnlyList<BoardConnection> BuildConnections(IReadOnlyList<BoardCard> cards)
+    {
+        var tokenProviders = new Dictionary<string, List<string>>(System.StringComparer.Ordinal);
+        foreach (BoardCard card in cards)
+        {
+            foreach (string token in card.Provides.Where(token => !string.IsNullOrWhiteSpace(token)))
+            {
+                if (!tokenProviders.TryGetValue(token, out List<string>? providers))
                 {
-                    Text = "• " + item,
-                    TextWrapping = TextWrapping.WrapWholeWords
-                });
+                    providers = new List<string>();
+                    tokenProviders[token] = providers;
+                }
+
+                providers.Add(card.Id);
             }
         }
 
-        return stack;
+        var connections = new List<BoardConnection>();
+        foreach (BoardCard card in cards)
+        {
+            foreach (string token in card.Requires.Where(token => !string.IsNullOrWhiteSpace(token)))
+            {
+                if (!tokenProviders.TryGetValue(token, out List<string>? providers))
+                {
+                    continue;
+                }
+
+                foreach (string providerId in providers.Where(providerId => !string.Equals(providerId, card.Id, System.StringComparison.Ordinal)))
+                {
+                    connections.Add(new BoardConnection(providerId, card.Id, token, string.Equals(card.Status, "running", System.StringComparison.OrdinalIgnoreCase)));
+                }
+            }
+        }
+
+        return connections;
     }
 
-    private static FrameworkElement BuildTableElement(BoardCardElement element)
+    private IEnumerable<UIElement> BuildConnectionVisuals(BoardCanvasPlacement source, BoardCanvasPlacement target, bool isHighlighted, bool isDimmed, bool isRunning)
     {
-        var stack = new StackPanel { Spacing = 4 };
-        if (!string.IsNullOrWhiteSpace(element.Label))
-        {
-            stack.Children.Add(BuildElementLabel(element.Label));
-        }
+        double startX = source.X + (source.Width / 2);
+        double startY = source.Y + source.Height;
+        double endX = target.X + (target.Width / 2);
+        double endY = target.Y;
+        double horizontalDistance = System.Math.Abs(endX - startX);
+        double verticalDistance = System.Math.Abs(endY - startY);
+        double deltaY = horizontalDistance < 180 && verticalDistance < 120
+            ? 42
+            : horizontalDistance > 520 || verticalDistance > 320
+                ? 90
+                : System.Math.Max(60, verticalDistance * 0.38);
 
-        if (element.Columns.Count == 0 || element.Rows.Count == 0)
+        var figure = new PathFigure
         {
-            stack.Children.Add(new TextBlock { Text = "No data.", Opacity = 0.6 });
-            return stack;
-        }
-
-        var grid = new Grid { ColumnSpacing = 12, RowSpacing = 2 };
-        for (int column = 0; column < element.Columns.Count; column++)
-        {
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        }
-
-        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        for (int column = 0; column < element.Columns.Count; column++)
-        {
-            var header = new TextBlock
+            StartPoint = new Point(startX, startY),
+            Segments =
             {
-                Text = element.Columns[column],
-                FontSize = 12,
-                FontWeight = FontWeights.SemiBold,
-                Opacity = 0.7
+                new BezierSegment
+                {
+                    Point1 = new Point(startX, startY + deltaY),
+                    Point2 = new Point(endX, endY - deltaY),
+                    Point3 = new Point(endX, endY)
+                }
+            }
+        };
+
+        var geometry = new PathGeometry { Figures = { figure } };
+        Windows.UI.Color accentColor = BoardTheme.ResolveColor("BoardColorAccent", Colors.SteelBlue);
+        Windows.UI.Color accentStrongColor = BoardTheme.ResolveColor("BoardColorAccentStrong", Colors.CornflowerBlue);
+        Windows.UI.Color runningColor = BoardTheme.ResolveColor("BoardStatusRunningColor", Colors.Goldenrod);
+        Windows.UI.Color baseColor = isHighlighted
+            ? Windows.UI.Color.FromArgb(0xD8, accentStrongColor.R, accentStrongColor.G, accentStrongColor.B)
+            : isDimmed
+                ? Windows.UI.Color.FromArgb(0x34, accentColor.R, accentColor.G, accentColor.B)
+                : Windows.UI.Color.FromArgb(0x70, accentColor.R, accentColor.G, accentColor.B);
+        if (isRunning)
+        {
+            var flowPath = new Microsoft.UI.Xaml.Shapes.Path
+            {
+                Data = geometry,
+                Stroke = new SolidColorBrush(isHighlighted
+                    ? Windows.UI.Color.FromArgb(0xCC, accentStrongColor.R, accentStrongColor.G, accentStrongColor.B)
+                    : Windows.UI.Color.FromArgb(0xA8, runningColor.R, runningColor.G, runningColor.B)),
+                StrokeThickness = isHighlighted ? 3.1 : 2.3,
+                StrokeDashArray = new DoubleCollection { 2, 3 },
+                Opacity = isDimmed ? 0.32 : 0.9,
+                IsHitTestVisible = false,
             };
-            Grid.SetRow(header, 0);
-            Grid.SetColumn(header, column);
-            grid.Children.Add(header);
+            yield return flowPath;
         }
 
-        int maxRows = Math.Min(element.Rows.Count, 6);
-        for (int rowIndex = 0; rowIndex < maxRows; rowIndex++)
+        var mainPath = new Microsoft.UI.Xaml.Shapes.Path
         {
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            IReadOnlyList<string> cells = element.Rows[rowIndex];
-            for (int column = 0; column < element.Columns.Count && column < cells.Count; column++)
-            {
-                var cell = new TextBlock
-                {
-                    Text = cells[column],
-                    FontSize = 12,
-                    TextWrapping = TextWrapping.NoWrap
-                };
-                Grid.SetRow(cell, rowIndex + 1);
-                Grid.SetColumn(cell, column);
-                grid.Children.Add(cell);
-            }
-        }
+            Data = geometry,
+            Stroke = new SolidColorBrush(baseColor),
+            StrokeThickness = isHighlighted ? 2.4 : 1.5,
+            IsHitTestVisible = false,
+        };
+        yield return mainPath;
 
-        stack.Children.Add(grid);
-        return stack;
+        var startPlug = new Ellipse
+        {
+            Width = 6,
+            Height = 6,
+            Fill = new SolidColorBrush(baseColor),
+            Opacity = isDimmed ? 0.42 : 1,
+            IsHitTestVisible = false,
+        };
+        Canvas.SetLeft(startPlug, startX - 3);
+        Canvas.SetTop(startPlug, startY - 3);
+        yield return startPlug;
+
+        var endPlug = new Ellipse
+        {
+            Width = 8,
+            Height = 8,
+            Fill = new SolidColorBrush(baseColor),
+            Opacity = isDimmed ? 0.42 : 1,
+            IsHitTestVisible = false,
+        };
+        Canvas.SetLeft(endPlug, endX - 4);
+        Canvas.SetTop(endPlug, endY - 4);
+        yield return endPlug;
     }
 
-    private static FrameworkElement BuildBadgeElement(BoardCardElement element)
+    private static FrameworkElement BuildConnectionLabel(string token, BoardCanvasPlacement source, BoardCanvasPlacement target, bool isHighlighted, bool isDimmed)
     {
-        return new Border
+        double centerX = ((source.X + (source.Width / 2)) + (target.X + (target.Width / 2))) / 2;
+        double centerY = ((source.Y + source.Height) + target.Y) / 2;
+        var label = new Border
         {
-            Padding = new Thickness(8, 2, 8, 2),
-            CornerRadius = new CornerRadius(8),
-            HorizontalAlignment = HorizontalAlignment.Left,
-            Background = new SolidColorBrush(Color.FromArgb(0x33, Colors.SteelBlue.R, Colors.SteelBlue.G, Colors.SteelBlue.B)),
+            Padding = new Thickness(4, 1, 4, 1),
+            Background = isHighlighted
+                ? BoardTheme.CreateResourceBrush("BoardColorAccentSoft", 0xF0, Colors.LightBlue)
+                : BoardTheme.CreateResourceBrush("BoardColorSurfaceStrong", 0xD8, Colors.White),
+            Opacity = isDimmed ? 0.42 : 1,
+            IsHitTestVisible = false,
             Child = new TextBlock
             {
-                Text = string.IsNullOrWhiteSpace(element.Text) ? (element.Label ?? "badge") : element.Text,
-                FontSize = 12
+                Text = token,
+                FontSize = 11,
+                Opacity = 0.84,
             }
         };
+        Canvas.SetLeft(label, System.Math.Max(0, centerX - 24));
+        Canvas.SetTop(label, System.Math.Max(0, centerY - 10));
+        return label;
     }
 
-    private static FrameworkElement BuildAlertElement(BoardCardElement element)
-    {
-        return new Border
-        {
-            Padding = new Thickness(10),
-            CornerRadius = new CornerRadius(8),
-            BorderThickness = new Thickness(1),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(0x88, Colors.Goldenrod.R, Colors.Goldenrod.G, Colors.Goldenrod.B)),
-            Background = new SolidColorBrush(Color.FromArgb(0x22, Colors.Goldenrod.R, Colors.Goldenrod.G, Colors.Goldenrod.B)),
-            Child = new TextBlock
-            {
-                Text = string.IsNullOrWhiteSpace(element.Text) ? (element.Label ?? "Alert") : element.Text,
-                TextWrapping = TextWrapping.WrapWholeWords
-            }
-        };
-    }
-
-    private static FrameworkElement BuildTextElement(BoardCardElement element)
-    {
-        var stack = new StackPanel { Spacing = 2 };
-        if (!string.IsNullOrWhiteSpace(element.Label))
-        {
-            stack.Children.Add(BuildElementLabel(element.Label));
-        }
-
-        stack.Children.Add(new TextBlock
-        {
-            Text = element.Text ?? string.Empty,
-            TextWrapping = TextWrapping.WrapWholeWords
-        });
-
-        return stack;
-    }
-
-    private static FrameworkElement BuildChartElement(BoardCardElement element)
-    {
-        var stack = new StackPanel { Spacing = 4 };
-        if (!string.IsNullOrWhiteSpace(element.Label))
-        {
-            stack.Children.Add(BuildElementLabel(element.Label));
-        }
-
-        if (element.Points.Count == 0)
-        {
-            stack.Children.Add(new TextBlock { Text = "No chart data.", Opacity = 0.6 });
-            return stack;
-        }
-
-        double max = 0;
-        foreach (BoardChartPoint point in element.Points)
-        {
-            if (point.Value > max) max = point.Value;
-        }
-        if (max <= 0) max = 1;
-
-        int rendered = 0;
-        foreach (BoardChartPoint point in element.Points)
-        {
-            if (rendered++ >= 8) break;
-
-            var row = new Grid { ColumnSpacing = 8 };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(70) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-            var labelBlock = new TextBlock
-            {
-                Text = point.Label,
-                FontSize = 12,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            Grid.SetColumn(labelBlock, 0);
-            row.Children.Add(labelBlock);
-
-            var track = new Border
-            {
-                Height = 14,
-                CornerRadius = new CornerRadius(7),
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                Background = new SolidColorBrush(Color.FromArgb(0x22, Colors.SteelBlue.R, Colors.SteelBlue.G, Colors.SteelBlue.B))
-            };
-            var bar = new Border
-            {
-                Height = 14,
-                CornerRadius = new CornerRadius(7),
-                HorizontalAlignment = HorizontalAlignment.Left,
-                Width = Math.Max(2, 180 * (point.Value / max)),
-                Background = new SolidColorBrush(Color.FromArgb(0xAA, Colors.SteelBlue.R, Colors.SteelBlue.G, Colors.SteelBlue.B))
-            };
-            track.Child = bar;
-            Grid.SetColumn(track, 1);
-            row.Children.Add(track);
-
-            var valueBlock = new TextBlock
-            {
-                Text = point.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                FontSize = 12,
-                Opacity = 0.7,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            Grid.SetColumn(valueBlock, 2);
-            row.Children.Add(valueBlock);
-
-            stack.Children.Add(row);
-        }
-
-        return stack;
-    }
-
-    private static FrameworkElement BuildMarkdownElement(BoardCardElement element)
-    {
-        var stack = new StackPanel { Spacing = 2 };
-        if (!string.IsNullOrWhiteSpace(element.Label))
-        {
-            stack.Children.Add(BuildElementLabel(element.Label));
-        }
-
-        string text = element.Text ?? string.Empty;
-        foreach (string rawLine in text.Replace("\r\n", "\n").Split('\n'))
-        {
-            string line = rawLine.TrimEnd();
-            if (line.Length == 0)
-            {
-                stack.Children.Add(new TextBlock { Text = string.Empty, FontSize = 4 });
-                continue;
-            }
-
-            stack.Children.Add(BuildMarkdownLine(line));
-        }
-
-        return stack;
-    }
-
-    private static TextBlock BuildMarkdownLine(string line)
-    {
-        string content = line;
-        double fontSize = 14;
-        Windows.UI.Text.FontWeight weight = FontWeights.Normal;
-        var margin = new Thickness(0);
-
-        if (content.StartsWith("### ", StringComparison.Ordinal))
-        {
-            content = content.Substring(4);
-            fontSize = 14;
-            weight = FontWeights.SemiBold;
-        }
-        else if (content.StartsWith("## ", StringComparison.Ordinal))
-        {
-            content = content.Substring(3);
-            fontSize = 16;
-            weight = FontWeights.SemiBold;
-        }
-        else if (content.StartsWith("# ", StringComparison.Ordinal))
-        {
-            content = content.Substring(2);
-            fontSize = 18;
-            weight = FontWeights.SemiBold;
-        }
-        else if (content.StartsWith("- ", StringComparison.Ordinal) || content.StartsWith("* ", StringComparison.Ordinal))
-        {
-            content = "•  " + content.Substring(2);
-            margin = new Thickness(8, 0, 0, 0);
-        }
-
-        var block = new TextBlock
-        {
-            FontSize = fontSize,
-            FontWeight = weight,
-            Margin = margin,
-            TextWrapping = TextWrapping.WrapWholeWords
-        };
-        AppendInlineMarkdown(block, content);
-        return block;
-    }
-
-    private static void AppendInlineMarkdown(TextBlock block, string content)
-    {
-        // Minimal inline markdown: **bold** segments split out into bold runs.
-        int index = 0;
-        while (index < content.Length)
-        {
-            int open = content.IndexOf("**", index, StringComparison.Ordinal);
-            if (open < 0)
-            {
-                block.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run { Text = content.Substring(index) });
-                break;
-            }
-
-            if (open > index)
-            {
-                block.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run { Text = content.Substring(index, open - index) });
-            }
-
-            int close = content.IndexOf("**", open + 2, StringComparison.Ordinal);
-            if (close < 0)
-            {
-                block.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run { Text = content.Substring(open) });
-                break;
-            }
-
-            block.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run
-            {
-                Text = content.Substring(open + 2, close - open - 2),
-                FontWeight = FontWeights.Bold
-            });
-            index = close + 2;
-        }
-    }
-
-    private static FrameworkElement BuildBack(BoardCard card)
-    {
-        var stack = new StackPanel { Spacing = 8 };
-
-        stack.Children.Add(new TextBlock
-        {
-            Text = "Runtime",
-            FontSize = 16,
-            FontWeight = FontWeights.SemiBold
-        });
-        stack.Children.Add(new TextBlock
-        {
-            Text = $"Card: {card.Id}",
-            Opacity = 0.75,
-            TextWrapping = TextWrapping.WrapWholeWords
-        });
-        stack.Children.Add(new TextBlock
-        {
-            Text = $"Status: {card.Status}",
-            Opacity = 0.75
-        });
-
-        if (!string.IsNullOrWhiteSpace(card.SchemaVersion))
-        {
-            stack.Children.Add(new TextBlock
-            {
-                Text = $"Schema: {card.SchemaVersion}",
-                Opacity = 0.75
-            });
-        }
-
-        stack.Children.Add(new TextBlock
-        {
-            Text = "Computed values",
-            FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, 4, 0, 0)
-        });
-        stack.Children.Add(card.ComputedValues.Count == 0
-            ? new TextBlock { Text = "No computed values.", Opacity = 0.6 }
-            : BuildFieldList(card.ComputedValues));
-
-        return WrapWithFlipButton(stack, "Back");
-    }
-
-    private static FrameworkElement BuildFieldList(IReadOnlyList<BoardCardField> fields)
-    {
-        var stack = new StackPanel { Spacing = 2 };
-        foreach (BoardCardField field in fields)
-        {
-            var line = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                Spacing = 6
-            };
-            line.Children.Add(new TextBlock
-            {
-                Text = $"{field.Key}:",
-                FontWeight = FontWeights.SemiBold,
-                Opacity = 0.8
-            });
-            line.Children.Add(new TextBlock
-            {
-                Text = field.Value,
-                TextWrapping = TextWrapping.WrapWholeWords
-            });
-            stack.Children.Add(line);
-        }
-
-        return stack;
-    }
-
-    private static FrameworkElement BuildTokenRow(IReadOnlyList<string> requires, IReadOnlyList<string> provides)
-    {
-        var stack = new StackPanel { Spacing = 4 };
-
-        if (requires.Count > 0)
-        {
-            stack.Children.Add(BuildTokenChips("requires", requires, 0x33, Colors.SlateGray));
-        }
-
-        if (provides.Count > 0)
-        {
-            stack.Children.Add(BuildTokenChips("provides", provides, 0x33, Colors.SeaGreen));
-        }
-
-        return stack;
-    }
-
-    private static FrameworkElement BuildTokenChips(string label, IReadOnlyList<string> tokens, byte alpha, Color color)
+    private static FrameworkElement BuildTokenPanel(
+        IReadOnlyList<string> tokens,
+        BoardCard card,
+        bool isProvide,
+        IReadOnlyDictionary<string, string> dataObjects,
+        System.Action<string?> toggleTokenFocus)
     {
         var row = new StackPanel
         {
             Orientation = Orientation.Horizontal,
-            Spacing = 6
+            Spacing = 4,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Visibility = tokens.Count == 0 ? Visibility.Collapsed : Visibility.Visible,
         };
-        row.Children.Add(new TextBlock
-        {
-            Text = label,
-            FontSize = 12,
-            Opacity = 0.6,
-            VerticalAlignment = VerticalAlignment.Center
-        });
 
         foreach (string token in tokens)
         {
-            row.Children.Add(new Border
+            bool isActive = isProvide ? dataObjects.ContainsKey(token) : true;
+            bool isMissing = !isProvide && !dataObjects.ContainsKey(token);
+            var button = new Button
             {
+                Content = token,
                 Padding = new Thickness(8, 2, 8, 2),
-                CornerRadius = new CornerRadius(8),
-                Background = new SolidColorBrush(Color.FromArgb(alpha, color.R, color.G, color.B)),
-                Child = new TextBlock { Text = token, FontSize = 12 }
-            });
+                MinWidth = 0,
+                FontSize = 11,
+                CornerRadius = new CornerRadius(10),
+                Background = isProvide
+                    ? BoardTheme.CreateStatusBrush("completed", isActive ? (byte)0x66 : (byte)0x33)
+                    : isMissing ? BoardTheme.CreateStatusBrush("failed", 0x44) : BoardTheme.CreateStatusBrush("fresh", 0x33),
+                BorderBrush = isProvide
+                    ? BoardTheme.CreateStatusBrush("completed", 0x88)
+                    : isMissing ? BoardTheme.CreateStatusBrush("failed", 0x99) : BoardTheme.CreateStatusBrush("fresh", 0x88),
+                BorderThickness = new Thickness(1),
+            };
+            string capturedToken = token;
+            button.Click += (_, _) => toggleTokenFocus(capturedToken);
+            row.Children.Add(button);
         }
 
         return row;
     }
 
-    private static FrameworkElement BuildStatusPill(string status)
+    private static T? FindAncestor<T>(DependencyObject? start) where T : DependencyObject
     {
-        return new Border
+        DependencyObject? current = start;
+        while (current is not null)
         {
-            Padding = new Thickness(8, 2, 8, 2),
-            CornerRadius = new CornerRadius(8),
-            VerticalAlignment = VerticalAlignment.Center,
-            Background = ToneBrush(status, 0x33),
-            Child = new TextBlock
+            if (current is T match)
             {
-                Text = status,
-                FontSize = 12,
-                Foreground = ToneBrush(status, 0xFF)
+                return match;
             }
-        };
-    }
 
-    private static FrameworkElement WrapWithFlipButton(FrameworkElement content, string buttonText)
-    {
-        var grid = new Grid { RowSpacing = 8 };
-        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-        Grid.SetRow(content, 0);
-        grid.Children.Add(content);
-
-        var button = new Button
-        {
-            Content = buttonText,
-            HorizontalAlignment = HorizontalAlignment.Right
-        };
-        Grid.SetRow(button, 1);
-        grid.Children.Add(button);
-
-        grid.Tag = button;
-        return grid;
-    }
-
-    private static void AttachFlip(FrameworkElement frontPanel, FrameworkElement backPanel)
-    {
-        if (frontPanel is Grid frontGrid && frontGrid.Tag is Button frontButton)
-        {
-            frontButton.Click += (_, _) =>
-            {
-                frontPanel.Visibility = Visibility.Collapsed;
-                backPanel.Visibility = Visibility.Visible;
-            };
+            current = VisualTreeHelper.GetParent(current);
         }
 
-        if (backPanel is Grid backGrid && backGrid.Tag is Button backButton)
+        return null;
+    }
+
+    private void RenderBackgroundGrid()
+    {
+        BackgroundGridHost.Children.Clear();
+        if (CardsHost.Width <= 0 || CardsHost.Height <= 0)
         {
-            backButton.Click += (_, _) =>
+            return;
+        }
+
+        for (double x = 0; x <= CardsHost.Width; x += BackgroundGridGap)
+        {
+            BackgroundGridHost.Children.Add(new Line
             {
-                backPanel.Visibility = Visibility.Collapsed;
-                frontPanel.Visibility = Visibility.Visible;
-            };
+                X1 = x,
+                X2 = x,
+                Y1 = 0,
+                Y2 = CardsHost.Height,
+                Stroke = BoardTheme.CreateResourceBrush("BoardColorBorderStrong", 0x14, Colors.SlateGray),
+                StrokeThickness = 1,
+                IsHitTestVisible = false,
+            });
+        }
+
+        for (double y = 0; y <= CardsHost.Height; y += BackgroundGridGap)
+        {
+            BackgroundGridHost.Children.Add(new Line
+            {
+                X1 = 0,
+                X2 = CardsHost.Width,
+                Y1 = y,
+                Y2 = y,
+                Stroke = BoardTheme.CreateResourceBrush("BoardColorBorderStrong", 0x14, Colors.SlateGray),
+                StrokeThickness = 1,
+                IsHitTestVisible = false,
+            });
         }
     }
 
-    private static Brush ToneBrush(string status, byte alpha)
+    private void UpdateMiniMap()
     {
-        Color color = (status ?? string.Empty).ToLowerInvariant() switch
+        MiniMapHost.Children.Clear();
+        if (lastPlacements.Count == 0 || CardsHost.Width <= 0 || CardsHost.Height <= 0)
         {
-            "completed" => Colors.SeaGreen,
-            "running" => Colors.SteelBlue,
-            "in_progress" => Colors.SteelBlue,
-            "failed" => Colors.IndianRed,
-            "blocked" => Colors.Goldenrod,
-            _ => Colors.SlateGray
-        };
+            UpdateMiniMapViewport();
+            return;
+        }
 
-        return new SolidColorBrush(Color.FromArgb(alpha, color.R, color.G, color.B));
+        double scale = System.Math.Min(MiniMapWidth / CardsHost.Width, MiniMapHeight / CardsHost.Height);
+        foreach (BoardCard card in lastCards)
+        {
+            if (!lastPlacements.TryGetValue(card.Id, out BoardCanvasPlacement? placement))
+            {
+                continue;
+            }
+
+            var rect = new Border
+            {
+                Width = System.Math.Max(8, placement.Width * scale),
+                Height = System.Math.Max(6, placement.Height * scale),
+                CornerRadius = new CornerRadius(3),
+                Background = new SolidColorBrush(GetMiniMapNodeColor(card.Status)),
+                BorderBrush = new SolidColorBrush(GetMiniMapNodeStrokeColor(card.Status)),
+                BorderThickness = new Thickness(1),
+                Opacity = 0.9,
+                IsHitTestVisible = false,
+            };
+            Canvas.SetLeft(rect, placement.X * scale);
+            Canvas.SetTop(rect, placement.Y * scale);
+            MiniMapHost.Children.Add(rect);
+        }
+
+        UpdateMiniMapViewport();
     }
+
+    private void UpdateMiniMapViewport()
+    {
+        if (CardsHost.Width <= 0 || CardsHost.Height <= 0)
+        {
+            MiniMapViewport.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        double scale = System.Math.Min(MiniMapWidth / CardsHost.Width, MiniMapHeight / CardsHost.Height);
+        double zoom = CanvasScrollViewer.ZoomFactor > 0 ? CanvasScrollViewer.ZoomFactor : 1;
+        double left = (CanvasScrollViewer.HorizontalOffset / zoom) * scale;
+        double top = (CanvasScrollViewer.VerticalOffset / zoom) * scale;
+        double viewportWidth = (CanvasScrollViewer.ActualWidth / zoom) * scale;
+        double viewportHeight = (CanvasScrollViewer.ActualHeight / zoom) * scale;
+        MiniMapViewport.Visibility = Visibility.Visible;
+        MiniMapViewport.Width = System.Math.Max(12, viewportWidth);
+        MiniMapViewport.Height = System.Math.Max(12, viewportHeight);
+        MiniMapViewport.Margin = new Thickness(left, top, 0, 0);
+    }
+
+    private void UpdateZoomStatus()
+    {
+        ZoomStatusText.Text = $"Zoom {(CanvasScrollViewer.ZoomFactor * 100):0}%";
+    }
+
+    private static Windows.UI.Color GetMiniMapNodeColor(string status)
+    {
+        Windows.UI.Color resolved = BoardTheme.ResolveColor(
+            string.Equals(status, "running", System.StringComparison.OrdinalIgnoreCase)
+                ? "BoardStatusCompletedColor"
+                : "BoardStatusFreshColor",
+            string.Equals(status, "running", System.StringComparison.OrdinalIgnoreCase) ? Colors.SeaGreen : Colors.SlateGray);
+        return Windows.UI.Color.FromArgb(
+            string.Equals(status, "running", System.StringComparison.OrdinalIgnoreCase) ? (byte)0xEA : (byte)0x94,
+            resolved.R,
+            resolved.G,
+            resolved.B);
+    }
+
+    private static Windows.UI.Color GetMiniMapNodeStrokeColor(string status)
+    {
+        Windows.UI.Color resolved = BoardTheme.ResolveColor(
+            string.Equals(status, "running", System.StringComparison.OrdinalIgnoreCase)
+                ? "BoardStatusCompletedColor"
+                : "BoardStatusFreshColor",
+            string.Equals(status, "running", System.StringComparison.OrdinalIgnoreCase) ? Colors.SeaGreen : Colors.SlateGray);
+        return Windows.UI.Color.FromArgb(
+            string.Equals(status, "running", System.StringComparison.OrdinalIgnoreCase) ? (byte)0xF6 : (byte)0x8A,
+            resolved.R,
+            resolved.G,
+            resolved.B);
+    }
+
+    private sealed record BoardConnection(string SourceCardId, string TargetCardId, string Token, bool IsRunning);
 }

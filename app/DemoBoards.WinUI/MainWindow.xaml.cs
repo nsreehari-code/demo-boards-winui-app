@@ -1,4 +1,5 @@
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 
 // To learn more about WinUI, the WinUI project structure,
 // and more about our project templates, see: http://aka.ms/winui-project-info.
@@ -12,6 +13,8 @@ namespace DemoBoards_WinUI;
 /// </summary>
 public sealed partial class MainWindow : Window
 {
+    public Frame RootFrameControl => RootFrame;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -21,7 +24,7 @@ public sealed partial class MainWindow : Window
 
         AppWindow.SetIcon("Assets/AppIcon.ico");
 
-        // Navigate the root frame to the main page on startup.
-        RootFrame.Navigate(typeof(MainPage));
+        // Start on a lightweight landing page and enter the heavier board surface explicitly.
+        RootFrame.Navigate(typeof(FrePage));
     }
 }

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<UserControl
+    x:Class="DemoBoards_WinUI.Controls.IngestCard"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:controls="using:DemoBoards_WinUI.Controls"
+    mc:Ignorable="d">
+
+    <Border x:Name="ShellBorder" Padding="14" CornerRadius="14" BorderThickness="1">
+        <Grid RowSpacing="10">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <StackPanel Spacing="3">
+                <TextBlock x:Name="TitleText" FontSize="17" FontWeight="SemiBold" TextWrapping="WrapWholeWords" />
+                <TextBlock x:Name="SubtitleText" FontSize="12" Opacity="0.68" TextWrapping="WrapWholeWords" />
+            </StackPanel>
+
+            <controls:GandalfChatPane x:Name="ChatPaneView" Grid.Row="1" />
+        </Grid>
+    </Border>
+</UserControl>

@@ -18,12 +18,77 @@
             <TextBlock x:Name="BoardSummaryText" Opacity="0.75" TextWrapping="WrapWholeWords" />
         </StackPanel>
 
-        <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollMode="Auto">
-            <VariableSizedWrapGrid
-                x:Name="CardsHost"
-                Orientation="Horizontal"
-                ItemWidth="320"
-                ItemHeight="240" />
-        </ScrollViewer>
+        <Grid Grid.Row="1">
+            <ScrollViewer
+                x:Name="CanvasScrollViewer"
+                HorizontalScrollBarVisibility="Auto"
+                VerticalScrollBarVisibility="Auto"
+                HorizontalScrollMode="Enabled"
+                VerticalScrollMode="Enabled"
+                ZoomMode="Enabled"
+                MinZoomFactor="0.35"
+                MaxZoomFactor="1.35">
+                <Grid x:Name="CanvasSurface">
+                    <Canvas x:Name="BackgroundGridHost" IsHitTestVisible="False" />
+                    <Canvas x:Name="CardsHost" />
+                </Grid>
+            </ScrollViewer>
+
+            <Border
+                HorizontalAlignment="Left"
+                VerticalAlignment="Top"
+                Padding="10,8"
+                Margin="12"
+                CornerRadius="12"
+                Background="{ThemeResource BoardCanvasPanelBrush}"
+                BorderBrush="{ThemeResource BoardCanvasPanelBorderBrush}"
+                BorderThickness="1">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Canvas" FontSize="12" Opacity="0.72" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Button x:Name="ZoomOutButton" Content="-" Width="34" Padding="0" />
+                        <Button x:Name="ZoomInButton" Content="+" Width="34" Padding="0" />
+                        <Button x:Name="FitCanvasButton" Content="Fit" Padding="10,2" />
+                        <Button x:Name="ResetCanvasButton" Content="Reset" Padding="10,2" />
+                    </StackPanel>
+                    <TextBlock x:Name="ZoomStatusText" FontSize="11" Opacity="0.68" />
+                </StackPanel>
+            </Border>
+
+            <Border
+                x:Name="TokenFocusBanner"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Top"
+                Padding="10,6"
+                Margin="12"
+                CornerRadius="10"
+                Background="{ThemeResource BoardCanvasPanelBrush}"
+                BorderBrush="{ThemeResource BoardCanvasPanelBorderBrush}"
+                BorderThickness="1"
+                Visibility="Collapsed">
+                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <TextBlock Text="Token focus" FontSize="12" Opacity="0.72" VerticalAlignment="Center" />
+                    <Button x:Name="ClearTokenFocusButton" Padding="10,2" />
+                </StackPanel>
+            </Border>
+
+            <Border
+                HorizontalAlignment="Right"
+                VerticalAlignment="Bottom"
+                Padding="8"
+                Margin="12"
+                CornerRadius="12"
+                Background="{ThemeResource BoardCanvasMiniMapBrush}"
+                BorderBrush="{ThemeResource BoardCanvasMiniMapBorderBrush}"
+                BorderThickness="1">
+                <StackPanel Spacing="6">
+                    <TextBlock Text="Mini map" FontSize="11" Opacity="0.68" />
+                    <Grid Width="200" Height="128">
+                        <Canvas x:Name="MiniMapHost" Width="200" Height="128" />
+                        <Border x:Name="MiniMapViewport" BorderBrush="{ThemeResource BoardCanvasMiniMapViewportBorderBrush}" BorderThickness="1.5" Background="{ThemeResource BoardCanvasMiniMapViewportBrush}" IsHitTestVisible="False" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </Grid>
     </Grid>
 </UserControl>

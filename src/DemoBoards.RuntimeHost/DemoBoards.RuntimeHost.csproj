@@ -18,12 +18,27 @@
       <None Include="..\..\engine\GoldenHarness\js\producer-driver.js"
           Link="js\producer-driver.js"
           CopyToOutputDirectory="PreserveNewest" />
+      <None Include="..\..\..\demo-boards-ns-code\demo-board\server\hosted-board-runtime\host-shared\controlface-embedded-shared.js"
+        Link="js\controlface-embedded-shared.js"
+        CopyToOutputDirectory="PreserveNewest" />
+        <None Include="..\..\..\demo-boards-ns-code\demo-board\server\hosted-board-runtime\host-shared\agentface-embedded-shared.js"
+          Link="js\agentface-embedded-shared.js"
+          CopyToOutputDirectory="PreserveNewest" />
       <None Include="..\..\..\yaml-flow\browser\compute-jsonata.js"
           Link="js\compute-jsonata.js"
           CopyToOutputDirectory="PreserveNewest" />
       <None Include="..\..\..\yaml-flow\browser\server-runtime-controlface.js"
           Link="js\server-runtime-controlface.js"
           CopyToOutputDirectory="PreserveNewest" />
+        <None Include="..\..\..\demo-boards-ns-code\demo-board\server\hosted-board-runtime\sample-card-templates\*.json"
+          Link="sample-card-templates\%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
+          <None Include="..\..\..\demo-boards-ns-code\demo-board\server\hosted-board-runtime\http-mcp-controlface\agentface.tools.json"
+            Link="agentface.tools.json"
+            CopyToOutputDirectory="PreserveNewest" />
+            <None Include="node\host-invocation-runner.mjs"
+              Link="node\host-invocation-runner.mjs"
+              CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

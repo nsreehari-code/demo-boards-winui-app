@@ -8,64 +8,63 @@
     xmlns:controls="using:DemoBoards_WinUI.Controls"
     mc:Ignorable="d">
 
-    <ScrollViewer>
-        <Grid Padding="28" RowSpacing="18">
+    <Grid Background="{ThemeResource BoardWindowBackgroundBrush}">
+        <Grid RowSpacing="0">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
-            <StackPanel Spacing="6">
-                <TextBlock Text="Embedded Runtime Host" FontSize="32" FontWeight="SemiBold" />
-                <TextBlock Text="The WinUI shell now owns V8 lifecycle, localfs storage selection, the Copilot/Foundry invocation bridge, and the localhost agentface surface." TextWrapping="WrapWholeWords" />
-            </StackPanel>
+            <Border Padding="20,10,20,10" Background="{ThemeResource BoardTopBarBackgroundBrush}" BorderBrush="{ThemeResource BoardTopBarBorderBrush}" BorderThickness="0,0,0,1">
+                <Grid ColumnSpacing="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
 
-            <Border Grid.Row="1" Padding="18" CornerRadius="16" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
-                <StackPanel Spacing="8">
-                    <TextBlock Text="Runtime State" FontSize="20" FontWeight="SemiBold" />
-                    <TextBlock x:Name="RuntimeStatusText" TextWrapping="WrapWholeWords" />
-                </StackPanel>
+                    <StackPanel Spacing="2">
+                        <TextBlock x:Name="PageTitleText" FontSize="22" FontWeight="SemiBold" Foreground="{ThemeResource BoardTextBrush}" TextTrimming="CharacterEllipsis" />
+                        <TextBlock x:Name="PageSubtitleText" Opacity="0.92" Foreground="{ThemeResource BoardTextMutedBrush}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                        <Button x:Name="BoardConfigButton" Content="Board config" Click="OnBoardConfigClick" />
+                        <Button x:Name="RefreshButton" Content="Refresh" Click="OnRefreshClick" />
+                    </StackPanel>
+                </Grid>
             </Border>
 
-            <Border Grid.Row="2" Padding="18" CornerRadius="16" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
-                <StackPanel Spacing="8">
-                    <TextBlock Text="Paths" FontSize="20" FontWeight="SemiBold" />
-                    <TextBlock x:Name="RootDirectoryText" TextWrapping="WrapWholeWords" />
-                    <TextBlock x:Name="StorageDirectoryText" TextWrapping="WrapWholeWords" />
-                </StackPanel>
-            </Border>
+            <controls:MainBoard Grid.Row="1" x:Name="MainBoardView" />
+        </Grid>
 
-            <Border Grid.Row="3" Padding="18" CornerRadius="16" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
-                <StackPanel Spacing="8">
-                    <TextBlock Text="Agentface" FontSize="20" FontWeight="SemiBold" />
-                    <TextBlock x:Name="AgentfaceEndpointText" TextWrapping="WrapWholeWords" />
-                    <TextBlock Text="Current surface: `/healthz`, `/mcp`, and `/mcp-raw` on localhost. This is the app-hosted replacement for the old external runtime socket surface." TextWrapping="WrapWholeWords" />
-                </StackPanel>
-            </Border>
+        <controls:GlobalModal x:Name="InspectModalView" />
+        <controls:GlobalModal x:Name="ConfigModalView" />
+        <controls:GlobalModal x:Name="ChatModalView" />
+        <controls:GlobalModal x:Name="SmokeModalView" />
 
-            <Border Grid.Row="4" Padding="18" CornerRadius="16" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
-                <StackPanel Spacing="8">
-                    <TextBlock Text="Copilot / Foundry Invocation" FontSize="20" FontWeight="SemiBold" />
-                    <TextBlock x:Name="InvocationText" TextWrapping="WrapWholeWords" />
-                </StackPanel>
-            </Border>
-
-            <Border Grid.Row="5" Padding="18" CornerRadius="16" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
-                <StackPanel Spacing="12">
-                    <Grid>
-                        <TextBlock Text="Board Snapshot" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center" />
-                        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
-                            <Button x:Name="AddCardButton" Content="Add card" Click="OnAddCardClick" />
-                            <Button x:Name="RefreshButton" Content="Refresh" Click="OnRefreshClick" />
-                        </StackPanel>
-                    </Grid>
-                    <controls:BoardCanvas x:Name="BoardCanvasView" MinHeight="280" />
+        <Grid x:Name="StartupOverlay" Background="{ThemeResource BoardWindowBackgroundBrush}">
+            <Border
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Padding="24"
+                CornerRadius="18"
+                Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}">
+                <StackPanel Spacing="14" Width="320">
+                    <ProgressRing IsActive="True" Width="40" Height="40" HorizontalAlignment="Center" />
+                    <TextBlock
+                        Text="Loading DemoBoards"
+                        FontSize="22"
+                        FontWeight="SemiBold"
+                        HorizontalAlignment="Center"
+                        Foreground="{ThemeResource BoardTextBrush}" />
+                    <TextBlock
+                        x:Name="StartupStatusText"
+                        Text="Preparing board surface..."
+                        TextAlignment="Center"
+                        TextWrapping="WrapWholeWords"
+                        Foreground="{ThemeResource BoardTextMutedBrush}" />
                 </StackPanel>
             </Border>
         </Grid>
-    </ScrollViewer>
+    </Grid>
 </Page>
