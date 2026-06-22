@@ -17,3 +17,6 @@ This file records only drifts that appear necessary because the WinUI app is an 
 
 - Some UI/runtime helper modules remain native C# mirrors of frontend helper modules.
   Reason: the WinUI host needs local, strongly-typed helper seams at the native UI boundary for deterministic canvas placement and pane/renderer rule resolution. Concretely, `BoardCanvasLayoutEngine` mirrors `src/lib/boardCanvasLayout.js`, and `CardPresentationConfig` mirrors `src/lib/cardPresentationConfig.js`. This is retained for host-language modularity, not because WinUI needs distinct product behavior.
+
+- Shared iconography now requires host-packaged SVG assets in addition to frontend inline SVG fragments.
+  Reason: the frontend can keep many icons inline inside React component markup, while the WinUI host needs those same shapes surfaced as packaged asset files and icon-source helpers to reuse them across native controls.

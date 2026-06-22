@@ -7,29 +7,34 @@ using System;
 using System.Text.Json;
 using System.Threading.Tasks;
 
-// To learn more about WinUI, the WinUI project structure,
-// and more about our project templates, see: http://aka.ms/winui-project-info.
-
 namespace DemoBoards_WinUI;
 
 /// <summary>
 /// The main content page displayed inside the application window.
-/// Add your UI logic, event handlers, and data binding here.
 /// </summary>
 public sealed partial class MainPage : Page
 {
+    private const int DefaultRefreshAllIntervalSeconds = 30 * 60;
+
     private BoardStore? boardStore;
     private EmbeddedBoardClient? boardClient;
+    private readonly DispatcherTimer refreshCountdownTimer = new() { Interval = TimeSpan.FromSeconds(1) };
+    private DateTimeOffset nextRefreshAt = DateTimeOffset.UtcNow.AddSeconds(DefaultRefreshAllIntervalSeconds);
+    private int refreshAllIntervalSeconds = DefaultRefreshAllIntervalSeconds;
+    private bool refreshingBoard;
 
     public MainPage()
     {
         InitializeComponent();
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
+        refreshCountdownTimer.Tick += OnRefreshCountdownTick;
         InspectModalView.CloseRequested += OnInspectModalCloseRequested;
         ConfigModalView.CloseRequested += OnConfigModalCloseRequested;
         ChatModalView.CloseRequested += OnChatModalCloseRequested;
         SmokeModalView.CloseRequested += OnSmokeModalCloseRequested;
+        RefreshTimerButton.Label = string.Empty;
+        RefreshTimerButton.ToolTipText = "Refresh all cards";
     }
 
     public static MainPage? TryGetCurrent()
@@ -49,6 +54,12 @@ public sealed partial class MainPage : Page
         boardClient = app.BoardClient;
         boardStore.StateChanged += OnBoardStateChanged;
         boardStore.UiStateChanged += OnBoardUiStateChanged;
+        ResetRefreshCountdown();
+        UpdateRefreshTimerState();
+        if (!refreshCountdownTimer.IsEnabled)
+        {
+            refreshCountdownTimer.Start();
+        }
 
         UpdatePageChrome(boardStore);
         ShowStartupOverlay("Preparing board surface...");
@@ -109,6 +120,7 @@ public sealed partial class MainPage : Page
 
     private void OnUnloaded(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
     {
+        refreshCountdownTimer.Stop();
         if (boardStore is not null)
         {
             boardStore.StateChanged -= OnBoardStateChanged;
@@ -136,6 +148,8 @@ public sealed partial class MainPage : Page
                 }
 
                 UpdatePageChrome(boardStore);
+                UpdateRefreshIntervalFromConfig(boardStore.State.ManagedBoardConfig);
+                UpdateRefreshTimerState();
                 RenderBoard(boardStore);
             }
 
@@ -162,6 +176,67 @@ public sealed partial class MainPage : Page
         (string title, string subtitle) = ResolvePageTitleAndSubtitle(store.State.ManagedBoardConfig, store.GetBoardInfo().BoardId);
         PageTitleText.Text = title;
         PageSubtitleText.Text = subtitle;
+    }
+
+    private void UpdateRefreshTimerState()
+    {
+        bool canRefreshAll = CanRefreshAll();
+        TimeSpan remaining = nextRefreshAt - DateTimeOffset.UtcNow;
+        if (remaining < TimeSpan.Zero)
+        {
+            remaining = TimeSpan.Zero;
+        }
+
+        RefreshTimerButton.TimeText = FormatCountdown(remaining);
+        RefreshTimerButton.IsBusy = refreshingBoard;
+        RefreshTimerButton.IsActionEnabled = canRefreshAll;
+    }
+
+    private void ResetRefreshCountdown()
+    {
+        nextRefreshAt = DateTimeOffset.UtcNow.AddSeconds(Math.Max(1, refreshAllIntervalSeconds));
+        UpdateRefreshTimerState();
+    }
+
+    private void UpdateRefreshIntervalFromConfig(ManagedBoardConfigState? config)
+    {
+        int nextIntervalSeconds = ResolveRefreshAllIntervalSeconds(config);
+        if (nextIntervalSeconds == refreshAllIntervalSeconds)
+        {
+            return;
+        }
+
+        refreshAllIntervalSeconds = nextIntervalSeconds;
+        ResetRefreshCountdown();
+    }
+
+    private bool CanRefreshAll()
+    {
+        if (boardStore is null)
+        {
+            return false;
+        }
+
+        foreach (string cardId in boardStore.GetBoardCardIds())
+        {
+            if (boardStore.GetCardState(cardId)?.CanRefresh == true)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private async void OnRefreshCountdownTick(object? sender, object e)
+    {
+        UpdateRefreshTimerState();
+        if (refreshingBoard || !CanRefreshAll() || DateTimeOffset.UtcNow < nextRefreshAt)
+        {
+            return;
+        }
+
+        await RefreshBoardAsync();
     }
 
     private void ShowStartupOverlay(string message)
@@ -223,8 +298,27 @@ public sealed partial class MainPage : Page
 
     private async void OnRefreshClick(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
     {
-        if (boardClient is null) return;
-        await boardClient.RefreshBoardAsync();
+        await RefreshBoardAsync();
+    }
+
+    private async Task RefreshBoardAsync()
+    {
+        if (boardClient is null || refreshingBoard)
+        {
+            return;
+        }
+
+        refreshingBoard = true;
+        UpdateRefreshTimerState();
+        try
+        {
+            await boardClient.RefreshBoardAsync();
+        }
+        finally
+        {
+            refreshingBoard = false;
+            ResetRefreshCountdown();
+        }
     }
 
     private void OnBoardConfigClick(object sender, RoutedEventArgs e)
@@ -291,5 +385,48 @@ public sealed partial class MainPage : Page
         {
             return (fallbackTitle, fallbackSubtitle);
         }
+    }
+
+    private static int ResolveRefreshAllIntervalSeconds(ManagedBoardConfigState? config)
+    {
+        if (config is null || string.IsNullOrWhiteSpace(config.RawMetadataJson))
+        {
+            return DefaultRefreshAllIntervalSeconds;
+        }
+
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(config.RawMetadataJson);
+            JsonElement root = document.RootElement;
+
+            if (root.TryGetProperty("refreshAllIntervalSeconds", out JsonElement refreshSeconds)
+                && refreshSeconds.ValueKind is JsonValueKind.Number
+                && refreshSeconds.TryGetInt32(out int seconds)
+                && seconds > 0)
+            {
+                return seconds;
+            }
+
+            if (root.TryGetProperty("refreshAllIntervalMs", out JsonElement refreshMs)
+                && refreshMs.ValueKind is JsonValueKind.Number
+                && refreshMs.TryGetInt32(out int milliseconds)
+                && milliseconds > 0)
+            {
+                return Math.Max(1, milliseconds / 1000);
+            }
+        }
+        catch
+        {
+        }
+
+        return DefaultRefreshAllIntervalSeconds;
+    }
+
+    private static string FormatCountdown(TimeSpan remaining)
+    {
+        int totalSeconds = Math.Max(0, (int)Math.Ceiling(remaining.TotalSeconds));
+        int minutes = totalSeconds / 60;
+        int seconds = totalSeconds % 60;
+        return $"{minutes:00}:{seconds:00}";
     }
 }

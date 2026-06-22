@@ -53,4 +53,16 @@
     <SolidColorBrush x:Key="BoardCanvasMiniMapBorderBrush" Color="#666E9AD7" />
     <SolidColorBrush x:Key="BoardCanvasMiniMapViewportBrush" Color="#2954A6FF" />
     <SolidColorBrush x:Key="BoardCanvasMiniMapViewportBorderBrush" Color="#CC7DC7FF" />
+    <SolidColorBrush x:Key="BoardToolbarButtonBackgroundBrush" Color="#00000000" />
+    <SolidColorBrush x:Key="BoardToolbarButtonForegroundBrush" Color="{StaticResource BoardColorText}" />
+    <SolidColorBrush x:Key="BoardToolbarButtonBorderBrush" Color="{StaticResource BoardColorBorderStrong}" />
+
+    <Style x:Key="BoardToolbarButtonStyle" TargetType="Button">
+        <Setter Property="Padding" Value="10,4" />
+        <Setter Property="MinHeight" Value="30" />
+        <Setter Property="Background" Value="{ThemeResource BoardToolbarButtonBackgroundBrush}" />
+        <Setter Property="Foreground" Value="{ThemeResource BoardToolbarButtonForegroundBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource BoardToolbarButtonBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+    </Style>
 </ResourceDictionary>
