@@ -7,6 +7,7 @@ public static class HostIconSources
 {
     public const string AppConfigForward = "Assets/Icons/appconfig-forward.svg";
     public const string AppConfigPlus = "Assets/Icons/appconfig-plus.svg";
+    public const string AppConfigSettings = "Assets/Icons/appconfig-settings.svg";
     public const string CardCloseDetails = "Assets/Icons/card-close-details.svg";
     public const string CardResizeHandle = "Assets/Icons/card-resize-handle.svg";
     public const string ChatUserBubble = "Assets/Icons/chat-user-bubble.svg";

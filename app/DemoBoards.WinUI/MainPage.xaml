@@ -42,7 +42,7 @@
         <controls:GlobalModal x:Name="SmokeModalView" />
         <controls:FloatingCircleButton
             x:Name="BoardConfigButton"
-            SvgIconPath="Assets/Icons/appconfig-plus.svg"
+            SvgIconPath="Assets/Icons/appconfig-settings.svg"
             FloatPosition="BottomRight"
             Inset="18"
             Diameter="48"

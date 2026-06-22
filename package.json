@@ -4,6 +4,11 @@
   "type": "module",
   "scripts": {
     "goldenharness": "dotnet run --project engine/GoldenHarness/GoldenHarness.csproj",
+    "winui:stop": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/stop-winui.ps1",
+    "winui:build": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/build-winui.ps1",
+    "winui:clean": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/clean-winui.ps1",
+    "winui:start": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/start-winui.ps1",
+    "winui:restart": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/restart-winui.ps1",
     "test": "vitest run"
   },
   "devDependencies": {
