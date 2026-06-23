@@ -438,8 +438,8 @@ public sealed class HostStorageBridge
 public sealed class CopilotFoundryInvocationBridge
 {
     private readonly HostControlfaceBridge controlfaceBridge;
-    private readonly string serverUrl;
-    private readonly string mcpServerUrl;
+    private string serverUrl = string.Empty;
+    private string mcpServerUrl = string.Empty;
     private readonly string runnerPath;
     private readonly string repoRoot;
     private string? lastInvocationJson;
@@ -447,6 +447,14 @@ public sealed class CopilotFoundryInvocationBridge
     public CopilotFoundryInvocationBridge(HostControlfaceBridge controlfaceBridge, string serverUrl)
     {
         this.controlfaceBridge = controlfaceBridge ?? throw new ArgumentNullException(nameof(controlfaceBridge));
+        runnerPath = Path.Combine(AppContext.BaseDirectory, "node", "host-invocation-runner.mjs");
+        repoRoot = ResolveRepoRoot(AppContext.BaseDirectory)
+            ?? throw new InvalidOperationException("Unable to locate the ai-tool-evolver repo root from the WinUI runtime host.");
+        UpdateServerUrl(serverUrl);
+    }
+
+    public void UpdateServerUrl(string serverUrl)
+    {
         if (string.IsNullOrWhiteSpace(serverUrl))
         {
             throw new ArgumentException("Server URL is required.", nameof(serverUrl));
@@ -454,9 +462,6 @@ public sealed class CopilotFoundryInvocationBridge
 
         this.serverUrl = serverUrl.TrimEnd('/');
         mcpServerUrl = this.serverUrl + "/agent/mcp";
-        runnerPath = Path.Combine(AppContext.BaseDirectory, "node", "host-invocation-runner.mjs");
-        repoRoot = ResolveRepoRoot(AppContext.BaseDirectory)
-            ?? throw new InvalidOperationException("Unable to locate the ai-tool-evolver repo root from the WinUI runtime host.");
     }
 
     public string Invoke(string refJson, string argsJson)

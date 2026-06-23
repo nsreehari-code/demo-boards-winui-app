@@ -93,7 +93,7 @@ public static class NativeFilePicker
             ViewMode = PickerViewMode.List
         };
         picker.FileTypeFilter.Add("*");
-        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(((App)Application.Current).MainWindow));
+        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(App.Current.MainWindow));
         return picker;
     }
 
@@ -113,7 +113,7 @@ public static class NativeFilePicker
             DefaultFileExtension = ".json"
         };
         picker.FileTypeChoices.Add("JSON", new List<string> { ".json" });
-        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(((App)Application.Current).MainWindow));
+        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(App.Current.MainWindow));
         return picker;
     }
 

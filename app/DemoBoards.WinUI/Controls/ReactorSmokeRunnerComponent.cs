@@ -3,66 +3,62 @@ using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
+using Microsoft.UI.Reactor;
+using Microsoft.UI.Reactor.Core;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
+using static Microsoft.UI.Reactor.Factories;
 
 namespace DemoBoards_WinUI.Controls;
 
-public sealed class SmokeRunner : UserControl
+public sealed class ReactorSmokeRunnerComponent : Component
 {
-    private readonly TextBlock StatusText;
-    private readonly Button RunButton;
-    private readonly TextBox OutputTextBox;
-    private bool running;
-
-    public SmokeRunner()
+    public override Element Render()
     {
-        StatusText = new TextBlock
-        {
-            Opacity = 0.72,
-            Text = "Run the embedded GoldenHarness smoke suite from inside the WinUI app.",
-            TextWrapping = TextWrapping.WrapWholeWords,
-        };
-        RunButton = new Button { Content = "Run Tests" };
-        RunButton.Click += OnRunClick;
-        OutputTextBox = new TextBox
-        {
-            IsReadOnly = true,
-            AcceptsReturn = true,
-            TextWrapping = TextWrapping.Wrap,
-            VerticalAlignment = VerticalAlignment.Stretch,
-            FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
-            PlaceholderText = "Smoke output will appear here.",
-        };
-        var root = new Grid { RowSpacing = 10, MinWidth = 760, MinHeight = 520 };
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        root.Children.Add(new StackPanel
-        {
-            Spacing = 8,
-            Children =
-            {
-                new TextBlock { Text = "Smoke Runner", FontSize = 20, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold },
-                StatusText,
-                new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { RunButton } }
-            }
-        });
-        Grid.SetRow(OutputTextBox, 1);
-        root.Children.Add(OutputTextBox);
-        Content = root;
+        var (running, setRunning) = UseState(false);
+        var (statusText, setStatusText) = UseState("Run the embedded GoldenHarness smoke suite from inside the WinUI app.");
+        var (outputText, setOutputText) = UseState(string.Empty);
+
+        return Border(
+                VStack(10,
+                    TextBlock("Smoke Runner").FontSize(20).Bold(),
+                    TextBlock(statusText)
+                        .Opacity(0.72)
+                        .Set(text => text.TextWrapping = TextWrapping.WrapWholeWords),
+                    HStack(8,
+                        Button(running ? "Running..." : "Run Tests", () =>
+                        {
+                            if (running)
+                            {
+                                return;
+                            }
+
+                            _ = RunSmokeAsync(setRunning, setStatusText, setOutputText);
+                        })
+                            .AutomationName("Run smoke tests")
+                            .AccentButton()),
+                    TextBox(outputText)
+                        .AutomationName("Smoke runner output")
+                        .IsReadOnly(true)
+                        .AcceptsReturn(true)
+                        .TextWrapping(TextWrapping.Wrap)
+                        .PlaceholderText("Smoke output will appear here.")
+                        .Set(textBox =>
+                        {
+                            textBox.MinWidth = 760;
+                            textBox.MinHeight = 520;
+                            textBox.VerticalAlignment = VerticalAlignment.Stretch;
+                            textBox.FontFamily = new FontFamily("Consolas");
+                        })))
+            .Padding(8);
     }
 
-    private async void OnRunClick(object sender, RoutedEventArgs e)
+    private static async Task RunSmokeAsync(Action<bool> setRunning, Action<string> setStatusText, Action<string> setOutputText)
     {
-        if (running)
-        {
-            return;
-        }
-
-        RunButton.IsEnabled = false;
-        running = true;
-        StatusText.Text = "Running GoldenHarness smoke suite...";
-        OutputTextBox.Text = string.Empty;
+        setRunning(true);
+        setStatusText("Running GoldenHarness smoke suite...");
+        setOutputText(string.Empty);
 
         try
         {
@@ -76,20 +72,19 @@ public sealed class SmokeRunner : UserControl
                 $"run --project \"{projectPath}\"",
                 workingDirectory);
 
-            OutputTextBox.Text = output;
-            StatusText.Text = exitCode == 0
+            setOutputText(output);
+            setStatusText(exitCode == 0
                 ? "Smoke suite passed."
-                : $"Smoke suite failed with exit code {exitCode}.";
+                : $"Smoke suite failed with exit code {exitCode}.");
         }
         catch (Exception ex)
         {
-            StatusText.Text = ex.Message;
-            OutputTextBox.Text = ex.ToString();
+            setStatusText(ex.Message);
+            setOutputText(ex.ToString());
         }
         finally
         {
-            running = false;
-            RunButton.IsEnabled = true;
+            setRunning(false);
         }
     }
 

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -13,18 +14,20 @@ namespace DemoBoards.RuntimeHost;
 
 public sealed class DemoBoardsRuntimeService : IAsyncDisposable
 {
-    private const string AgentfacePrefix = "http://127.0.0.1:43123/";
+    private const int PreferredAgentfacePort = 43123;
+    private const int DynamicPortAttemptCount = 8;
 
     private readonly RuntimePaths paths;
     private readonly HostStorageBridge storageBridge;
     private readonly HostControlfaceBridge controlfaceBridge;
-    private readonly CopilotFoundryInvocationBridge invocationBridge;
     private readonly HostBoardNotifier boardNotifier;
     private readonly V8ScriptEngine engine;
     private readonly SemaphoreSlim engineLock = new(1, 1);
-    private readonly HttpListener httpListener;
+    private CopilotFoundryInvocationBridge invocationBridge;
+    private HttpListener httpListener;
     private CancellationTokenSource? listenerCts;
     private Task? listenerTask;
+    private string agentfacePrefix;
     private string? lastBoardSnapshotJson;
     private int boardChangeNotifications;
     private bool started;
@@ -43,13 +46,13 @@ public sealed class DemoBoardsRuntimeService : IAsyncDisposable
 
         storageBridge = new HostStorageBridge(this.paths.HostStorageDir);
         controlfaceBridge = new HostControlfaceBridge(this.paths.RootDir, AppContext.BaseDirectory);
-        invocationBridge = new CopilotFoundryInvocationBridge(controlfaceBridge, AgentfacePrefix.TrimEnd('/'));
         boardNotifier = new HostBoardNotifier();
         boardNotifier.BoardChanged += () => Interlocked.Increment(ref boardChangeNotifications);
         boardNotifier.BoardNotificationsReceived += HandleBoardNotificationsReceived;
         engine = new V8ScriptEngine(V8ScriptEngineFlags.EnableTaskPromiseConversion | V8ScriptEngineFlags.EnableValueTaskPromiseConversion);
-        httpListener = new HttpListener();
-        httpListener.Prefixes.Add(AgentfacePrefix);
+        agentfacePrefix = BuildAgentfacePrefix(PreferredAgentfacePort);
+        invocationBridge = CreateInvocationBridge(agentfacePrefix);
+        httpListener = CreateHttpListener(agentfacePrefix);
 
         InitializeEngine();
     }
@@ -58,7 +61,7 @@ public sealed class DemoBoardsRuntimeService : IAsyncDisposable
     {
         return new RuntimeStatus(
             started,
-            AgentfacePrefix.TrimEnd('/'),
+            agentfacePrefix.TrimEnd('/'),
             paths.RootDir,
             paths.HostStorageDir,
             invocationBridge.GetLastInvocationJson(),
@@ -167,12 +170,26 @@ public sealed class DemoBoardsRuntimeService : IAsyncDisposable
 
         storageBridge.ResetStorage();
         invocationBridge.Reset();
-        await WarmRuntimeAsync().ConfigureAwait(false);
-
         listenerCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        httpListener.Start();
-        listenerTask = Task.Run(() => ListenLoopAsync(listenerCts.Token), listenerCts.Token);
-        started = true;
+        try
+        {
+            StartHttpListenerWithFallback();
+            await WarmRuntimeAsync().ConfigureAwait(false);
+            listenerTask = Task.Run(() => ListenLoopAsync(listenerCts.Token), listenerCts.Token);
+            started = true;
+        }
+        catch
+        {
+            if (httpListener.IsListening)
+            {
+                httpListener.Stop();
+            }
+
+            listenerCts.Dispose();
+            listenerCts = null;
+            listenerTask = null;
+            throw;
+        }
     }
 
     public async Task StopAsync()
@@ -214,6 +231,76 @@ public sealed class DemoBoardsRuntimeService : IAsyncDisposable
         await StopAsync().ConfigureAwait(false);
         httpListener.Close();
         engine.Dispose();
+    }
+
+    private void StartHttpListenerWithFallback()
+    {
+        try
+        {
+            httpListener.Start();
+            return;
+        }
+        catch (HttpListenerException ex) when (ex.ErrorCode == 183)
+        {
+        }
+
+        Exception? lastError = null;
+        for (int attempt = 0; attempt < DynamicPortAttemptCount; attempt += 1)
+        {
+            string fallbackPrefix = BuildAgentfacePrefix(AllocateDynamicLoopbackPort());
+            RebindAgentfaceEndpoint(fallbackPrefix);
+
+            try
+            {
+                httpListener.Start();
+                return;
+            }
+            catch (HttpListenerException ex) when (ex.ErrorCode == 183)
+            {
+                lastError = ex;
+            }
+        }
+
+        throw new HttpListenerException(183, lastError?.Message ?? $"Failed to bind the embedded agentface listener after {DynamicPortAttemptCount} fallback attempts.");
+    }
+
+    private void RebindAgentfaceEndpoint(string prefix)
+    {
+        httpListener.Close();
+        agentfacePrefix = prefix;
+        invocationBridge.UpdateServerUrl(prefix);
+        httpListener = CreateHttpListener(prefix);
+    }
+
+    private CopilotFoundryInvocationBridge CreateInvocationBridge(string prefix)
+    {
+        return new CopilotFoundryInvocationBridge(controlfaceBridge, prefix.TrimEnd('/'));
+    }
+
+    private static HttpListener CreateHttpListener(string prefix)
+    {
+        HttpListener listener = new();
+        listener.Prefixes.Add(prefix);
+        return listener;
+    }
+
+    private static string BuildAgentfacePrefix(int port)
+    {
+        return $"http://127.0.0.1:{port}/";
+    }
+
+    private static int AllocateDynamicLoopbackPort()
+    {
+        TcpListener probe = new(IPAddress.Loopback, 0);
+        probe.Start();
+        try
+        {
+            return ((IPEndPoint)probe.LocalEndpoint).Port;
+        }
+        finally
+        {
+            probe.Stop();
+        }
     }
 
     private void InitializeEngine()

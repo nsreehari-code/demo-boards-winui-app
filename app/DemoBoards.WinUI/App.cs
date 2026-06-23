@@ -1,89 +1,92 @@
-﻿using System;
+using System;
 using System.IO;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
 using DemoBoards.RuntimeHost;
 using DemoBoards_WinUI.Config;
 using DemoBoards_WinUI.State;
-
-// To learn more about WinUI, the WinUI project structure,
-// and more about our project templates, see: http://aka.ms/winui-project-info.
+using Microsoft.UI.Xaml;
 
 namespace DemoBoards_WinUI;
 
-/// <summary>
-/// Provides application-specific behavior to supplement the default Application class.
-/// </summary>
-public partial class App : Application
+public sealed class App : IAsyncDisposable
 {
     private static readonly string StartupLogPath = Path.Combine(Path.GetTempPath(), "DemoBoards.WinUI.startup.log");
-    private Window? _window;
+    private Window? window;
     private ResourceDictionary? currentThemeDictionary;
     private DemoBoardsRuntimeService? runtimeService;
     private BoardStore? boardStore;
     private EmbeddedBoardClient? boardClient;
     private WinUiAppConfig? appConfig;
     private WinUiHostConfigService? hostConfigService;
-    
-    /// <summary>
-    /// Initializes the singleton application object.  This is the first line of authored code
-    /// executed, and as such is the logical equivalent of main() or WinMain().
-    /// </summary>
-    public App()
+    private bool started;
+    private bool uiResourcesInitialized;
+
+    private App()
     {
-        InitializeComponent();
-        LogStartup("App constructor initialized.");
-        UnhandledException += OnUnhandledException;
     }
 
+    public static App Current { get; } = new();
+
+    public Exception? StartupException { get; private set; }
     public DemoBoardsRuntimeService RuntimeService => runtimeService ?? throw new InvalidOperationException("Runtime service not initialized.");
     public BoardStore BoardStore => boardStore ?? throw new InvalidOperationException("Board store not initialized.");
     public EmbeddedBoardClient BoardClient => boardClient ?? throw new InvalidOperationException("Board client not initialized.");
-    public Window MainWindow => _window ?? throw new InvalidOperationException("Main window not initialized.");
+    public Window MainWindow => window ?? throw new InvalidOperationException("Main window not initialized.");
     public WinUiAppConfig HostConfig => appConfig ?? throw new InvalidOperationException("App config not initialized.");
     public WinUiHostConfigService HostConfigService => hostConfigService ?? throw new InvalidOperationException("Host config service not initialized.");
     public string CurrentThemePackId { get; private set; } = BoardTheme.DefaultThemePackId;
 
-    /// <summary>
-    /// Invoked when the application is launched.
-    /// </summary>
-    /// <param name="args">Details about the launch request and process.</param>
-    protected override async void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
+    public void Start()
     {
-        LogStartup("OnLaunched entered.");
+        if (started || StartupException is not null)
+        {
+            return;
+        }
+
+        LogStartup("Reactor app startup entered.");
 
         try
         {
-            Resources.MergedDictionaries.Add(new XamlControlsResources());
-            currentThemeDictionary = BoardTheme.CreateThemeDictionary(BoardTheme.DefaultThemePackId);
-            Resources.MergedDictionaries.Add(currentThemeDictionary);
-            LogStartup("App resources initialized.");
             appConfig = WinUiAppConfigLoader.Load(AppContext.BaseDirectory);
             Controls.BoardCanvasLayoutEngine.ConfigureDefaults(appConfig.Frontend.CanvasLayout);
             hostConfigService = new WinUiHostConfigService(appConfig, AppContext.BaseDirectory);
             LogStartup($"App config loaded. Templates config path: {appConfig.Backend.TemplatesConfigPath}");
             runtimeService = new DemoBoardsRuntimeService();
             LogStartup("Runtime service created.");
-            await runtimeService.StartAsync();
+            runtimeService.StartAsync().GetAwaiter().GetResult();
             LogStartup("Runtime service started.");
             boardStore = new BoardStore(runtimeService);
             boardClient = new EmbeddedBoardClient(runtimeService);
-            _window = new MainWindow();
-            LogStartup("MainWindow constructed.");
-            _window.Activate();
-            LogStartup("MainWindow activated.");
+            started = true;
         }
         catch (Exception ex)
         {
+            StartupException = ex;
             LogStartup($"Startup failed.{Environment.NewLine}{ex}");
-            ShowStartupFailureWindow(ex);
         }
+    }
+
+    public void AttachWindow(Window reactorWindow)
+    {
+        window = reactorWindow ?? throw new ArgumentNullException(nameof(reactorWindow));
+    }
+
+    public void EnsureUiResources()
+    {
+        if (uiResourcesInitialized)
+        {
+            return;
+        }
+
+        currentThemeDictionary = BoardTheme.CreateThemeDictionary(BoardTheme.DefaultThemePackId);
+        Application.Current.Resources.MergedDictionaries.Add(currentThemeDictionary);
+        uiResourcesInitialized = true;
+        LogStartup("Theme resources initialized.");
     }
 
     public void ApplyThemePack(string? themePackId)
     {
+        EnsureUiResources();
+
         string normalizedTheme = BoardTheme.NormalizeThemePackId(themePackId);
         if (CurrentThemePackId == normalizedTheme && currentThemeDictionary is not null)
         {
@@ -94,41 +97,21 @@ public partial class App : Application
 
         if (currentThemeDictionary is not null)
         {
-            Resources.MergedDictionaries.Remove(currentThemeDictionary);
+            Application.Current.Resources.MergedDictionaries.Remove(currentThemeDictionary);
         }
 
-        Resources.MergedDictionaries.Add(dictionary);
+        Application.Current.Resources.MergedDictionaries.Add(dictionary);
         currentThemeDictionary = dictionary;
         CurrentThemePackId = normalizedTheme;
     }
 
-    private async void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
+    public async ValueTask DisposeAsync()
     {
-        LogStartup($"Unhandled exception.{Environment.NewLine}{e.Exception}");
         boardStore?.Dispose();
         if (runtimeService is not null)
         {
             await runtimeService.DisposeAsync();
         }
-    }
-
-    private void ShowStartupFailureWindow(Exception ex)
-    {
-        var fallbackWindow = new Window();
-        fallbackWindow.Content = new ScrollViewer
-        {
-            Content = new TextBox
-            {
-                Text = $"DemoBoards.WinUI failed to start.{Environment.NewLine}{Environment.NewLine}{ex}",
-                IsReadOnly = true,
-                TextWrapping = TextWrapping.Wrap,
-                AcceptsReturn = true,
-                Margin = new Thickness(16)
-            }
-        };
-
-        _window = fallbackWindow;
-        fallbackWindow.Activate();
     }
 
     private static void LogStartup(string message)
