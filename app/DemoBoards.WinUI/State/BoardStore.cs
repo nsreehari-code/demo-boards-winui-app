@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using DemoBoards.RuntimeHost;
+using DemoBoards_WinUI.Config;
 
 namespace DemoBoards_WinUI.State;
 
@@ -79,16 +80,18 @@ public sealed record BoardStoreChangedEventArgs(
 public sealed class BoardStore : IDisposable
 {
     private readonly DemoBoardsRuntimeService runtimeService;
+    private readonly WinUiBoardServerConstants boardServerConstants;
     private BoardStoreState state;
     private BoardSnapshot snapshot;
     private BoardUiState uiState = BoardUiState.Empty;
 
-    public BoardStore(DemoBoardsRuntimeService runtimeService)
+    public BoardStore(DemoBoardsRuntimeService runtimeService, WinUiBoardServerConstants boardServerConstants)
     {
         this.runtimeService = runtimeService;
+        this.boardServerConstants = boardServerConstants;
 
         BoardSnapshot initialSnapshot = runtimeService.GetBoardSnapshot();
-        state = BuildState(initialSnapshot, runtimeService.GetCardWatchparties());
+        state = BuildState(initialSnapshot, runtimeService.GetCardWatchparties(boardServerConstants.AgentOutputChannel, boardServerConstants.AgentToolsChannel));
         snapshot = BuildSnapshot(state);
 
         runtimeService.BoardSnapshotChanged += HandleSnapshotChanged;
@@ -266,7 +269,7 @@ public sealed class BoardStore : IDisposable
 
     private void HandleSnapshotChanged(object? sender, BoardSnapshot nextSnapshot)
     {
-        Dispatch(new ReplacePublishedStateAction(nextSnapshot, runtimeService.GetCardWatchparties()));
+        Dispatch(new ReplacePublishedStateAction(nextSnapshot, runtimeService.GetCardWatchparties(boardServerConstants.AgentOutputChannel, boardServerConstants.AgentToolsChannel)));
     }
 
     private void HandleRuntimeNotificationsReceived(object? sender, string notificationsJson)
@@ -1184,7 +1187,7 @@ public sealed class BoardStore : IDisposable
             : current;
         BoardWatchpartyState delta = ParseWatchpartyDelta(cardId, normalizedChannel, payload);
 
-        if (string.Equals(normalizedChannel, "agent-output", StringComparison.Ordinal))
+        if (string.Equals(normalizedChannel, App.Current.HostConfig.Frontend.BoardServerConstants.AgentOutputChannel, StringComparison.Ordinal))
         {
             if (replace || !string.IsNullOrWhiteSpace(delta.AgentOutput) || clear)
             {
@@ -1194,7 +1197,7 @@ public sealed class BoardStore : IDisposable
             return current;
         }
 
-        if (string.Equals(normalizedChannel, "agent-tools", StringComparison.Ordinal))
+        if (string.Equals(normalizedChannel, App.Current.HostConfig.Frontend.BoardServerConstants.AgentToolsChannel, StringComparison.Ordinal))
         {
             if (replace || clear)
             {
@@ -1217,12 +1220,12 @@ public sealed class BoardStore : IDisposable
 
     private static BoardWatchpartyState ClearWatchpartyChannel(BoardWatchpartyState state, string channel)
     {
-        if (string.Equals(channel, "agent-output", StringComparison.Ordinal))
+        if (string.Equals(channel, App.Current.HostConfig.Frontend.BoardServerConstants.AgentOutputChannel, StringComparison.Ordinal))
         {
             return state with { AgentOutput = string.Empty };
         }
 
-        if (string.Equals(channel, "agent-tools", StringComparison.Ordinal))
+        if (string.Equals(channel, App.Current.HostConfig.Frontend.BoardServerConstants.AgentToolsChannel, StringComparison.Ordinal))
         {
             return state with
             {
@@ -1243,7 +1246,8 @@ public sealed class BoardStore : IDisposable
         string channelJson = JsonSerializer.Serialize(channel);
         string watchpartyJson = "{\"cardWatchParties\":{" + cardIdJson + ":{" + channelJson + ":[{\"payload\":" + payloadJson + "}]}}}";
 
-        return BoardSnapshot.ParseWatchparties(watchpartyJson).TryGetValue(cardId, out BoardWatchpartyState? watchparty)
+        WinUiBoardServerConstants constants = App.Current.HostConfig.Frontend.BoardServerConstants;
+        return BoardSnapshot.ParseWatchparties(watchpartyJson, constants.AgentOutputChannel, constants.AgentToolsChannel).TryGetValue(cardId, out BoardWatchpartyState? watchparty)
             ? watchparty
             : EmptyWatchparty();
     }

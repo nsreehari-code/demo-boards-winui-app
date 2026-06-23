@@ -122,6 +122,11 @@ public sealed record BoardSnapshot(
 
     public static IReadOnlyDictionary<string, BoardWatchpartyState> ParseWatchparties(string? publishedPayloadJson)
     {
+        return ParseWatchparties(publishedPayloadJson, "agent-output", "agent-tools");
+    }
+
+    public static IReadOnlyDictionary<string, BoardWatchpartyState> ParseWatchparties(string? publishedPayloadJson, string agentOutputChannel, string agentToolsChannel)
+    {
         if (string.IsNullOrWhiteSpace(publishedPayloadJson))
         {
             return new Dictionary<string, BoardWatchpartyState>(StringComparer.Ordinal);
@@ -138,7 +143,7 @@ public sealed record BoardSnapshot(
         var result = new Dictionary<string, BoardWatchpartyState>(StringComparer.Ordinal);
         foreach (JsonProperty property in watchPartiesById.EnumerateObject())
         {
-            result[property.Name] = ParseWatchparty(watchPartiesById, property.Name);
+            result[property.Name] = ParseWatchparty(watchPartiesById, property.Name, agentOutputChannel, agentToolsChannel);
         }
 
         return result;
@@ -297,7 +302,7 @@ public sealed record BoardSnapshot(
         return (parsed, receiving, processing);
     }
 
-    private static BoardWatchpartyState ParseWatchparty(JsonElement watchPartiesById, string cardId)
+    private static BoardWatchpartyState ParseWatchparty(JsonElement watchPartiesById, string cardId, string agentOutputChannel, string agentToolsChannel)
     {
         if (watchPartiesById.ValueKind != JsonValueKind.Object
             || !watchPartiesById.TryGetProperty(cardId, out JsonElement cardWatchparty)
@@ -306,8 +311,8 @@ public sealed record BoardSnapshot(
             return EmptyWatchparty();
         }
 
-        JsonElement agentOutputEvents = TryGetArray(cardWatchparty, "agent-output");
-        JsonElement agentToolsEvents = TryGetArray(cardWatchparty, "agent-tools");
+        JsonElement agentOutputEvents = TryGetArray(cardWatchparty, agentOutputChannel);
+        JsonElement agentToolsEvents = TryGetArray(cardWatchparty, agentToolsChannel);
 
         string agentOutput = string.Empty;
         if (agentOutputEvents.ValueKind == JsonValueKind.Array)

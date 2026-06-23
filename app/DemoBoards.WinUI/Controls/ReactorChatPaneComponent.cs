@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using DemoBoards.RuntimeHost;
 using DemoBoards_WinUI.Assets;
+using DemoBoards_WinUI.Config;
 using DemoBoards_WinUI.State;
 using Microsoft.UI.Reactor;
 using Microsoft.UI.Reactor.Core;
@@ -24,8 +25,6 @@ public sealed record ReactorChatPaneProps(
 
 public sealed class ReactorChatPaneComponent : Component<ReactorChatPaneProps>
 {
-    private const string AgentOutputChannel = "agent-output";
-    private const string AgentToolsChannel = "agent-tools";
     private const int HistoryTurnsPerPage = 5;
 
     public override Element Render()
@@ -42,6 +41,7 @@ public sealed class ReactorChatPaneComponent : Component<ReactorChatPaneProps>
         var (draftTurnId, setDraftTurnId) = UseState(CreateTurnId());
         var (draftAttachmentNames, setDraftAttachmentNames) = UseState<IReadOnlyList<string>>(Array.Empty<string>());
         var subscribedRef = UseRef(false);
+        WinUiBoardServerConstants boardServerConstants = App.Current.HostConfig.Frontend.BoardServerConstants;
 
         UseEffect(() =>
         {
@@ -59,12 +59,12 @@ public sealed class ReactorChatPaneComponent : Component<ReactorChatPaneProps>
 
         UseEffect(() =>
         {
-            _ = EnsureSubscriptionsAsync(subscribedRef, Props.BoardClient, Props.CardId);
+            _ = EnsureSubscriptionsAsync(subscribedRef, Props.BoardClient, Props.CardId, boardServerConstants);
             return () =>
             {
-                _ = DisposeSubscriptionsAsync(subscribedRef, Props.BoardClient, Props.CardId);
+                _ = DisposeSubscriptionsAsync(subscribedRef, Props.BoardClient, Props.CardId, boardServerConstants);
             };
-        }, Props.CardId);
+        }, Props.CardId, boardServerConstants.AgentOutputChannel, boardServerConstants.AgentToolsChannel);
 
         BoardCard? card = Props.BoardStore.GetCardDefinitionAndData(Props.CardId);
         BoardWatchpartyState watchparty = Props.BoardStore.GetCardWatchparty(Props.CardId);
@@ -227,7 +227,7 @@ public sealed class ReactorChatPaneComponent : Component<ReactorChatPaneProps>
         return VStack(10, root.ToArray());
     }
 
-    private static async Task EnsureSubscriptionsAsync(Ref<bool> subscribedRef, EmbeddedBoardClient boardClient, string cardId)
+    private static async Task EnsureSubscriptionsAsync(Ref<bool> subscribedRef, EmbeddedBoardClient boardClient, string cardId, WinUiBoardServerConstants boardServerConstants)
     {
         if (subscribedRef.Current || string.IsNullOrWhiteSpace(cardId))
         {
@@ -238,15 +238,15 @@ public sealed class ReactorChatPaneComponent : Component<ReactorChatPaneProps>
         try
         {
             await boardClient.SubscribeCardChatsAsync(cardId);
-            await boardClient.SubscribeWatchpartyAsync(cardId, AgentOutputChannel);
-            await boardClient.SubscribeWatchpartyAsync(cardId, AgentToolsChannel);
+            await boardClient.SubscribeWatchpartyAsync(cardId, boardServerConstants.AgentOutputChannel);
+            await boardClient.SubscribeWatchpartyAsync(cardId, boardServerConstants.AgentToolsChannel);
         }
         catch
         {
         }
     }
 
-    private static async Task DisposeSubscriptionsAsync(Ref<bool> subscribedRef, EmbeddedBoardClient boardClient, string cardId)
+    private static async Task DisposeSubscriptionsAsync(Ref<bool> subscribedRef, EmbeddedBoardClient boardClient, string cardId, WinUiBoardServerConstants boardServerConstants)
     {
         if (!subscribedRef.Current || string.IsNullOrWhiteSpace(cardId))
         {
@@ -255,8 +255,8 @@ public sealed class ReactorChatPaneComponent : Component<ReactorChatPaneProps>
 
         try
         {
-            await boardClient.UnsubscribeWatchpartyAsync(cardId, AgentToolsChannel);
-            await boardClient.UnsubscribeWatchpartyAsync(cardId, AgentOutputChannel);
+            await boardClient.UnsubscribeWatchpartyAsync(cardId, boardServerConstants.AgentToolsChannel);
+            await boardClient.UnsubscribeWatchpartyAsync(cardId, boardServerConstants.AgentOutputChannel);
             await boardClient.UnsubscribeCardChatsAsync(cardId);
         }
         catch

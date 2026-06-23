@@ -31,6 +31,59 @@ Current audit posture:
 - `Visual appeal` is temporarily reset to `recheck` across component surfaces because visible layout parity issues remain and need a fresh dedicated pass.
 - `Interaction / UX` and `Performance` are intentionally stricter: any row still marked `unverified` has not yet had a dedicated enough pass to justify `done`.
 
+## Component contract rule
+
+Component parity is only real when it is audited at the component-contract level.
+
+A surface cannot be treated as `done` just because a rough visual or workflow counterpart exists. For every frontend component row below, parity has to be checked across five contract layers:
+
+- `Props contract`: inputs, callbacks, composition slots, and externally-controlled mode flags.
+- `Views / logic contract`: render branching, conditional composition, child-surface wiring, and the actual UI logic that turns props/state into the visible structure.
+- `Theming contract`: theme-pack inputs, semantic color/token usage, mode-dependent styling rules, and whether the component responds to shared theme changes through the same conceptual contract.
+- `Local state contract`: the local state machine the component owns directly, including transient UI state, staged data, and focus/selection state.
+- `Effects / lifecycle contract`: everything React keeps in `useEffect`/refs/subscriptions/timers/scroll scheduling/setup-teardown and whatever WinUI/Reactor seam is responsible for the same behavior.
+
+If any one of those five layers is still materially different, the component is not parity-complete even if the surface renders and basic flows work.
+
+## Component contract parity
+
+This section is the gate for parity claims. It deliberately tracks props, view/logic, theming, state, and effects separately because the current gaps are often in render branching, theme-token behavior, and lifecycle behavior rather than missing top-level screens.
+
+| Frontend component | Current WinUI counterpart | Props contract | Views / logic contract | Theming contract | Local state contract | Effects / lifecycle contract | Current component-level note |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `AppConfigModal` | `ReactorAppConfigModalComponent` | recheck | recheck | recheck | recheck | unverified | The high-level flows exist, but this still needs a direct pass against the frontend modal's auto-open, seed/template preparation, modal branching, theme-token usage, and async saving/resetting state transitions. |
+| `BoardCanvas` | `ReactorBoardCanvasComponent` | done | recheck | recheck | needs work | needs work | React owns `selectedToken`, `reactFlowInstance`, `isInitialBoardViewReady`, persisted coords/width/viewport sync, and multiple viewport/layout `useEffect` paths. Reactor now renders and navigates the board, but it still needs a stricter one-to-one audit of viewport initialization, conditional focus composition, canvas theme-token behavior, persistence cadence, and focus/restore lifecycle. |
+| `BoardMarkdown` | markdown path inside `ReactorCardFrontContentComponent` | done | done | recheck | done | recheck | The render path exists, but the markdown component no longer stands alone in WinUI, so the remaining check is theme-token fidelity plus embedded lifecycle cost and refresh behavior. |
+| `CardBackface` | `ReactorCardBackfaceComponent` | done | recheck | recheck | recheck | unverified | The rendered token/details surface exists, but the frontend's expansion state, derived-display logic, and theme-token treatment still need a direct comparison. |
+| `CardCore` | `ReactorCardFrontContentComponent` | done | recheck | recheck | recheck | recheck | The bind/value/render contract is present, but the frontend component owns save/file-version/update logic, theme-driven render choices, and lifecycle details that still need explicit parity confirmation. |
+| `CardCoreView` | view-element rendering inside `ReactorCardFrontContentComponent` | recheck | recheck | recheck | recheck | recheck | This is the biggest folded surface. Each render kind now exists, but frontend render branching, semantic styling, local state such as sorting/journaling/measuring, and writeback effects must be checked render-kind by render-kind. |
+| `CardRenderer` | `ReactorCardRendererComponent` | done | recheck | recheck | done | recheck | Renderer branching is back, but the frontend dispatcher still needs an explicit comparison of branch selection, theme-aware shell selection, and whether specialized branches remount versus preserve state. |
+| `CardShell` | `ReactorCardShellComponent` | done | recheck | recheck | recheck | recheck | Shell-level actions exist, but local flip/chat/open state and the frontend shell's render branching, status-toned theming, and event/effect behavior still need a direct comparison pass. |
+| `CentrePane` | folded into `ReactorMainShellComponent` + `ReactorBoardCanvasComponent` | recheck | recheck | recheck | recheck | recheck | The pane role exists, but this is not yet tracked as a clean one-to-one component contract because orchestration is currently folded into larger Reactor surfaces. |
+| `ChallengeConfirmModal` | `ReactorChallengeConfirmModalComponent` | done | done | recheck | done | needs work | The arithmetic confirm contract exists, but the frontend modal's semantic styling plus focus capture, Escape handling, and dismissal lifecycle are not fully mirrored yet. |
+| `ChatPane` | `ReactorChatPaneComponent` | done | recheck | recheck | needs work | needs work | React owns sticky-bottom state, expansion state, live/history boundary state, draft turn rollover, conditional message-stack logic, themed status/bubble treatment, and several scroll scheduling/subscription effects. WinUI has the main chat flows, but it still trails at exactly those view/theme/state/effect seams. |
+| `GandalfPane` | folded into `ReactorMainShellComponent` side-pane composition | recheck | recheck | recheck | done | unverified | Visibility and navigation behavior exist, but the current WinUI counterpart is folded orchestration rather than a dedicated named component, so the contract needs a direct mapping pass including side-rail theme behavior. |
+| `GlobalModal` | `ReactorGlobalModalComponent` | needs work | needs work | needs work | n/a | needs work | The frontend modal is a portal with backdrop/header/body composition plus Escape and outside-click dismissal. The current Reactor modal is still an in-tree panel without matching overlay structure, backdrop theming, or dismiss lifecycle behavior. |
+| `GandalfChatPane` | compact/title mode in `ReactorChatPaneComponent` | done | recheck | recheck | needs work | needs work | This inherits the current chat logic/theme/state/effect gaps rather than being missing outright. |
+| `IngestCard` | `ReactorIngestCardComponent` | done | recheck | recheck | needs work | needs work | The dedicated card branch exists again, but because it is built on the shared compact chat surface it inherits the chat component's theme/state/lifecycle gaps. |
+| `InspectCard` | `ReactorInspectCardComponent` | done | recheck | recheck | recheck | recheck | The main inspect workflows exist, but delete-confirm, preview swapping, trial-run loading, nested chat/backface composition, semantic styling, and related lifecycle need an explicit component-contract audit. |
+| `MainBoard` | folded into `ReactorMainShellComponent` | recheck | recheck | recheck | recheck | recheck | The orchestration role exists, but the current WinUI structure has not yet been rewritten into a direct one-to-one component contract comparable to frontend `MainBoard`. |
+| `MiniChatPane` | compact mode in `ReactorChatPaneComponent` | done | recheck | recheck | needs work | needs work | This inherits the same message-stack, compact themed treatment, draft, and scroll logic/effect gaps as the shared chat component. |
+| `PostboxCard` | `ReactorPostboxCardComponent` | done | recheck | recheck | needs work | needs work | Frontend postbox owns drag state, composer drag state, view-mode state, live/history merge state, conditional submissions/files composition, semantic styling, and submission/history effects. WinUI covers the main flows but still lags at those logic/theme/state/effect seams. |
+| `SmokeRunner` | `ReactorSmokeRunnerComponent` | recheck | recheck | recheck | recheck | recheck | The surface exists and runs the suite, but the frontend component has a large local state machine, deferred view logic, themed result/status presentation, and deferred effect flow that has not yet been matched item-by-item. |
+| `StrategistCard` | `ReactorStrategistCardComponent` | recheck | recheck | recheck | recheck | recheck | The dedicated branch is back, but the frontend strategist card still needs a direct comparison of its render logic, styling contract, and expansion/interaction lifecycle against the current Reactor version. |
+| `TruthsetExplorePane` | folded into `ReactorMainShellComponent` side-pane composition | recheck | recheck | recheck | done | unverified | Like Gandalf, the high-level role exists but the current WinUI counterpart is not yet tracked as a dedicated one-to-one component contract. |
+
+Immediate audit priority:
+
+- `BoardCanvas`
+- `ChatPane`
+- `GlobalModal`
+- `PostboxCard`
+- `AppConfigModal`
+
+Those five are the current places where props/view/theme/state/effects drift is most likely to hide behind apparently-working UI.
+
 ## Matched top-level UI surfaces
 
 | Frontend component | WinUI counterpart | Functionality | Visual appeal | Interaction / UX | Performance | Reactor migration | Notes |

@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using DemoBoards.RuntimeHost;
+using DemoBoards_WinUI.Config;
 
 namespace DemoBoards_WinUI.State;
 
@@ -272,6 +273,56 @@ public sealed class EmbeddedBoardClient
         return ParseManagedBoardEntry(board) ?? throw new InvalidOperationException("Created board payload was invalid.");
     }
 
+    public async Task<WinUiHostTemplateCatalog> DescribeHostConfigAsync()
+    {
+        string? payload = await PostManageBoardsAsync("describe-host-config", BuildHostConfigArgs()).ConfigureAwait(false);
+        using JsonDocument document = ParseRequiredJson(payload, "describe-host-config returned no payload.");
+        JsonElement root = document.RootElement;
+        EnsureSuccessPayload(root, "describe-host-config failed");
+        JsonElement data = TryGetNestedProperty(root, "data");
+
+        return new WinUiHostTemplateCatalog(
+            ParseStringArray(TryGetNestedProperty(data, "assistantNames")),
+            ParseStringArray(TryGetNestedProperty(data, "aiWorkspaceTemplateNames")),
+            ParseStringArray(TryGetNestedProperty(data, "uiTemplateNames")),
+            ParseStringArray(TryGetNestedProperty(data, "refsTemplateNames")),
+            GetStringValue(TryGetNestedProperty(data, "hostConfigPath")),
+            GetStringValue(TryGetNestedProperty(data, "templatesConfigPath")),
+            GetStringValue(TryGetNestedProperty(data, "setupSingleAiWorkspaceScriptPath")),
+            GetStringValue(TryGetNestedProperty(data, "sampleTemplateCatalogDir")),
+            GetStringValue(TryGetNestedProperty(data, "runtimeBoardsIndexRef")),
+            GetStringValue(TryGetNestedProperty(data, "runtimeBoardsLayoutRef")),
+            GetStringValue(TryGetNestedProperty(data, "rawHostSummaryJson")));
+    }
+
+    public async Task<string> ResolveEffectiveBoardConfigAsync(string boardId, string rawBoardJson)
+    {
+        string normalizedBoardId = NormalizeRequired(boardId, "Board id is required.");
+        JsonNode? record = JsonNode.Parse(NormalizeJsonPayload(rawBoardJson, "Board record is required."));
+        string? payload = await PostManageBoardsAsync("resolve-board-config", new Dictionary<string, object?>(BuildHostConfigArgs())
+        {
+            ["boardId"] = normalizedBoardId,
+            ["record"] = record,
+        }).ConfigureAwait(false);
+        using JsonDocument document = ParseRequiredJson(payload, "resolve-board-config returned no payload.");
+        JsonElement root = document.RootElement;
+        EnsureSuccessPayload(root, "resolve-board-config failed");
+        JsonElement data = TryGetNestedProperty(root, "data");
+        JsonElement resolved = TryGetNestedProperty(data, "resolvedBoardConfig");
+        return resolved.ValueKind == JsonValueKind.Undefined ? "{}" : JsonSerializer.Serialize(resolved, PrettyJsonOptions);
+    }
+
+    public async Task SetupBoardWorkspaceAsync(string boardId)
+    {
+        string normalizedBoardId = NormalizeRequired(boardId, "Board id is required.");
+        string? payload = await PostManageBoardsAsync("setup-board-workspace", new Dictionary<string, object?>(BuildHostConfigArgs())
+        {
+            ["boardId"] = normalizedBoardId,
+        }).ConfigureAwait(false);
+        using JsonDocument document = ParseRequiredJson(payload, "setup-board-workspace returned no payload.");
+        EnsureSuccessPayload(document.RootElement, "setup-board-workspace failed");
+    }
+
     public async Task<IReadOnlyList<SampleTemplateEntry>> ListSampleTemplatesAsync()
     {
         string payload = await CallBoardMcpAsync("explore.list-sample-templates").ConfigureAwait(false);
@@ -404,6 +455,41 @@ public sealed class EmbeddedBoardClient
         return await response.Content.ReadAsStringAsync().ConfigureAwait(false);
     }
 
+    private static Dictionary<string, object?> BuildHostConfigArgs()
+    {
+        WinUiBackendAppConfig backend = App.Current.HostConfig.Backend;
+        return new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["hostConfigPath"] = backend.HostConfigPath,
+            ["localFsConfigLoaderPath"] = backend.LocalFsConfigLoaderPath,
+            ["templatesConfigPath"] = backend.TemplatesConfigPath,
+            ["assistantRegistryPath"] = backend.AssistantRegistryPath,
+            ["setupSingleAiWorkspaceScriptPath"] = backend.SetupSingleAiWorkspaceScriptPath,
+        };
+    }
+
+    private static IReadOnlyList<string> ParseStringArray(JsonElement value)
+    {
+        if (value.ValueKind != JsonValueKind.Array)
+        {
+            return Array.Empty<string>();
+        }
+
+        return value.EnumerateArray()
+            .Where(item => item.ValueKind == JsonValueKind.String)
+            .Select(item => item.GetString()?.Trim())
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Cast<string>()
+            .ToArray();
+    }
+
+    private static string GetStringValue(JsonElement value)
+    {
+        return value.ValueKind == JsonValueKind.String
+            ? value.GetString() ?? string.Empty
+            : string.Empty;
+    }
+
     private static JsonObject ParseBoardRecord(string boardId, string? currentRawBoardJson, string rawUiJson, string rawMetadataJson)
     {
         JsonObject board = JsonNode.Parse(currentRawBoardJson ?? string.Empty) as JsonObject ?? new JsonObject();
@@ -447,6 +533,17 @@ public sealed class EmbeddedBoardClient
             && element.TryGetProperty(parentName, out JsonElement parent)
             && parent.ValueKind == JsonValueKind.Object
             && parent.TryGetProperty(propertyName, out JsonElement property))
+        {
+            return property;
+        }
+
+        return default;
+    }
+
+    private static JsonElement TryGetNestedProperty(JsonElement element, string propertyName)
+    {
+        if (element.ValueKind == JsonValueKind.Object
+            && element.TryGetProperty(propertyName, out JsonElement property))
         {
             return property;
         }

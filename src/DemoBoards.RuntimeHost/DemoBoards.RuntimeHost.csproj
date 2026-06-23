@@ -39,6 +39,9 @@
             <None Include="node\host-invocation-runner.mjs"
               Link="node\host-invocation-runner.mjs"
               CopyToOutputDirectory="PreserveNewest" />
+            <None Include="..\..\app\DemoBoards.WinUI\node\winui-host-config-runner.mjs"
+              Link="node\winui-host-config-runner.mjs"
+              CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

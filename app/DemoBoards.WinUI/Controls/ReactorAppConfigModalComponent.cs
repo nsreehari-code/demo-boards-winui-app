@@ -432,7 +432,7 @@ public sealed class ReactorAppConfigModalComponent : Component<ReactorAppConfigM
 
         try
         {
-            WinUiHostTemplateCatalog hostTemplateCatalog = await app.HostConfigService.LoadTemplateCatalogAsync();
+            WinUiHostTemplateCatalog hostTemplateCatalog = await app.BoardClient.DescribeHostConfigAsync();
             IReadOnlyList<string> assistantOptions = hostTemplateCatalog.AssistantNames
                 .Where(name => string.Equals(name, "copilot", StringComparison.OrdinalIgnoreCase)
                     || string.Equals(name, "foundry", StringComparison.OrdinalIgnoreCase))
@@ -565,10 +565,9 @@ public sealed class ReactorAppConfigModalComponent : Component<ReactorAppConfigM
             setThemePackId(draft.ThemePackId);
             setUiTemplate(draft.UiTemplate);
 
-            await app.HostConfigService.SyncBoardRecordAsync(boardId, saved.RawBoardJson);
             if (refreshPreview)
             {
-                setEffectiveBoardConfigPreviewText(await app.HostConfigService.ResolveBoardConfigJsonAsync(boardId, saved.RawBoardJson));
+                setEffectiveBoardConfigPreviewText(await app.BoardClient.ResolveEffectiveBoardConfigAsync(boardId, saved.RawBoardJson));
             }
 
             setHostStatus(StatusMessage.Empty);
@@ -598,7 +597,7 @@ public sealed class ReactorAppConfigModalComponent : Component<ReactorAppConfigM
             setShowHostPreview(true);
             setEffectiveBoardConfigPreviewText(string.IsNullOrWhiteSpace(boardId)
                 ? string.Empty
-                : await App.Current.HostConfigService.ResolveBoardConfigJsonAsync(boardId, rawBoardJson));
+                : await App.Current.BoardClient.ResolveEffectiveBoardConfigAsync(boardId, rawBoardJson));
             setHostStatus(StatusMessage.Success("Effective board config preview updated."));
         }
         catch (Exception ex)
@@ -665,11 +664,10 @@ public sealed class ReactorAppConfigModalComponent : Component<ReactorAppConfigM
 
                 if (refreshPreview)
                 {
-                    setEffectiveBoardConfigPreviewText(await app.HostConfigService.ResolveBoardConfigJsonAsync(boardId, saved.RawBoardJson));
+                    setEffectiveBoardConfigPreviewText(await app.BoardClient.ResolveEffectiveBoardConfigAsync(boardId, saved.RawBoardJson));
                 }
             }
 
-            await app.HostConfigService.SyncBoardRecordAsync(boardId, saved?.RawBoardJson ?? "{}");
             await app.BoardClient.RefreshBoardAsync();
             setHostStatus(StatusMessage.Empty);
             setImportExportStatus(StatusMessage.Success("Board import applied."));
@@ -732,12 +730,12 @@ public sealed class ReactorAppConfigModalComponent : Component<ReactorAppConfigM
         try
         {
             App app = App.Current;
-            await app.HostConfigService.SetupBoardWorkspaceAsync(boardId, rawBoardJson);
+            await app.BoardClient.SetupBoardWorkspaceAsync(boardId);
             await app.BoardClient.RefreshManagedBoardAsync(boardId);
             await app.BoardClient.RefreshBoardAsync();
             if (refreshPreview)
             {
-                setEffectiveBoardConfigPreviewText(await app.HostConfigService.ResolveBoardConfigJsonAsync(boardId, rawBoardJson));
+                setEffectiveBoardConfigPreviewText(await app.BoardClient.ResolveEffectiveBoardConfigAsync(boardId, rawBoardJson));
             }
 
             setHostStatus(StatusMessage.Empty);
@@ -858,7 +856,7 @@ public sealed class ReactorAppConfigModalComponent : Component<ReactorAppConfigM
                 await app.BoardClient.ApplyImportBoardAsync(created.Id, template.RawPayloadJson, "ingest", applyBoardMetadata: false);
             }
 
-            await app.HostConfigService.SetupBoardWorkspaceAsync(created.Id, BuildBoardRecordJson(request));
+            await app.BoardClient.SetupBoardWorkspaceAsync(created.Id);
             setAddBoardStatus(StatusMessage.Success("Board created."));
             onSuccess();
         }

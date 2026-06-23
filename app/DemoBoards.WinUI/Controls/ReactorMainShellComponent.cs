@@ -45,7 +45,11 @@ public sealed class ReactorMainShellComponent : Component
             EventHandler<BoardStoreChangedEventArgs> onBoardStateChanged = (_, _) => setRevision(Guid.NewGuid().ToString("N"));
             EventHandler<BoardUiState> onBoardUiStateChanged = (_, _) => setRevision(Guid.NewGuid().ToString("N"));
             Action<ChatPopoutRequest> onChatRequested = request => setChatRequest(request);
-            Action onSmokeRequested = () => setSmokeVisible(true);
+            Action onSmokeRequested = () =>
+            {
+                setConfigOpen(false);
+                setSmokeVisible(true);
+            };
 
             boardStore.StateChanged += onBoardStateChanged;
             boardStore.UiStateChanged += onBoardUiStateChanged;

@@ -16,7 +16,6 @@ public sealed class App : IAsyncDisposable
     private BoardStore? boardStore;
     private EmbeddedBoardClient? boardClient;
     private WinUiAppConfig? appConfig;
-    private WinUiHostConfigService? hostConfigService;
     private bool started;
     private bool uiResourcesInitialized;
 
@@ -32,7 +31,6 @@ public sealed class App : IAsyncDisposable
     public EmbeddedBoardClient BoardClient => boardClient ?? throw new InvalidOperationException("Board client not initialized.");
     public Window MainWindow => window ?? throw new InvalidOperationException("Main window not initialized.");
     public WinUiAppConfig HostConfig => appConfig ?? throw new InvalidOperationException("App config not initialized.");
-    public WinUiHostConfigService HostConfigService => hostConfigService ?? throw new InvalidOperationException("Host config service not initialized.");
     public string CurrentThemePackId { get; private set; } = BoardTheme.DefaultThemePackId;
 
     public void Start()
@@ -48,13 +46,12 @@ public sealed class App : IAsyncDisposable
         {
             appConfig = WinUiAppConfigLoader.Load(AppContext.BaseDirectory);
             Controls.BoardCanvasLayoutEngine.ConfigureDefaults(appConfig.Frontend.CanvasLayout);
-            hostConfigService = new WinUiHostConfigService(appConfig, AppContext.BaseDirectory);
             LogStartup($"App config loaded. Templates config path: {appConfig.Backend.TemplatesConfigPath}");
             runtimeService = new DemoBoardsRuntimeService();
             LogStartup("Runtime service created.");
             runtimeService.StartAsync().GetAwaiter().GetResult();
             LogStartup("Runtime service started.");
-            boardStore = new BoardStore(runtimeService);
+            boardStore = new BoardStore(runtimeService, appConfig.Frontend.BoardServerConstants);
             boardClient = new EmbeddedBoardClient(runtimeService);
             started = true;
         }

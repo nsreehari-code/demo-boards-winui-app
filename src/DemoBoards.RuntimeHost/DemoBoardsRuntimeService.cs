@@ -78,6 +78,11 @@ public sealed class DemoBoardsRuntimeService : IAsyncDisposable
         return BoardSnapshot.ParseWatchparties(lastBoardSnapshotJson);
     }
 
+    public IReadOnlyDictionary<string, BoardWatchpartyState> GetCardWatchparties(string agentOutputChannel, string agentToolsChannel)
+    {
+        return BoardSnapshot.ParseWatchparties(lastBoardSnapshotJson, agentOutputChannel, agentToolsChannel);
+    }
+
     public int BoardChangeNotificationCount => boardChangeNotifications;
 
     /// <summary>

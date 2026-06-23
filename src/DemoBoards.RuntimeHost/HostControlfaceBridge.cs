@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -17,6 +18,7 @@ public sealed class HostControlfaceBridge
     private readonly string sampleTemplateDirectory;
     private readonly string sampleTemplateIndexPath;
     private readonly string agentfaceManifestPath;
+    private readonly string hostConfigRunnerPath;
 
     public HostControlfaceBridge(string runtimeRootDirectory, string assetBaseDirectory)
     {
@@ -35,6 +37,7 @@ public sealed class HostControlfaceBridge
         sampleTemplateDirectory = Path.Combine(assetBaseDirectory, "sample-card-templates");
         sampleTemplateIndexPath = Path.Combine(sampleTemplateDirectory, "_index.json");
         agentfaceManifestPath = Path.Combine(assetBaseDirectory, "agentface.tools.json");
+        hostConfigRunnerPath = Path.Combine(assetBaseDirectory, "node", "winui-host-config-runner.mjs");
 
         Directory.CreateDirectory(managedBoardsDirectory);
         Directory.CreateDirectory(deprecatedManagedBoardsDirectory);
@@ -218,6 +221,75 @@ public sealed class HostControlfaceBridge
         return File.ReadAllText(agentfaceManifestPath);
     }
 
+    public string DescribeHostConfigJson(string hostConfigPath, string localFsConfigLoaderPath, string templatesConfigPath, string assistantRegistryPath, string setupSingleAiWorkspaceScriptPath)
+    {
+        JsonObject payload = new()
+        {
+            ["mode"] = "describe-host-config",
+            ["hostConfigPath"] = NormalizeRequiredKey(hostConfigPath, "hostConfigPath is required."),
+            ["localFsConfigLoaderPath"] = NormalizeRequiredKey(localFsConfigLoaderPath, "localFsConfigLoaderPath is required."),
+            ["templatesConfigPath"] = NormalizeRequiredKey(templatesConfigPath, "templatesConfigPath is required."),
+            ["assistantRegistryPath"] = NormalizeRequiredKey(assistantRegistryPath, "assistantRegistryPath is required."),
+            ["setupSingleAiWorkspaceScriptPath"] = NormalizeRequiredKey(setupSingleAiWorkspaceScriptPath, "setupSingleAiWorkspaceScriptPath is required."),
+        };
+        return InvokeHostConfigRunner(payload).ToJsonString(JsonOptions);
+    }
+
+    public string ResolveBoardConfigJson(string boardId, string recordJson, string hostConfigPath, string localFsConfigLoaderPath)
+    {
+        JsonObject payload = new()
+        {
+            ["mode"] = "resolve-board-config",
+            ["boardId"] = NormalizeRequiredKey(boardId, "Board id is required."),
+            ["record"] = ParseRequiredJsonObject(recordJson, "Board container record must be a JSON object."),
+            ["hostConfigPath"] = NormalizeRequiredKey(hostConfigPath, "hostConfigPath is required."),
+            ["localFsConfigLoaderPath"] = NormalizeRequiredKey(localFsConfigLoaderPath, "localFsConfigLoaderPath is required."),
+        };
+        return InvokeHostConfigRunner(payload).ToJsonString(JsonOptions);
+    }
+
+    public void SetupBoardWorkspace(string boardId, string recordJson, string hostConfigPath, string localFsConfigLoaderPath, string setupSingleAiWorkspaceScriptPath)
+    {
+        string normalizedBoardId = NormalizeRequiredKey(boardId, "Board id is required.");
+        JsonObject syncPayload = new()
+        {
+            ["mode"] = "sync-board-record",
+            ["boardId"] = normalizedBoardId,
+            ["record"] = ParseRequiredJsonObject(recordJson, "Board container record must be a JSON object."),
+            ["hostConfigPath"] = NormalizeRequiredKey(hostConfigPath, "hostConfigPath is required."),
+            ["localFsConfigLoaderPath"] = NormalizeRequiredKey(localFsConfigLoaderPath, "localFsConfigLoaderPath is required."),
+        };
+        _ = InvokeHostConfigRunner(syncPayload);
+
+        string scriptPath = NormalizeRequiredKey(setupSingleAiWorkspaceScriptPath, "setupSingleAiWorkspaceScriptPath is required.");
+        ProcessStartInfo startInfo = new("node")
+        {
+            WorkingDirectory = Path.GetDirectoryName(scriptPath) ?? Directory.GetCurrentDirectory(),
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        startInfo.ArgumentList.Add(scriptPath);
+        startInfo.ArgumentList.Add(normalizedBoardId);
+        startInfo.ArgumentList.Add("--config");
+        startInfo.ArgumentList.Add(NormalizeRequiredKey(hostConfigPath, "hostConfigPath is required."));
+
+        using Process process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("Failed to launch the board workspace setup helper.");
+        string stdout = process.StandardOutput.ReadToEnd();
+        string stderr = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+
+        if (process.ExitCode != 0)
+        {
+            string errorText = string.IsNullOrWhiteSpace(stderr) ? stdout : stderr;
+            throw new InvalidOperationException(string.IsNullOrWhiteSpace(errorText)
+                ? $"Workspace setup failed for board '{normalizedBoardId}'."
+                : errorText.Trim());
+        }
+    }
+
     public string? DeprecateManagedBoardStateJson(string boardId)
     {
         string sourcePath = GetManagedBoardPath(boardId);
@@ -324,6 +396,55 @@ public sealed class HostControlfaceBridge
             ["board"] = record,
             ["layout"] = layout?.DeepClone(),
         };
+    }
+
+    private JsonObject InvokeHostConfigRunner(JsonObject payload)
+    {
+        if (!File.Exists(hostConfigRunnerPath))
+        {
+            throw new FileNotFoundException("The WinUI host-config runner is missing from the runtime output.", hostConfigRunnerPath);
+        }
+
+        ProcessStartInfo startInfo = new("node")
+        {
+            WorkingDirectory = Path.GetDirectoryName(hostConfigRunnerPath) ?? Directory.GetCurrentDirectory(),
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        startInfo.ArgumentList.Add(hostConfigRunnerPath);
+
+        using Process process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("Failed to launch the WinUI host-config runner.");
+        process.StandardInput.Write(payload.ToJsonString());
+        process.StandardInput.Close();
+
+        string stdout = process.StandardOutput.ReadToEnd();
+        string stderr = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+
+        if (process.ExitCode != 0)
+        {
+            string errorText = string.IsNullOrWhiteSpace(stderr) ? stdout : stderr;
+            throw new InvalidOperationException(string.IsNullOrWhiteSpace(errorText)
+                ? "The WinUI host-config runner failed."
+                : errorText.Trim());
+        }
+
+        JsonNode? parsed = JsonNode.Parse(string.IsNullOrWhiteSpace(stdout) ? "{}" : stdout);
+        if (parsed is not JsonObject jsonObject)
+        {
+            throw new InvalidOperationException("The WinUI host-config runner returned invalid JSON.");
+        }
+
+        if (jsonObject["ok"]?.GetValue<bool?>() == false)
+        {
+            throw new InvalidOperationException(jsonObject["error"]?.GetValue<string>() ?? "The WinUI host-config runner reported a failure.");
+        }
+
+        return jsonObject;
     }
 
     private string GetManagedBoardPath(string boardId)

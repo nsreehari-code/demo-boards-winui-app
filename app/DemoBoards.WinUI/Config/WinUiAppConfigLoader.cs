@@ -22,6 +22,7 @@ public static class WinUiAppConfigLoader
         JsonObject frontend = root["frontend"] as JsonObject ?? new JsonObject();
         JsonObject backend = root["backend"] as JsonObject ?? new JsonObject();
         JsonObject canvas = frontend["canvasLayout"] as JsonObject ?? new JsonObject();
+        JsonObject boardServerConstants = frontend["boardServerConstants"] as JsonObject ?? new JsonObject();
 
         BoardCanvasLayoutDefaults canvasLayout = new(
             ReadPositiveDouble(canvas, "defaultCardWidth", BoardCanvasLayoutDefaults.Default.DefaultCardWidth),
@@ -40,10 +41,14 @@ public static class WinUiAppConfigLoader
             ResolvePath(backend["setupSingleAiWorkspaceScriptPath"]?.GetValue<string>(), configuredRepoRoot) ?? backendDefaults.SetupSingleAiWorkspaceScriptPath,
             ResolvePath(backend["assistantRegistryPath"]?.GetValue<string>(), configuredRepoRoot) ?? backendDefaults.AssistantRegistryPath);
 
+        WinUiBoardServerConstants serverConstants = new(
+            ReadRequiredString(boardServerConstants, "agentOutputChannel", WinUiBoardServerConstants.Default.AgentOutputChannel),
+            ReadRequiredString(boardServerConstants, "agentToolsChannel", WinUiBoardServerConstants.Default.AgentToolsChannel));
+
         return new WinUiAppConfig(
             appConfigPath,
             configuredRepoRoot,
-            new WinUiFrontendAppConfig(canvasLayout),
+            new WinUiFrontendAppConfig(canvasLayout, serverConstants),
             backendConfig);
     }
 
@@ -107,5 +112,11 @@ public static class WinUiAppConfigLoader
         return source[key]?.GetValue<double?>() is double value && double.IsFinite(value)
             ? value
             : fallback;
+    }
+
+    private static string ReadRequiredString(JsonObject source, string key, string fallback)
+    {
+        string? value = source[key]?.GetValue<string>()?.Trim();
+        return string.IsNullOrWhiteSpace(value) ? fallback : value;
     }
 }

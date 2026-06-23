@@ -1,6 +1,10 @@
 {
   "repoRoot": "${repoRoot}",
   "frontend": {
+    "boardServerConstants": {
+      "agentOutputChannel": "agent-output",
+      "agentToolsChannel": "agent-tools"
+    },
     "canvasLayout": {
       "defaultCardWidth": 360,
       "defaultCardHeight": 240,

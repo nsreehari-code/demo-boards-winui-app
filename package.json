@@ -13,6 +13,7 @@
     "winui:clean": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/clean-winui.ps1",
     "winui:start": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/start-winui.ps1",
     "winui:restart": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/restart-winui.ps1",
+    "winui:ui-smoke": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/run-winui-ui-smoke.ps1",
     "test": "vitest run"
   },
   "devDependencies": {

@@ -13,9 +13,27 @@ public sealed record BoardCanvasLayoutDefaults(
     public static BoardCanvasLayoutDefaults Default { get; } = new(360, 240, 420, 280, 40, 40);
 }
 
-public sealed record WinUiFrontendAppConfig(BoardCanvasLayoutDefaults CanvasLayout)
+public sealed record WinUiBoardServerConstants(string AgentOutputChannel, string AgentToolsChannel)
 {
-    public static WinUiFrontendAppConfig Default { get; } = new(BoardCanvasLayoutDefaults.Default);
+    public static WinUiBoardServerConstants Default { get; } = new("agent-output", "agent-tools");
+}
+
+public sealed record WinUiHostTemplateCatalog(
+    IReadOnlyList<string> AssistantNames,
+    IReadOnlyList<string> AiWorkspaceTemplateNames,
+    IReadOnlyList<string> UiTemplateNames,
+    IReadOnlyList<string> RefsTemplateNames,
+    string HostConfigPath,
+    string TemplatesConfigPath,
+    string SetupSingleAiWorkspaceScriptPath,
+    string SampleTemplateCatalogDir,
+    string RuntimeBoardsIndexRef,
+    string RuntimeBoardsLayoutRef,
+    string RawHostSummaryJson);
+
+public sealed record WinUiFrontendAppConfig(BoardCanvasLayoutDefaults CanvasLayout, WinUiBoardServerConstants BoardServerConstants)
+{
+    public static WinUiFrontendAppConfig Default { get; } = new(BoardCanvasLayoutDefaults.Default, WinUiBoardServerConstants.Default);
 }
 
 public sealed record WinUiBackendAppConfig(

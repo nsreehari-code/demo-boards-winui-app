@@ -1,6 +1,8 @@
 # Frontend / Backend Runtime Parity Matrix
 
-Goal: keep this file small and decisive. This is the non-visual parity matrix for the WinUI host versus the combined frontend + backend system.
+Goal: keep this file small and decisive. This is the non-visual runtime/config parity matrix for the WinUI host versus the combined frontend + backend system.
+
+This file is intentionally not the place to claim UI component parity. UI parity now has to be judged separately at the component-contract level in `docs/sot/frontend-winui-component-parity-matrix.md`, including props, local state, and `useEffect`/lifecycle equivalents.
 
 Status meanings:
 
@@ -45,7 +47,8 @@ Already solid:
 
 Still blocking a real frontend+backend parity claim:
 
-- no remaining parity gaps in this matrix beyond the genuine host drifts listed below
+- no remaining runtime/config parity gaps in this matrix beyond the genuine host drifts listed below
+- UI parity still requires the separate component-by-component props/state/effects audit
 
 ## What belongs in genuine drift instead
 
