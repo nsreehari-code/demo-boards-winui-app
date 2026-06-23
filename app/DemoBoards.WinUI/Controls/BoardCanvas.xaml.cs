@@ -7,6 +7,7 @@ using Microsoft.UI.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
 using Microsoft.UI;
+using DemoBoards_WinUI.Assets;
 using DemoBoards_WinUI.State;
 using Windows.Foundation;
 
@@ -27,6 +28,7 @@ public sealed partial class BoardCanvas : UserControl
 
     private string currentBoardId = string.Empty;
     private bool suppressViewportUpdates;
+    private bool isMiniMapDragging;
     private string? draggingCardId;
     private FrameworkElement? draggingHost;
     private Point dragStartPoint;
@@ -47,8 +49,6 @@ public sealed partial class BoardCanvas : UserControl
     private IReadOnlyList<RendererRule>? lastRendererRules;
     private IReadOnlyDictionary<string, string> lastDataObjects = new Dictionary<string, string>(System.StringComparer.Ordinal);
     private IReadOnlyDictionary<string, BoardCanvasPlacement> lastPlacements = new Dictionary<string, BoardCanvasPlacement>(System.StringComparer.Ordinal);
-    private readonly TextBlock BoardTitleText;
-    private readonly TextBlock BoardSummaryText;
     private readonly ScrollViewer CanvasScrollViewer;
     private readonly Grid CanvasSurface;
     private readonly Canvas BackgroundGridHost;
@@ -56,8 +56,6 @@ public sealed partial class BoardCanvas : UserControl
     private readonly Button ZoomOutButton;
     private readonly Button ZoomInButton;
     private readonly Button FitCanvasButton;
-    private readonly Button ResetCanvasButton;
-    private readonly TextBlock ZoomStatusText;
     private readonly Border TokenFocusBanner;
     private readonly Button ClearTokenFocusButton;
     private readonly Canvas MiniMapHost;
@@ -65,16 +63,6 @@ public sealed partial class BoardCanvas : UserControl
 
     public BoardCanvas()
     {
-        BoardTitleText = new TextBlock
-        {
-            FontSize = 20,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
-        };
-        BoardSummaryText = new TextBlock
-        {
-            Opacity = 0.75,
-            TextWrapping = TextWrapping.WrapWholeWords
-        };
         BackgroundGridHost = new Canvas { IsHitTestVisible = false };
         CardsHost = new Canvas();
         CanvasSurface = new Grid
@@ -92,15 +80,13 @@ public sealed partial class BoardCanvas : UserControl
             HorizontalScrollMode = ScrollMode.Enabled,
             VerticalScrollMode = ScrollMode.Enabled,
             ZoomMode = ZoomMode.Enabled,
-            MinZoomFactor = 0.35f,
+            MinZoomFactor = 0.24f,
             MaxZoomFactor = 1.35f,
             Content = CanvasSurface,
         };
-        ZoomOutButton = new Button { Content = "-", Width = 34, Padding = new Thickness(0) };
-        ZoomInButton = new Button { Content = "+", Width = 34, Padding = new Thickness(0) };
-        FitCanvasButton = new Button { Content = "Fit", Padding = new Thickness(10, 2, 10, 2) };
-        ResetCanvasButton = new Button { Content = "Reset", Padding = new Thickness(10, 2, 10, 2) };
-        ZoomStatusText = new TextBlock { FontSize = 11, Opacity = 0.68 };
+        ZoomInButton = BuildControlButton(HostIconSources.ControlZoomIn, "Zoom in");
+        ZoomOutButton = BuildControlButton(HostIconSources.ControlZoomOut, "Zoom out");
+        FitCanvasButton = BuildControlButton(HostIconSources.ControlFitView, "Fit to view");
         ClearTokenFocusButton = new Button { Padding = new Thickness(10, 2, 10, 2) };
         TokenFocusBanner = new Border
         {
@@ -134,7 +120,10 @@ public sealed partial class BoardCanvas : UserControl
         MiniMapHost = new Canvas
         {
             Width = 200,
-            Height = 128
+            Height = 128,
+            // A transparent background makes the whole mini-map area hit-testable
+            // so click/drag panning works over empty regions, not just node rects.
+            Background = new SolidColorBrush(Colors.Transparent)
         };
         MiniMapViewport = new Border
         {
@@ -144,35 +133,25 @@ public sealed partial class BoardCanvas : UserControl
             IsHitTestVisible = false
         };
 
-        var zoomPanel = new Border
+        var controlsPanel = new Border
         {
             HorizontalAlignment = HorizontalAlignment.Left,
-            VerticalAlignment = VerticalAlignment.Top,
-            Padding = new Thickness(10, 8, 10, 8),
+            VerticalAlignment = VerticalAlignment.Bottom,
             Margin = new Thickness(12),
-            CornerRadius = new CornerRadius(12),
+            CornerRadius = new CornerRadius(10),
             Background = BoardTheme.ResolveBrush("BoardCanvasPanelBrush", Colors.WhiteSmoke),
             BorderBrush = BoardTheme.ResolveBrush("BoardCanvasPanelBorderBrush", Colors.LightGray),
             BorderThickness = new Thickness(1),
             Child = new StackPanel
             {
-                Spacing = 8,
+                Spacing = 0,
                 Children =
                 {
-                    new TextBlock { Text = "Canvas", FontSize = 12, Opacity = 0.72 },
-                    new StackPanel
-                    {
-                        Orientation = Orientation.Horizontal,
-                        Spacing = 6,
-                        Children =
-                        {
-                            ZoomOutButton,
-                            ZoomInButton,
-                            FitCanvasButton,
-                            ResetCanvasButton,
-                        }
-                    },
-                    ZoomStatusText,
+                    ZoomInButton,
+                    BuildControlSeparator(),
+                    ZoomOutButton,
+                    BuildControlSeparator(),
+                    FitCanvasButton,
                 }
             }
         };
@@ -181,27 +160,23 @@ public sealed partial class BoardCanvas : UserControl
         {
             HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Bottom,
-            Padding = new Thickness(8),
+            Padding = new Thickness(6),
             Margin = new Thickness(12),
             CornerRadius = new CornerRadius(12),
             Background = BoardTheme.ResolveBrush("BoardCanvasMiniMapBrush", Colors.WhiteSmoke),
             BorderBrush = BoardTheme.ResolveBrush("BoardCanvasMiniMapBorderBrush", Colors.LightGray),
             BorderThickness = new Thickness(1),
-            Child = new StackPanel
+            Child = new Border
             {
-                Spacing = 6,
-                Children =
+                CornerRadius = new CornerRadius(8),
+                Child = new Grid
                 {
-                    new TextBlock { Text = "Mini map", FontSize = 11, Opacity = 0.68 },
-                    new Grid
+                    Width = 200,
+                    Height = 128,
+                    Children =
                     {
-                        Width = 200,
-                        Height = 128,
-                        Children =
-                        {
-                            MiniMapHost,
-                            MiniMapViewport,
-                        }
+                        MiniMapHost,
+                        MiniMapViewport,
                     }
                 }
             }
@@ -209,25 +184,11 @@ public sealed partial class BoardCanvas : UserControl
 
         var canvasLayer = new Grid();
         canvasLayer.Children.Add(CanvasScrollViewer);
-        canvasLayer.Children.Add(zoomPanel);
+        canvasLayer.Children.Add(controlsPanel);
         canvasLayer.Children.Add(TokenFocusBanner);
         canvasLayer.Children.Add(miniMapPanel);
 
-        var root = new Grid { RowSpacing = 12 };
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        root.Children.Add(new StackPanel
-        {
-            Spacing = 4,
-            Children =
-            {
-                BoardTitleText,
-                BoardSummaryText,
-            }
-        });
-        Grid.SetRow(canvasLayer, 1);
-        root.Children.Add(canvasLayer);
-        Content = root;
+        Content = canvasLayer;
 
         Unloaded += OnUnloaded;
         CanvasScrollViewer.ViewChanged += OnCanvasViewChanged;
@@ -236,8 +197,17 @@ public sealed partial class BoardCanvas : UserControl
         ZoomInButton.Click += (_, _) => AdjustZoom(1.1f);
         ZoomOutButton.Click += (_, _) => AdjustZoom(1f / 1.1f);
         FitCanvasButton.Click += (_, _) => FitToCards(lastCards.Select(card => card.Id));
-        ResetCanvasButton.Click += (_, _) => ResetViewport();
         MiniMapHost.PointerPressed += OnMiniMapPointerPressed;
+        MiniMapHost.PointerMoved += OnMiniMapPointerMoved;
+        MiniMapHost.PointerReleased += OnMiniMapPointerReleased;
+        MiniMapHost.PointerCanceled += OnMiniMapPointerReleased;
+        // handledEventsToo so we still receive the wheel after the ScrollViewer
+        // processes it; we only take over when Ctrl is held (zoom-to-cursor),
+        // otherwise the ScrollViewer keeps panning on plain/Shift wheel.
+        CanvasScrollViewer.AddHandler(
+            UIElement.PointerWheelChangedEvent,
+            new Microsoft.UI.Xaml.Input.PointerEventHandler(OnCanvasPointerWheelChanged),
+            true);
     }
 
     public void Render(
@@ -271,14 +241,8 @@ public sealed partial class BoardCanvas : UserControl
 
         if (cards.Count == 0)
         {
-            BoardTitleText.Text = "No board snapshot";
-            BoardSummaryText.Text = "The embedded runtime has not published any cards yet.";
             return;
         }
-
-        BoardTitleText.Text = boardInfo.BoardId;
-        BoardSummaryText.Text =
-            $"{summary.CardCount} card(s)  •  Pending {summary.Pending}  •  In progress {summary.InProgress}  •  Completed {summary.Completed}  •  Failed {summary.Failed}";
 
         IReadOnlyDictionary<string, BoardCanvasPlacement> placements = BoardCanvasLayoutEngine.BuildPlacements(cards, layoutState);
         lastPlacements = placements;
@@ -371,7 +335,6 @@ public sealed partial class BoardCanvas : UserControl
         CanvasSurface.Height = CardsHost.Height;
         RenderBackgroundGrid();
         UpdateMiniMap();
-        UpdateZoomStatus();
 
         if (selectedToken is null)
         {
@@ -427,7 +390,6 @@ public sealed partial class BoardCanvas : UserControl
         var app = (App)Application.Current;
         app.BoardStore.SetCanvasViewport(CanvasScrollViewer.HorizontalOffset, CanvasScrollViewer.VerticalOffset, CanvasScrollViewer.ZoomFactor);
         UpdateMiniMapViewport();
-        UpdateZoomStatus();
         if (!e.IsIntermediate)
         {
             PersistLayoutAsync();
@@ -581,20 +543,42 @@ public sealed partial class BoardCanvas : UserControl
 
     private void AdjustZoom(float multiplier)
     {
-        float targetZoom = (float)System.Math.Max(0.24, System.Math.Min(1.35, CanvasScrollViewer.ZoomFactor * multiplier));
-        suppressViewportUpdates = true;
-        CanvasScrollViewer.ChangeView(CanvasScrollViewer.HorizontalOffset, CanvasScrollViewer.VerticalOffset, targetZoom, false);
+        double viewportWidth = CanvasScrollViewer.ActualWidth > 0 ? CanvasScrollViewer.ActualWidth : 1;
+        double viewportHeight = CanvasScrollViewer.ActualHeight > 0 ? CanvasScrollViewer.ActualHeight : 1;
+        ZoomToPoint(new Point(viewportWidth / 2, viewportHeight / 2), multiplier);
     }
 
-    private void ResetViewport()
+    private void OnCanvasPointerWheelChanged(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
     {
-        if (lastLayoutState.Viewport is not null)
+        // Plain / Shift wheel keeps the ScrollViewer's native pan behaviour
+        // (mirrors ReactFlow panOnScroll); Ctrl+wheel zooms toward the cursor.
+        if (!e.KeyModifiers.HasFlag(Windows.System.VirtualKeyModifiers.Control))
         {
-            RestoreViewport(lastLayoutState.Viewport);
             return;
         }
 
-        FitToCards(lastCards.Select(card => card.Id));
+        PointerPoint point = e.GetCurrentPoint(CanvasScrollViewer);
+        float factor = point.Properties.MouseWheelDelta > 0 ? 1.1f : 1f / 1.1f;
+        ZoomToPoint(point.Position, factor);
+        e.Handled = true;
+    }
+
+    private void ZoomToPoint(Point viewportPoint, float multiplier)
+    {
+        float currentZoom = CanvasScrollViewer.ZoomFactor > 0 ? CanvasScrollViewer.ZoomFactor : 1;
+        float targetZoom = (float)System.Math.Max(0.24, System.Math.Min(1.35, currentZoom * multiplier));
+        if (System.Math.Abs(targetZoom - currentZoom) < 0.0005)
+        {
+            return;
+        }
+
+        // Keep the content point under the cursor anchored while zooming.
+        double contentX = (CanvasScrollViewer.HorizontalOffset + viewportPoint.X) / currentZoom;
+        double contentY = (CanvasScrollViewer.VerticalOffset + viewportPoint.Y) / currentZoom;
+        double targetHorizontal = System.Math.Max(0, (contentX * targetZoom) - viewportPoint.X);
+        double targetVertical = System.Math.Max(0, (contentY * targetZoom) - viewportPoint.Y);
+        suppressViewportUpdates = true;
+        CanvasScrollViewer.ChangeView(targetHorizontal, targetVertical, targetZoom, false);
     }
 
     private void OnMiniMapPointerPressed(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
@@ -604,7 +588,48 @@ public sealed partial class BoardCanvas : UserControl
             return;
         }
 
-        Point point = e.GetCurrentPoint(MiniMapHost).Position;
+        isMiniMapDragging = true;
+        MiniMapHost.CapturePointer(e.Pointer);
+        PanToMiniMapPoint(e.GetCurrentPoint(MiniMapHost).Position);
+        e.Handled = true;
+    }
+
+    private void OnMiniMapPointerMoved(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        if (!isMiniMapDragging)
+        {
+            return;
+        }
+
+        PointerPoint point = e.GetCurrentPoint(MiniMapHost);
+        if (!point.Properties.IsLeftButtonPressed)
+        {
+            return;
+        }
+
+        PanToMiniMapPoint(point.Position);
+        e.Handled = true;
+    }
+
+    private void OnMiniMapPointerReleased(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        if (!isMiniMapDragging)
+        {
+            return;
+        }
+
+        isMiniMapDragging = false;
+        MiniMapHost.ReleasePointerCaptures();
+        e.Handled = true;
+    }
+
+    private void PanToMiniMapPoint(Point point)
+    {
+        if (CardsHost.Width <= 0 || CardsHost.Height <= 0)
+        {
+            return;
+        }
+
         double scale = System.Math.Min(MiniMapWidth / CardsHost.Width, MiniMapHeight / CardsHost.Height);
         if (scale <= 0)
         {
@@ -618,7 +643,6 @@ public sealed partial class BoardCanvas : UserControl
         double targetVertical = System.Math.Max(0, (contentY * zoom) - (CanvasScrollViewer.ActualHeight / 2));
         suppressViewportUpdates = true;
         CanvasScrollViewer.ChangeView(targetHorizontal, targetVertical, CanvasScrollViewer.ZoomFactor, false);
-        e.Handled = true;
     }
 
     private void OnCardDoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
@@ -968,6 +992,38 @@ public sealed partial class BoardCanvas : UserControl
         return null;
     }
 
+    private static Button BuildControlButton(string svgPath, string tooltip)
+    {
+        var button = new Button
+        {
+            Width = 36,
+            Height = 32,
+            Padding = new Thickness(0),
+            CornerRadius = new CornerRadius(0),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Background = new SolidColorBrush(Colors.Transparent),
+            BorderThickness = new Thickness(0),
+            Content = new Image
+            {
+                Width = 16,
+                Height = 16,
+                Source = HostIconSources.CreateSvg(svgPath),
+            },
+        };
+        ToolTipService.SetToolTip(button, tooltip);
+        return button;
+    }
+
+    private static Border BuildControlSeparator()
+    {
+        return new Border
+        {
+            Height = 1,
+            Margin = new Thickness(4, 0, 4, 0),
+            Background = BoardTheme.CreateResourceBrush("BoardColorBorderStrong", 0x18, Colors.SlateGray),
+        };
+    }
+
     private void RenderBackgroundGrid()
     {
         BackgroundGridHost.Children.Clear();
@@ -976,32 +1032,32 @@ public sealed partial class BoardCanvas : UserControl
             return;
         }
 
-        for (double x = 0; x <= CardsHost.Width; x += BackgroundGridGap)
+        // Dot pattern matching ReactFlow's default <Background variant="dots" />.
+        // Widen the effective gap if the surface is large so the dot count stays
+        // bounded (each dot is a visual-tree element).
+        double gap = BackgroundGridGap;
+        while ((CardsHost.Width / gap) * (CardsHost.Height / gap) > 6000)
         {
-            BackgroundGridHost.Children.Add(new Line
-            {
-                X1 = x,
-                X2 = x,
-                Y1 = 0,
-                Y2 = CardsHost.Height,
-                Stroke = BoardTheme.CreateResourceBrush("BoardColorBorderStrong", 0x14, Colors.SlateGray),
-                StrokeThickness = 1,
-                IsHitTestVisible = false,
-            });
+            gap *= 2;
         }
 
-        for (double y = 0; y <= CardsHost.Height; y += BackgroundGridGap)
+        Brush dotBrush = BoardTheme.CreateResourceBrush("BoardColorBorderStrong", 0x2A, Colors.SlateGray);
+        const double dotSize = 1.6;
+        for (double x = 0; x <= CardsHost.Width; x += gap)
         {
-            BackgroundGridHost.Children.Add(new Line
+            for (double y = 0; y <= CardsHost.Height; y += gap)
             {
-                X1 = 0,
-                X2 = CardsHost.Width,
-                Y1 = y,
-                Y2 = y,
-                Stroke = BoardTheme.CreateResourceBrush("BoardColorBorderStrong", 0x14, Colors.SlateGray),
-                StrokeThickness = 1,
-                IsHitTestVisible = false,
-            });
+                var dot = new Ellipse
+                {
+                    Width = dotSize,
+                    Height = dotSize,
+                    Fill = dotBrush,
+                    IsHitTestVisible = false,
+                };
+                Canvas.SetLeft(dot, x - (dotSize / 2));
+                Canvas.SetTop(dot, y - (dotSize / 2));
+                BackgroundGridHost.Children.Add(dot);
+            }
         }
     }
 
@@ -1059,11 +1115,6 @@ public sealed partial class BoardCanvas : UserControl
         MiniMapViewport.Width = System.Math.Max(12, viewportWidth);
         MiniMapViewport.Height = System.Math.Max(12, viewportHeight);
         MiniMapViewport.Margin = new Thickness(left, top, 0, 0);
-    }
-
-    private void UpdateZoomStatus()
-    {
-        ZoomStatusText.Text = $"Zoom {(CanvasScrollViewer.ZoomFactor * 100):0}%";
     }
 
     private static Windows.UI.Color GetMiniMapNodeColor(string status)

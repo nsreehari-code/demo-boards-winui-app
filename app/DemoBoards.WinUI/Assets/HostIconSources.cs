@@ -17,6 +17,9 @@ public static class HostIconSources
     public const string ChatAttach = "Assets/Icons/chat-attach.svg";
     public const string ChatExpandChevron = "Assets/Icons/chat-expand-chevron.svg";
     public const string InspectDeleteCard = "Assets/Icons/inspect-delete-card.svg";
+    public const string ControlZoomIn = "Assets/Icons/control-zoom-in.svg";
+    public const string ControlZoomOut = "Assets/Icons/control-zoom-out.svg";
+    public const string ControlFitView = "Assets/Icons/control-fit-view.svg";
 
     public static SvgImageSource CreateSvg(string relativePath)
     {
