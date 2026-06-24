@@ -341,7 +341,7 @@ public sealed class InfiniteCanvas : Component<InfiniteCanvasProps>
                     new[] { GridSize.Star() },
                     new[] { GridSize.Star() },
                     overlay.ToArray()))
-            .Background(ReactorMainShellComponent.ResolveBrush("LayerFillColorDefaultBrush"))
+            .Background(ReactorMainShellComponent.ResolveBrush("SolidBackgroundFillColorBaseAltBrush"))
             .WithBorder(ReactorMainShellComponent.ResolveBrush("CardStrokeColorDefaultBrush"), 1)
             .CornerRadius(14)
             .Padding(12)
@@ -811,12 +811,19 @@ public sealed class InfiniteCanvas : Component<InfiniteCanvasProps>
         IReadOnlyDictionary<string, InfiniteCanvasNode> nodes,
         InfiniteCanvasOptions options)
     {
-        // Floating icon buttons in a vertical stack, anchored bottom-left with a small margin.
-        return VStack(8,
-                ZoomIconButton(HostIconSources.ControlZoomIn, "Zoom in", () => ZoomBy(scrollViewerRef.Current, 1.2, options)),
-                ZoomIconButton(HostIconSources.ControlZoomOut, "Zoom out", () => ZoomBy(scrollViewerRef.Current, 1 / 1.2, options)),
-                ZoomIconButton(HostIconSources.ControlFitView, "Fit to content", () => FitToContent(scrollViewerRef.Current, positions, nodes, options)),
-                ZoomIconButton(HostIconSources.ControlActualSize, "Actual size", () => ResetZoom(scrollViewerRef.Current)))
+        // Floating icon buttons stacked as a single connected toolbar group: a bordered container
+        // holds borderless square buttons with zero spacing, anchored bottom-left with a small margin.
+        return Border(
+                (VStack(0,
+                    ZoomIconButton(HostIconSources.ControlZoomIn, "Zoom in", () => ZoomBy(scrollViewerRef.Current, 1.2, options)),
+                    ZoomIconButton(HostIconSources.ControlZoomOut, "Zoom out", () => ZoomBy(scrollViewerRef.Current, 1 / 1.2, options)),
+                    ZoomIconButton(HostIconSources.ControlFitView, "Fit to content", () => FitToContent(scrollViewerRef.Current, positions, nodes, options)),
+                    ZoomIconButton(HostIconSources.ControlActualSize, "Actual size", () => ResetZoom(scrollViewerRef.Current)))
+                .Set(panel => panel.Spacing = 0)))
+            .Background(ReactorMainShellComponent.ResolveBrush("LayerFillColorDefaultBrush"))
+            .WithBorder(ReactorMainShellComponent.ResolveBrush("CardStrokeColorDefaultBrush"), 1)
+            .CornerRadius(8)
+            .Padding(0)
             .HAlign(HorizontalAlignment.Left)
             .VAlign(VerticalAlignment.Bottom)
             .Margin(16, 0, 0, 16);
@@ -824,11 +831,15 @@ public sealed class InfiniteCanvas : Component<InfiniteCanvasProps>
 
     private static Element ZoomIconButton(string iconSource, string automationName, Action onClick)
     {
+        // Borderless, transparent square button so the buttons merge into the container group with no
+        // visible gaps; hover/press still highlights the individual button.
         return Button(Image(iconSource).Width(18).Height(18).AccessibilityHidden(), onClick)
+            .SubtleButton()
             .AutomationName(automationName)
             .Width(40)
             .Height(40)
-            .CornerRadius(20);
+            .CornerRadius(0)
+            .Set(button => button.Margin = new Thickness(0));
     }
 
     private static void ZoomBy(ScrollViewer? scrollViewer, double factor, InfiniteCanvasOptions options)
