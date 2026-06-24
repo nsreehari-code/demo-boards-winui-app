@@ -24,12 +24,39 @@ public static class Program
                 {
                     XamlInterop.Register(host.Reconciler);
                     App.Current.AttachWindow(host.Window);
+                    FitWindowToWorkArea(host.Window);
                 });
         }
         finally
         {
             App.Current.DisposeAsync().AsTask().GetAwaiter().GetResult();
         }
+    }
+
+    // The window is requested at a comfortable design size, but on smaller displays that
+    // size can run off the bottom/right of the screen — clipping anything anchored to the
+    // window edges (e.g. the canvas minimap and zoom controls). Clamp the window to the
+    // display's work area (which already excludes the taskbar) and centre it so every edge
+    // stays on-screen regardless of resolution.
+    private static void FitWindowToWorkArea(Window window)
+    {
+        Microsoft.UI.Windowing.AppWindow? appWindow = window.AppWindow;
+        if (appWindow is null)
+        {
+            return;
+        }
+
+        Microsoft.UI.Windowing.DisplayArea display = Microsoft.UI.Windowing.DisplayArea.GetFromWindowId(
+            appWindow.Id,
+            Microsoft.UI.Windowing.DisplayAreaFallback.Primary);
+
+        Windows.Graphics.RectInt32 work = display.WorkArea;
+        const int margin = 24;
+        int width = Math.Min(appWindow.Size.Width, work.Width - margin);
+        int height = Math.Min(appWindow.Size.Height, work.Height - margin);
+        int x = work.X + Math.Max(0, (work.Width - width) / 2);
+        int y = work.Y + Math.Max(0, (work.Height - height) / 2);
+        appWindow.MoveAndResize(new Windows.Graphics.RectInt32(x, y, width, height));
     }
 }
 

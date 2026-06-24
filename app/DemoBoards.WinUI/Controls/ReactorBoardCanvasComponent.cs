@@ -110,7 +110,6 @@ public sealed class ReactorBoardCanvasComponent : Component<ReactorBoardCanvasPr
                             Background = new SolidColorBrush(Colors.Transparent),
                         })
                         .ZoomMode(ZoomMode.Enabled)
-                        .HorizontalScrollMode(ScrollMode.Enabled)
                         .VerticalScrollMode(ScrollMode.Enabled)
                         .ViewChanged(args =>
                         {

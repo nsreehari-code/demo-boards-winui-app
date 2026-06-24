@@ -32,6 +32,8 @@ Status meanings:
 
 ## Current conclusion
 
+Re-audited after the latest manage-boards, host-config, and board-surface parity work: this matrix still holds, and no additional runtime/config parity gaps were identified beyond the genuine host drifts listed below.
+
 Already solid:
 
 - WinUI app config surface for portable frontend/backend host settings

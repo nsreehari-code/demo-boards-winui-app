@@ -20,6 +20,7 @@ public static class HostIconSources
     public const string ControlZoomIn = "ms-appx:///Assets/Icons/control-zoom-in.svg";
     public const string ControlZoomOut = "ms-appx:///Assets/Icons/control-zoom-out.svg";
     public const string ControlFitView = "ms-appx:///Assets/Icons/control-fit-view.svg";
+    public const string ControlActualSize = "ms-appx:///Assets/Icons/control-actual-size.svg";
 
     public static SvgImageSource CreateSvg(string relativePath)
     {

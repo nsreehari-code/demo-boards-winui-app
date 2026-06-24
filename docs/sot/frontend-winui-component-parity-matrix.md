@@ -30,6 +30,7 @@ Current audit posture:
 - `Functionality` calls below reflect concrete parity implementation and follow-up validation already completed.
 - `Visual appeal` is temporarily reset to `recheck` across component surfaces because visible layout parity issues remain and need a fresh dedicated pass.
 - `Interaction / UX` and `Performance` are intentionally stricter: any row still marked `unverified` has not yet had a dedicated enough pass to justify `done`.
+- This file now includes explicit full outer-join inventories for frontend `components`, `hooks`, and `lib` seams versus the current WinUI app so future parity work starts from the real source inventories.
 
 ## Component contract rule
 
@@ -53,26 +54,26 @@ This section is the gate for parity claims. It deliberately tracks props, view/l
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `AppConfigModal` | `ReactorAppConfigModalComponent` | recheck | recheck | recheck | recheck | unverified | The high-level flows exist, but this still needs a direct pass against the frontend modal's auto-open, seed/template preparation, modal branching, theme-token usage, and async saving/resetting state transitions. |
 | `BoardCanvas` | `ReactorBoardCanvasComponent` | done | recheck | recheck | needs work | needs work | React owns `selectedToken`, `reactFlowInstance`, `isInitialBoardViewReady`, persisted coords/width/viewport sync, and multiple viewport/layout `useEffect` paths. Reactor now renders and navigates the board, but it still needs a stricter one-to-one audit of viewport initialization, conditional focus composition, canvas theme-token behavior, persistence cadence, and focus/restore lifecycle. |
-| `BoardMarkdown` | markdown path inside `ReactorCardFrontContentComponent` | done | done | recheck | done | recheck | The render path exists, but the markdown component no longer stands alone in WinUI, so the remaining check is theme-token fidelity plus embedded lifecycle cost and refresh behavior. |
+| `BoardMarkdown` | `ReactorCardViewElementComponent` markdown render kind | done | done | recheck | done | recheck | The render path exists, but the markdown component no longer stands alone in WinUI, so the remaining check is theme-token fidelity plus embedded lifecycle cost and refresh behavior. |
 | `CardBackface` | `ReactorCardBackfaceComponent` | done | recheck | recheck | recheck | unverified | The rendered token/details surface exists, but the frontend's expansion state, derived-display logic, and theme-token treatment still need a direct comparison. |
 | `CardCore` | `ReactorCardFrontContentComponent` | done | recheck | recheck | recheck | recheck | The bind/value/render contract is present, but the frontend component owns save/file-version/update logic, theme-driven render choices, and lifecycle details that still need explicit parity confirmation. |
-| `CardCoreView` | view-element rendering inside `ReactorCardFrontContentComponent` | recheck | recheck | recheck | recheck | recheck | This is the biggest folded surface. Each render kind now exists, but frontend render branching, semantic styling, local state such as sorting/journaling/measuring, and writeback effects must be checked render-kind by render-kind. |
+| `CardCoreView` | `ReactorCardViewElementComponent` | recheck | recheck | recheck | recheck | recheck | This is the biggest folded surface. Each render kind now exists, but frontend render branching, semantic styling, local state such as sorting/journaling/measuring, and writeback effects must be checked render-kind by render-kind. |
 | `CardRenderer` | `ReactorCardRendererComponent` | done | recheck | recheck | done | recheck | Renderer branching is back, but the frontend dispatcher still needs an explicit comparison of branch selection, theme-aware shell selection, and whether specialized branches remount versus preserve state. |
 | `CardShell` | `ReactorCardShellComponent` | done | recheck | recheck | recheck | recheck | Shell-level actions exist, but local flip/chat/open state and the frontend shell's render branching, status-toned theming, and event/effect behavior still need a direct comparison pass. |
-| `CentrePane` | folded into `ReactorMainShellComponent` + `ReactorBoardCanvasComponent` | recheck | recheck | recheck | recheck | recheck | The pane role exists, but this is not yet tracked as a clean one-to-one component contract because orchestration is currently folded into larger Reactor surfaces. |
+| `CentrePane` | `ReactorCentrePaneComponent` with `ReactorInfiniteCanvasComponent` / `ReactorCardsFlowComponent` | recheck | recheck | recheck | recheck | recheck | WinUI now has a named centre-pane seam again, including explicit infinite-canvas versus flowing-cards mode selection. It still needs a direct contract pass against the frontend component's render branching, state ownership, theme behavior, and lifecycle. |
 | `ChallengeConfirmModal` | `ReactorChallengeConfirmModalComponent` | done | done | recheck | done | needs work | The arithmetic confirm contract exists, but the frontend modal's semantic styling plus focus capture, Escape handling, and dismissal lifecycle are not fully mirrored yet. |
 | `ChatPane` | `ReactorChatPaneComponent` | done | recheck | recheck | needs work | needs work | React owns sticky-bottom state, expansion state, live/history boundary state, draft turn rollover, conditional message-stack logic, themed status/bubble treatment, and several scroll scheduling/subscription effects. WinUI has the main chat flows, but it still trails at exactly those view/theme/state/effect seams. |
-| `GandalfPane` | folded into `ReactorMainShellComponent` side-pane composition | recheck | recheck | recheck | done | unverified | Visibility and navigation behavior exist, but the current WinUI counterpart is folded orchestration rather than a dedicated named component, so the contract needs a direct mapping pass including side-rail theme behavior. |
+| `GandalfPane` | `ReactorGandalfPaneComponent` on `ReactorPreviewPaneComponent` | recheck | recheck | recheck | done | unverified | WinUI now has a named Gandalf pane seam again, but it is implemented through a shared preview-pane scaffold. The direct contract pass still needs to confirm side-rail logic, theme behavior, and lifecycle details against the frontend component. |
 | `GlobalModal` | `ReactorGlobalModalComponent` | needs work | needs work | needs work | n/a | needs work | The frontend modal is a portal with backdrop/header/body composition plus Escape and outside-click dismissal. The current Reactor modal is still an in-tree panel without matching overlay structure, backdrop theming, or dismiss lifecycle behavior. |
 | `GandalfChatPane` | compact/title mode in `ReactorChatPaneComponent` | done | recheck | recheck | needs work | needs work | This inherits the current chat logic/theme/state/effect gaps rather than being missing outright. |
 | `IngestCard` | `ReactorIngestCardComponent` | done | recheck | recheck | needs work | needs work | The dedicated card branch exists again, but because it is built on the shared compact chat surface it inherits the chat component's theme/state/lifecycle gaps. |
 | `InspectCard` | `ReactorInspectCardComponent` | done | recheck | recheck | recheck | recheck | The main inspect workflows exist, but delete-confirm, preview swapping, trial-run loading, nested chat/backface composition, semantic styling, and related lifecycle need an explicit component-contract audit. |
-| `MainBoard` | folded into `ReactorMainShellComponent` | recheck | recheck | recheck | recheck | recheck | The orchestration role exists, but the current WinUI structure has not yet been rewritten into a direct one-to-one component contract comparable to frontend `MainBoard`. |
+| `MainBoard` | `ReactorMainBoardComponent` orchestrated by `ReactorMainShellComponent` | recheck | recheck | recheck | recheck | recheck | WinUI now has a named main-board orchestration seam again, but the full contract still needs a direct pass across child composition, mode selection, theme orchestration, and lifecycle ordering. |
 | `MiniChatPane` | compact mode in `ReactorChatPaneComponent` | done | recheck | recheck | needs work | needs work | This inherits the same message-stack, compact themed treatment, draft, and scroll logic/effect gaps as the shared chat component. |
 | `PostboxCard` | `ReactorPostboxCardComponent` | done | recheck | recheck | needs work | needs work | Frontend postbox owns drag state, composer drag state, view-mode state, live/history merge state, conditional submissions/files composition, semantic styling, and submission/history effects. WinUI covers the main flows but still lags at those logic/theme/state/effect seams. |
 | `SmokeRunner` | `ReactorSmokeRunnerComponent` | recheck | recheck | recheck | recheck | recheck | The surface exists and runs the suite, but the frontend component has a large local state machine, deferred view logic, themed result/status presentation, and deferred effect flow that has not yet been matched item-by-item. |
 | `StrategistCard` | `ReactorStrategistCardComponent` | recheck | recheck | recheck | recheck | recheck | The dedicated branch is back, but the frontend strategist card still needs a direct comparison of its render logic, styling contract, and expansion/interaction lifecycle against the current Reactor version. |
-| `TruthsetExplorePane` | folded into `ReactorMainShellComponent` side-pane composition | recheck | recheck | recheck | done | unverified | Like Gandalf, the high-level role exists but the current WinUI counterpart is not yet tracked as a dedicated one-to-one component contract. |
+| `TruthsetExplorePane` | `ReactorTruthsetExplorePaneComponent` on `ReactorPreviewPaneComponent` | recheck | recheck | recheck | done | unverified | Like Gandalf, WinUI now has a named pane seam again, but the shared preview-pane scaffold still needs a direct contract comparison against the frontend component. |
 
 Immediate audit priority:
 
@@ -88,36 +89,117 @@ Those five are the current places where props/view/theme/state/effects drift is 
 
 | Frontend component | WinUI counterpart | Functionality | Visual appeal | Interaction / UX | Performance | Reactor migration | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `AppConfigModal` | `AppConfigModal` | done | recheck | unverified | unverified | done | WinUI now covers add-board, template-backed add-board, import/export, template preview/ingest, config save flows, and the shared theme-pack selection path. The modal is now launched from a floating board-surface action rather than a text button in the top bar, matching the frontend's more detached settings affordance more closely. The control no longer depends on an app-authored `.xaml` view file. |
-| `BoardCanvas` | `BoardCanvas` | done | recheck | done | needs work | done | WinUI now provides the infinite-canvas board surface with persisted layout, token focus, card focus, minimap, zoom, fit/reset, renderer-rule-driven card rendering, and theme-aware canvas chrome. Drag, resize, double-tap focus, minimap navigation, and viewport restore behaviors are concretely implemented. Performance still needs work because the surface clears and rebuilds the full canvas visual tree, connection visuals, and background grid on rerender rather than using a more incremental update path. |
+| `AppConfigModal` | `ReactorAppConfigModalComponent` | done | recheck | unverified | unverified | done | WinUI now covers add-board, template-backed add-board, import/export, template preview/ingest, config save flows, and the shared theme-pack selection path. The modal is now launched from the main board shell and routes through the shared Reactor modal host. The control no longer depends on an app-authored `.xaml` view file. |
+| `BoardCanvas` | `ReactorBoardCanvasComponent` | done | recheck | done | needs work | done | WinUI now provides the infinite-canvas board surface with persisted layout, token focus, card focus, minimap, zoom, fit/reset, renderer-rule-driven card rendering, and theme-aware canvas chrome. Drag, resize, double-tap focus, minimap navigation, and viewport restore behaviors are concretely implemented. Performance still needs work because the surface clears and rebuilds the full canvas visual tree, connection visuals, and background grid on rerender rather than using a more incremental update path. |
 | `BoardMarkdown` | `ReactorCardViewElementComponent` markdown render kind | done | recheck | done | needs work | done | WinUI does not keep a standalone `BoardMarkdown` surface anymore; markdown is folded into the Reactor card-view renderer. The behavior covers parser-backed markdown rendering with themed WebView output, but still rebuilds rich markdown content per render. |
 | `CardBackface` | `ReactorCardBackfaceComponent` | done | recheck | done | unverified | done | WinUI backface now exposes the same actionable surface for token inspection plus card/source preflight entrypoints when used inside inspect flows, with theme-aware token chips and panels. The interaction surface is concrete and explicit; performance has not yet had a dedicated pass. |
 | `CardCore` | `ReactorCardFrontContentComponent` | done | recheck | unverified | needs work | done | WinUI core rendering now lives inside Reactor card-front composition rather than a standalone hosted control. It resolves binds, refs, visibility, and writeback patching against the same runtime/data namespaces used for board rendering. |
 | `CardCoreView` | `ReactorCardViewElementComponent` | done | recheck | unverified | needs work | done | WinUI covers the current render kinds, including chart rendering alongside actions, selection, forms, notes, editable tables, todo, alert, metric, markdown, and narrative/text surfaces. Performance still needs work because rich render kinds and WebView-backed paths are rebuilt from scratch on rerender. |
 | `CardRenderer` | `ReactorCardRendererComponent` | done | recheck | unverified | needs work | done | The Reactor dispatcher now restores real specialized branches for strategist, ingest, postbox, and default shell rendering instead of flattening everything through the generic shell. Performance still needs work because the dispatcher recreates the chosen specialized control tree on rerender. |
 | `CardShell` | `ReactorCardShellComponent` | done | recheck | unverified | needs work | done | WinUI shell carries inspect, chat-popout, path-state, token-row, front/back runtime flip, shared card-front rendering responsibilities, and theme-aware shell/status treatments. Performance still needs work because front-shell content is rebuilt on rerender, including fresh front content and mini-chat instances when present. |
-| `CentrePane` | `CentrePane` | done | recheck | done | needs work | done | WinUI now supports both the infinite-canvas and flowing-cards centre-pane roles, with explicit layout-strategy handling from the same orchestration boundary. Interaction is sufficiently aligned at the pane level; performance still needs work because flowing-card mode rebuilds the full grid and canvas mode inherits the audited canvas performance gap. |
+| `CentrePane` | `ReactorCentrePaneComponent` | done | recheck | done | needs work | done | WinUI now supports both the infinite-canvas and flowing-cards centre-pane roles through a dedicated centre-pane component plus explicit `ReactorInfiniteCanvasComponent` / `ReactorCardsFlowComponent` mode surfaces. Interaction is sufficiently aligned at the pane level; performance still needs work because flowing-card mode rebuilds the full grid and canvas mode inherits the audited canvas performance gap. |
 | `ChallengeConfirmModal` | `ReactorChallengeConfirmModalComponent` | done | recheck | needs work | unverified | done | WinUI again has a dedicated arithmetic challenge-confirm surface and uses it for destructive inspect/config actions. The remaining gap is modal polish: the current Reactor version does not yet match the frontend's focus and dismissal behavior closely enough to mark interaction as done. |
-| `ChatPane` | `ChatPane` | done | recheck | needs work | needs work | done | WinUI now covers live chat, staged attachments, anchored history paging, working-bubble state, compact mode, popout-to-full-chat composition, and the current theme-token chat treatments. The compact chat actions now use the same packaged popout and attach SVGs as the frontend surface. Interaction still needs work because the frontend chat surface includes sticky-scroll behavior, scheduled auto-scroll, expandable message handling, and textarea growth behavior that the WinUI pane does not yet mirror. Performance also needs work because the WinUI pane rebuilds the full message stack and markdown surfaces on state changes without a lighter incremental path. |
-| `GandalfPane` | `GandalfPane` | done | recheck | done | done | done | WinUI Gandalf pane now matches the frontend role as a toggleable side rail over filtered ingest cards with navigation and renderer reuse. The pane renders one current card at a time and maintains index/navigation state without additional complexity, and it now uses the shared floating edge-toggle control rather than a one-off text button. |
+| `ChatPane` | `ReactorChatPaneComponent` | done | recheck | needs work | needs work | done | WinUI now covers live chat, staged attachments, anchored history paging, working-bubble state, compact mode, popout-to-full-chat composition, and the current theme-token chat treatments. The compact chat actions now use the same packaged popout and attach SVGs as the frontend surface. Interaction still needs work because the frontend chat surface includes sticky-scroll behavior, scheduled auto-scroll, expandable message handling, and textarea growth behavior that the WinUI pane does not yet mirror. Performance also needs work because the WinUI pane rebuilds the full message stack and markdown surfaces on state changes without a lighter incremental path. |
+| `GandalfPane` | `ReactorGandalfPaneComponent` | done | recheck | done | done | done | WinUI Gandalf pane now matches the frontend role as a toggleable side rail over filtered ingest cards with navigation and renderer reuse. The named pane is implemented on top of the shared `ReactorPreviewPaneComponent` scaffold, renders one current card at a time, and keeps its navigation model narrow and explicit. |
 | `GlobalModal` | `ReactorGlobalModalComponent` | needs work | recheck | needs work | done | done | WinUI now has a dedicated Reactor modal host again, and inspect/chat/config/smoke surfaces all route through it. The current gap is behavior parity: it is still a hosted shell section rather than a true overlay/backdrop portal with Escape and outside-click dismissal semantics. |
 | `GandalfChatPane` | `ReactorChatPaneComponent` compact/title variant | done | recheck | needs work | needs work | done | WinUI does not keep a separate named chat wrapper; the ingest-side chat surface is folded into the shared Reactor chat component with compact composition. It still inherits the current chat interaction and performance gaps. |
 | `IngestCard` | `ReactorIngestCardComponent` | done | recheck | needs work | needs work | done | WinUI again has a dedicated Reactor ingest card surface instead of flattening ingest cards through the default shell. Because its body is still the compact chat surface, it inherits the current chat interaction and performance gaps. |
-| `InspectCard` | `InspectCard` | done | recheck | unverified | needs work | done | WinUI inspect now includes structured trial-run output, token inspection, source/card preflight actions, preview, backface, files, metadata, embedded chat, and the current theme-aware pane/pill treatments. The destructive delete action now uses the same packaged trash SVG as the frontend inspect surface. Performance still needs work because the surface clears and rebuilds multiple content hosts, embeds chat/backface/preview content, and reparses large JSON/text blocks on render. |
-| `MainBoard` | `MainBoard` | done | recheck | done | needs work | done | WinUI main board now mirrors the frontend role by orchestrating Gandalf, Truthset, and centre/canvas surfaces from managed-board UI config, renderer rules, and shared theme-pack selection. Interaction is sufficiently aligned at the orchestration level; performance still needs work because it delegates to audited child surfaces with known rebuild costs, especially the centre/canvas path. |
+| `InspectCard` | `ReactorInspectCardComponent` | done | recheck | unverified | needs work | done | WinUI inspect now includes structured trial-run output, token inspection, source/card preflight actions, preview, backface, files, metadata, embedded chat, and the current theme-aware pane/pill treatments. The destructive delete action now uses the same packaged trash SVG as the frontend inspect surface. Performance still needs work because the surface clears and rebuilds multiple content hosts, embeds chat/backface/preview content, and reparses large JSON/text blocks on render. |
+| `MainBoard` | `ReactorMainBoardComponent` orchestrated by `ReactorMainShellComponent` | done | recheck | done | needs work | done | WinUI main board now mirrors the frontend role by orchestrating Gandalf, Truthset, and centre/canvas surfaces from managed-board UI config, renderer rules, and shared theme-pack selection. Interaction is sufficiently aligned at the orchestration level; performance still needs work because it delegates to audited child surfaces with known rebuild costs, especially the centre/canvas path. |
 | `MiniChatPane` | `ReactorChatPaneComponent` compact variant | done | recheck | needs work | needs work | done | WinUI does not keep a separate mini-chat class anymore; shell-level compact chat is folded into the shared Reactor chat component with popout support. It inherits the current chat interaction and performance gaps. |
 | `PostboxCard` | `ReactorPostboxCardComponent` | done | recheck | needs work | needs work | done | WinUI again has a dedicated Reactor postbox surface instead of routing postbox cards through the generic shell. It now covers submissions/files modes, upload staging, optional comments, and file download links, but still trails the frontend on drag/drop affordances, smoother scrolling, and richer live submission updates. |
-| `SmokeRunner` | `SmokeRunner` | done | recheck | done | unverified | done | WinUI now exposes an in-app smoke runner modal from board configuration and executes the embedded GoldenHarness suite directly. The interaction model is simple and explicit for a developer surface; performance still has not had a dedicated pass beyond basic execution behavior. |
+| `SmokeRunner` | `ReactorSmokeRunnerComponent` | done | recheck | done | unverified | done | WinUI now exposes an in-app smoke runner modal from board configuration, mirrors the frontend smoke-case catalog, executes shared backend-script cases through the embedded runtime, and keeps a dedicated local `T3u` path for the real chat-pane flow. The interaction model is simple and explicit for a developer surface; performance still has not had a dedicated pass beyond execution behavior. |
 | `StrategistCard` | `ReactorStrategistCardComponent` | done | recheck | unverified | needs work | done | WinUI again has a dedicated Reactor strategist card surface instead of routing strategist cards through the default shell. Performance still needs work because the surface rebuilds its front-content composition on rerender. |
-| `TruthsetExplorePane` | `TruthsetExplorePane` | done | recheck | done | done | done | WinUI Truthset pane now matches the frontend role as a toggleable filtered side rail with phase badge, navigation, renderer reuse, and theme-aware badge treatment. Like GandalfPane, it renders one current card at a time and keeps its own interaction model narrow and explicit, now using the shared floating edge-toggle control for open/close affordance. |
+| `TruthsetExplorePane` | `ReactorTruthsetExplorePaneComponent` | done | recheck | done | done | done | WinUI Truthset pane now matches the frontend role as a toggleable filtered side rail with phase badge, navigation, renderer reuse, and theme-aware badge treatment. Like GandalfPane, the named pane is implemented on top of the shared `ReactorPreviewPaneComponent` scaffold and keeps its interaction model narrow and explicit. |
 
-## Frontend top-level UI surfaces with no distinct WinUI counterpart
+## Full outer join: components
 
-None at the current top-level control surface.
+This inventory is intentionally mechanical. It is the explicit component outer join between the current frontend `src/components` folder and the current WinUI app control surface.
 
-## WinUI top-level controls/helpers with no distinct frontend counterpart
+| Frontend component | WinUI counterpart | Join type | Current note |
+| --- | --- | --- | --- |
+| `AppConfigModal` | `ReactorAppConfigModalComponent` | direct counterpart | Dedicated config/admin modal on the WinUI side. |
+| `BoardCanvas` | `ReactorBoardCanvasComponent` | direct counterpart | Dedicated infinite-canvas board surface. |
+| `BoardMarkdown` | `ReactorCardViewElementComponent` markdown render kind | folded counterpart | Not a standalone WinUI class; rendered as a card-view element kind. |
+| `CardBackface` | `ReactorCardBackfaceComponent` | direct counterpart | Dedicated runtime/backface control. |
+| `CardCore` | `ReactorCardFrontContentComponent` | direct counterpart | Dedicated card-front content control. |
+| `CardCoreView` | `ReactorCardViewElementComponent` | direct counterpart | Dedicated view-element renderer class inside the card-front file. |
+| `CardRenderer` | `ReactorCardRendererComponent` | direct counterpart | Dedicated renderer dispatcher. |
+| `CardShell` | `ReactorCardShellComponent` | direct counterpart | Dedicated shell/chrome wrapper. |
+| `CentrePane` | `ReactorCentrePaneComponent` | direct counterpart | Dedicated pane component with mode switching to `ReactorInfiniteCanvasComponent` / `ReactorCardsFlowComponent`. |
+| `ChallengeConfirmModal` | `ReactorChallengeConfirmModalComponent` | direct counterpart | Dedicated destructive-confirm modal. |
+| `ChatPane` | `ReactorChatPaneComponent` | direct counterpart | Dedicated shared chat surface. |
+| `GandalfPane` | `ReactorGandalfPaneComponent` | direct counterpart | Dedicated pane wrapper over shared preview-pane scaffold. |
+| `GlobalModal` | `ReactorGlobalModalComponent` | direct counterpart | Dedicated modal host, but still not a true portal/backdrop overlay. |
+| `IngestCard` | `ReactorIngestCardComponent` | direct counterpart | Dedicated ingest branch. |
+| `InspectCard` | `ReactorInspectCardComponent` | direct counterpart | Dedicated inspect surface. |
+| `MainBoard` | `ReactorMainBoardComponent` orchestrated by `ReactorMainShellComponent` | direct counterpart | Dedicated main-board composition seam within the shell. |
+| `PostboxCard` | `ReactorPostboxCardComponent` | direct counterpart | Dedicated postbox branch. |
+| `SmokeRunner` | `ReactorSmokeRunnerComponent` | direct counterpart | Dedicated in-app smoke runner. |
+| `StrategistCard` | `ReactorStrategistCardComponent` | direct counterpart | Dedicated strategist branch. |
+| `TruthsetExplorePane` | `ReactorTruthsetExplorePaneComponent` | direct counterpart | Dedicated pane wrapper over shared preview-pane scaffold. |
 
-None at the current top-level control surface.
+## Frontend component rows with no distinct WinUI counterpart
+
+None at the current frontend `src/components` inventory level.
+
+## WinUI components/helpers with no distinct frontend component counterpart
+
+| WinUI component/helper | Current role |
+| --- | --- |
+| `ReactorInfiniteCanvasComponent` | WinUI-only centre-pane helper that hosts the dedicated infinite-canvas mode. |
+| `ReactorCardsFlowComponent` | WinUI-only centre-pane helper that hosts the flowing-cards mode. |
+| `ReactorPreviewPaneComponent` | Shared WinUI side-pane scaffold used by both Gandalf and Truthset wrappers. |
+| `ReactorCardShellHost` | Native host-control seam for mounting card shells in desktop contexts. |
+| `ReactorShellBridge` | Event bridge for shell-level requests such as chat popout and smoke runner launch. |
+
+## Full outer join: hooks and state seams
+
+Frontend hooks do not map to WinUI one-for-one by syntax. The WinUI equivalents are state records, store selectors, and event subscriptions. This table records the actual outer join.
+
+| Frontend hook | Primary WinUI counterpart | Join type | Current note |
+| --- | --- | --- | --- |
+| `useBoardState` | `BoardStore` + `BoardStoreState` selector/accessor methods | folded counterpart | Shared board snapshot/store concerns move into the reducer-fed native store. |
+| `useBoardUiConfig` | `ManagedBoardConfigState`, `CardPresentationConfig`, and `BoardTheme.ResolveThemePackIdFromUiJson(...)` | folded counterpart | UI config is stored raw and derived on demand in WinUI instead of through a dedicated hook. |
+| `useCardState` | `BoardStore.GetCardState(...)` / `GetCardDefinitionAndData(...)` | direct counterpart | Single-card selector seam exists as store accessors rather than React hooks. |
+| `useChatState` | `BoardStoreState.CardChatViews` + `ReactorChatPaneComponent` local state + `EmbeddedBoardClient` chat actions | folded counterpart | Chat state is split between shared store slices and local chat-surface state. |
+| `useCoordsState` | `BoardCanvasLayoutState` + `BoardStore` canvas mutation actions | direct counterpart | Layout positions, widths, and viewport live in the native canvas-layout record. |
+| `useManageBoards` | `EmbeddedBoardClient` manage-boards methods + `ReactorAppConfigModalComponent` orchestration | folded counterpart | CRUD/admin behavior exists without a dedicated hook boundary. |
+| `useManagedBoardConfig` | `ManagedBoardConfigState` + `EmbeddedBoardClient.GetManagedBoardConfigAsync(...)` / `SaveManagedBoardConfigAsync(...)` | direct counterpart | Shared config record and load/save seam exist directly. |
+| `useRuntimeCards` | `BoardStore.GetBoardCardDefinitionsAndData()` / runtime-slice accessors | direct counterpart | Card/runtime enumeration is exposed through store accessors. |
+| `useSseSlices` | `BoardStore` event subscriptions over `DemoBoardsRuntimeService` notifications | folded counterpart | The slice/store pattern exists, but the browser SSE transport is replaced by embedded runtime notifications. |
+
+## Frontend hooks with no distinct WinUI counterpart
+
+None at the current frontend `src/hooks` inventory level. Every current hook concern is carried by a store, state record, accessor, or runtime subscription seam on the WinUI side.
+
+## WinUI-only state/orchestration seams with no distinct frontend hook counterpart
+
+| WinUI seam | Current role |
+| --- | --- |
+| `BoardUiState` | Native UI-only state for inspect selection, card flip state, and mini-chat open state. |
+| `LocalManagedBoardStore` | Desktop-local persistence seam for managed-board artifacts and related host data. |
+| `EmbeddedBoardClient` | Native client facade over the embedded runtime host and localhost agentface surface. |
+
+## Full outer join: libs and helpers
+
+| Frontend lib module | Primary WinUI counterpart | Join type | Current note |
+| --- | --- | --- | --- |
+| `appConfig.js` | `WinUiAppConfig` + `WinUiAppConfigLoader` | direct counterpart | Shared app-config loading and defaults seam. |
+| `board-refs.js` | folded into `WinUiBackendAppConfig` paths and effective-board-config resolution through `EmbeddedBoardClient.ResolveEffectiveBoardConfigAsync(...)` | folded counterpart | Backend refs/templates resolution is carried through host-config seams rather than a standalone JS helper. |
+| `board-sse-state.js` | `BoardStore` over `DemoBoardsRuntimeService` snapshot/notification flow | folded counterpart | Slice application still exists conceptually, but the browser SSE transport does not. |
+| `boardCanvasLayout.js` | `BoardCanvasLayoutEngine` | direct counterpart | Native deterministic layout mirror. |
+| `boardLayoutCache.js` | `LocalManagedBoardStore` and `BoardStore` canvas-layout persistence | folded counterpart | Layout persistence is stored through native/local seams. |
+| `cardFilterExpression.js` | `CardPresentationConfig` filter compilation | folded counterpart | Expression/pane filtering is compiled inside the shared native presentation-config helper. |
+| `cardPresentationConfig.js` | `CardPresentationConfig` | direct counterpart | Pane-rule and renderer-rule helper mirror. |
+| `client.js` | `EmbeddedBoardClient` | direct counterpart | Native client facade over runtime/controlplane/manage-boards operations. |
+| `themePacks.js` | `BoardTheme` | direct counterpart | Theme pack enumeration, resolution, and dictionary creation are native on the WinUI side. |
+| `watchparty-agent-tools.js` | `BoardSnapshot` watchparty parsing + `BoardStore` / `ReactorChatPaneComponent` watchparty handling | folded counterpart | Watchparty parsing and channel interpretation live in the runtime/store seam. |
+| `watchpartyAgentTools.js` | `BoardSnapshot` watchparty parsing + `BoardStore` / `ReactorChatPaneComponent` watchparty handling | folded counterpart | Same logical contract, carried through the native runtime/store seam. |
+
+## Frontend libs with no distinct WinUI counterpart
+
+None at the current frontend `src/lib` inventory level.
 
 ## WinUI helper modules with frontend helper-module counterparts
 
@@ -153,8 +235,9 @@ These do not show up as separate top-level WinUI controls, but they are not miss
 
 ## Remaining outer-join differences only
 
-All frontend top-level UI surfaces currently have a distinct WinUI counterpart or are intentionally folded internal subcomponents listed below.
+All frontend `components`, `hooks`, and `lib` items currently have either a distinct WinUI counterpart or an explicitly documented folded/native seam above.
 
 The remaining differences are the explicit outer-join items above:
 
 - native-language helper duplication where WinUI keeps C# equivalents of frontend helper modules at the UI/runtime boundary
+- WinUI-only orchestration helpers such as `ReactorShellBridge`, `ReactorCardShellHost`, `ReactorPreviewPaneComponent`, and centre-pane mode hosts that exist to support the native shell composition model rather than to introduce distinct product behavior

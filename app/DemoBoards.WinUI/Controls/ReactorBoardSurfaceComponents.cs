@@ -31,17 +31,116 @@ public sealed class ReactorInfiniteCanvasComponent : Component<ReactorInfiniteCa
 {
     public override Element Render()
     {
-        return Component<ReactorBoardCanvasComponent, ReactorBoardCanvasProps>(
-                new ReactorBoardCanvasProps(
-                    Props.BoardInfo,
-                    Props.Summary,
-                    Props.Cards,
-                    Props.LayoutState,
-                    Props.DataObjects,
-                    Props.RendererRules))
-            .Flex(grow: 1);
+        // DEMO HOST for the independent, declarative InfiniteCanvas component.
+        // It owns the layout (positions + viewport) as state and feeds it back through
+        // SavedLayout, proving the controlled round-trip. The canvas itself knows nothing
+        // about boards or cards — it just renders whatever nodes it is handed.
+        var (layout, setLayout) = UseState<InfiniteCanvasLayout?>(null);
+        var (clickCount, setClickCount) = UseState(0);
+        var (likes, setLikes) = UseState(12);
+
+        var nodes = new Dictionary<string, InfiniteCanvasNode>(StringComparer.Ordinal)
+        {
+            ["welcome"] = new InfiniteCanvasNode(
+                VStack(8,
+                    TextBlock("This surface is rendered by the standalone InfiniteCanvas component.")
+                        .Set(text => text.TextWrapping = TextWrapping.WrapWholeWords),
+                    TextBlock("Drag any node to move it. Pan with scrollbars, zoom with the controls, and watch the minimap.")
+                        .Opacity(0.72)
+                        .Set(text => text.TextWrapping = TextWrapping.WrapWholeWords)),
+                Width: 320,
+                Height: 150,
+                Title: "Welcome"),
+
+            ["counter"] = new InfiniteCanvasNode(
+                VStack(10,
+                    TextBlock($"Clicked {clickCount} time(s)").FontSize(16).Bold(),
+                    Button("Click me", () => setClickCount(clickCount + 1)).AccentButton(),
+                    Button("Reset", () => setClickCount(0)).SubtleButton()),
+                Width: 240,
+                Height: 180,
+                Title: "Interactive button"),
+
+            ["stats"] = new InfiniteCanvasNode(
+                VStack(6,
+                    BuildStatRow("Nodes", "5"),
+                    BuildStatRow("Zoom range", "0.3x – 2.0x"),
+                    BuildStatRow("Grid spacing", "28 px"),
+                    BuildStatRow("Likes", likes.ToString()),
+                    Button("\U0001F44D Like", () => setLikes(likes + 1)).SubtleButton()),
+                Width: 260,
+                Height: 230,
+                Title: "Stats panel"),
+
+            ["palette"] = new InfiniteCanvasNode(
+                HStack(8,
+                    BuildSwatch(Colors.Crimson),
+                    BuildSwatch(Colors.SteelBlue),
+                    BuildSwatch(Colors.MediumSeaGreen),
+                    BuildSwatch(Colors.Goldenrod)),
+                Width: 280,
+                Height: 130,
+                Title: "Colour swatches"),
+
+            ["checklist"] = new InfiniteCanvasNode(
+                VStack(6,
+                    BuildBullet("Declarative node map"),
+                    BuildBullet("getInitialPosition fallback"),
+                    BuildBullet("onLayoutChange round-trip"),
+                    BuildBullet("Internal zoom + minimap")),
+                Width: 280,
+                Height: 190,
+                Title: "Feature checklist"),
+
+            ["badge"] = new InfiniteCanvasNode(
+                VStack(8,
+                    Ellipse()
+                        .Fill(new SolidColorBrush(Colors.MediumPurple))
+                        .Width(56)
+                        .Height(56)
+                        .HAlign(HorizontalAlignment.Center),
+                    TextBlock("Arbitrary Reactor content").Opacity(0.75).HAlign(HorizontalAlignment.Center)
+                        .Set(text => text.TextWrapping = TextWrapping.WrapWholeWords)),
+                Width: 220,
+                Height: 160,
+                Title: "Shapes + text"),
+        };
+
+        return Component<InfiniteCanvas, InfiniteCanvasProps>(
+            new InfiniteCanvasProps(
+                Nodes: nodes,
+                SavedLayout: layout,
+                GetInitialPosition: DemoInitialPosition,
+                OnLayoutChange: setLayout,
+                Options: new InfiniteCanvasOptions(ShowGrid: true, MiniMap: InfiniteCanvasMiniMapPlacement.BottomRight, ShowZoomControls: true)));
     }
+
+    private static InfiniteCanvasNodePosition DemoInitialPosition(string id) => id switch
+    {
+        "welcome" => new InfiniteCanvasNodePosition(80, 80),
+        "counter" => new InfiniteCanvasNodePosition(460, 80),
+        "stats" => new InfiniteCanvasNodePosition(760, 80),
+        "palette" => new InfiniteCanvasNodePosition(80, 300),
+        "checklist" => new InfiniteCanvasNodePosition(420, 320),
+        "badge" => new InfiniteCanvasNodePosition(760, 360),
+        _ => new InfiniteCanvasNodePosition(80, 80),
+    };
+
+    private static Element BuildStatRow(string label, string value) =>
+        HStack(8,
+            TextBlock(label).Opacity(0.7).Flex(grow: 1),
+            TextBlock(value).Bold());
+
+    private static Element BuildSwatch(Windows.UI.Color color) =>
+        Border(Rectangle().Fill(new SolidColorBrush(color)).Width(48).Height(48))
+            .CornerRadius(8);
+
+    private static Element BuildBullet(string text) =>
+        HStack(8,
+            Ellipse().Fill(new SolidColorBrush(Colors.MediumSeaGreen)).Width(8).Height(8),
+            TextBlock(text).Opacity(0.85));
 }
+
 
 public sealed record ReactorCardsFlowProps(
     BoardInfoState BoardInfo,
