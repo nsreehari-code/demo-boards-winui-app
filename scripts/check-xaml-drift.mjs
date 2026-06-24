@@ -5,9 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-const allowedBootstrapXaml = {
-  'app/DemoBoards.WinUI/App.xaml': '63d16d773fd860eb24c72276ba85164a92b90b1bed6f65ebaee0b39e41cb92f2',
-};
+const allowedBootstrapXaml = {};
 
 function walk(relativeDir) {
   const absoluteDir = path.join(repoRoot, relativeDir);
@@ -67,8 +65,8 @@ if (missingFiles.length > 0 || unexpectedFiles.length > 0 || modifiedFiles.lengt
     }
   }
 
-  console.error('Reactor guard failed: the only allowed authored XAML residue is the minimal App.xaml bootstrap stub.');
+  console.error('Reactor guard failed: this app should not contain authored XAML files.');
   process.exit(1);
 }
 
-console.log(`XAML drift check passed: only ${expectedFiles[0]} remains as the pinned bootstrap stub.`);
+console.log('XAML drift check passed: no authored XAML files detected.');

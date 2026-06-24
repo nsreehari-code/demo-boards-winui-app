@@ -353,15 +353,73 @@ public sealed class ReactorCentrePaneComponent : Component<ReactorMainBoardProps
 {
     public override Element Render()
     {
-        return Component<ReactorBoardCanvasComponent, ReactorBoardCanvasProps>(
-                new ReactorBoardCanvasProps(
+        var (surfaceMode, setSurfaceMode) = UseState(ReactorBoardSurfaceModes.InfiniteCanvas);
+
+        UseEffect(() =>
+        {
+            setSurfaceMode(ReactorBoardSurfaceModes.InfiniteCanvas);
+        }, Props.BoardInfo.BoardId);
+
+        Element activeSurface = string.Equals(surfaceMode, ReactorBoardSurfaceModes.CardsFlow, StringComparison.Ordinal)
+            ? Component<ReactorCardsFlowComponent, ReactorCardsFlowProps>(
+                new ReactorCardsFlowProps(
                     Props.BoardInfo,
                     Props.Summary,
                     Props.CentreCards,
                     Props.LayoutState,
                     Props.DataObjects,
                     Props.RendererRules))
+            : Component<ReactorInfiniteCanvasComponent, ReactorInfiniteCanvasProps>(
+                new ReactorInfiniteCanvasProps(
+                    Props.BoardInfo,
+                    Props.Summary,
+                    Props.CentreCards,
+                    Props.LayoutState,
+                    Props.DataObjects,
+                    Props.RendererRules));
+
+        return VStack(10,
+                BuildSurfaceModeToggle(surfaceMode, setSurfaceMode),
+                activeSurface.Flex(grow: 1))
             .Flex(grow: 1);
+    }
+
+    private static Element BuildSurfaceModeToggle(string surfaceMode, Action<string> setSurfaceMode)
+    {
+        return HStack(8,
+                BuildSurfaceModeButton(
+                    "Infinite canvas",
+                    ReactorBoardSurfaceModes.InfiniteCanvas,
+                    surfaceMode,
+                    setSurfaceMode,
+                    "Spatial board surface"),
+                BuildSurfaceModeButton(
+                    "Cards flow",
+                    ReactorBoardSurfaceModes.CardsFlow,
+                    surfaceMode,
+                    setSurfaceMode,
+                    "Linear cards surface"))
+            .HAlign(HorizontalAlignment.Left);
+    }
+
+    private static Element BuildSurfaceModeButton(
+        string label,
+        string mode,
+        string selectedMode,
+        Action<string> setSurfaceMode,
+        string automationName)
+    {
+        bool selected = string.Equals(mode, selectedMode, StringComparison.Ordinal);
+        return Button(label, () => setSurfaceMode(mode))
+            .AutomationName(automationName)
+            .Background(selected
+                ? BoardTheme.CreateResourceBrush("BoardColorAccentSoft", 0xCC, Microsoft.UI.Colors.LightBlue)
+                : BoardTheme.CreateResourceBrush("BoardColorSurfaceStrong", 0xD8, Microsoft.UI.Colors.WhiteSmoke))
+            .WithBorder(selected
+                ? BoardTheme.CreateResourceBrush("BoardColorAccentStrong", 0xB8, Microsoft.UI.Colors.CornflowerBlue)
+                : BoardTheme.CreateResourceBrush("BoardColorBorderStrong", 0x52, Microsoft.UI.Colors.SlateGray), 1)
+            .CornerRadius(999)
+            .Padding(14, 6, 14, 6);
     }
 }
 
