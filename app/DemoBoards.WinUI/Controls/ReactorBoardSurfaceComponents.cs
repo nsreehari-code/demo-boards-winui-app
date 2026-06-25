@@ -45,7 +45,7 @@ public sealed class ReactorInfiniteCanvasComponent : Component<ReactorInfiniteCa
                 VStack(8,
                     TextBlock("This surface is rendered by the standalone InfiniteCanvas component.")
                         .Set(text => text.TextWrapping = TextWrapping.WrapWholeWords),
-                    TextBlock("Drag any node to move it. Pan with scrollbars, zoom with the controls, and watch the minimap.")
+                    TextBlock("Drag any node to move it. Ports sit on the node borders and edges connect them — pan, zoom, and watch the minimap.")
                         .Opacity(0.72)
                         .Set(text => text.TextWrapping = TextWrapping.WrapWholeWords)),
                 Width: 320,
@@ -87,7 +87,7 @@ public sealed class ReactorInfiniteCanvasComponent : Component<ReactorInfiniteCa
                     BuildBullet("Declarative node map"),
                     BuildBullet("getInitialPosition fallback"),
                     BuildBullet("onLayoutChange round-trip"),
-                    BuildBullet("Internal zoom + minimap")),
+                    BuildBullet("Port rails + edge connectors")),
                 Width: 280,
                 Height: 190,
                 Title: "Feature checklist"),
@@ -112,8 +112,51 @@ public sealed class ReactorInfiniteCanvasComponent : Component<ReactorInfiniteCa
                 SavedLayout: layout,
                 GetInitialPosition: DemoInitialPosition,
                 OnLayoutChange: setLayout,
-                Options: new InfiniteCanvasOptions(ShowGrid: true, MiniMap: InfiniteCanvasMiniMapPlacement.BottomRight, ShowZoomControls: true)));
+                Options: new InfiniteCanvasOptions(ShowGrid: true, MiniMap: InfiniteCanvasMiniMapPlacement.BottomRight, ShowZoomControls: true),
+                NodePorts: BuildDemoPorts(),
+                Edges: BuildDemoEdges()));
     }
+
+    // Demo port rails: a small "provide" pill on the source border and a "require" pill on the
+    // target border, wired together by the edges below — exercising the canvas's port + edge layers.
+    private static IReadOnlyDictionary<string, InfiniteCanvasNodePorts> BuildDemoPorts() =>
+        new Dictionary<string, InfiniteCanvasNodePorts>(StringComparer.Ordinal)
+        {
+            ["welcome"] = new InfiniteCanvasNodePorts(
+                Bottom: new[] { new InfiniteCanvasPort("out:intro", BuildPortPill("intro", provide: true)) }),
+            ["counter"] = new InfiniteCanvasNodePorts(
+                Top: new[] { new InfiniteCanvasPort("in:intro", BuildPortPill("intro", provide: false)) },
+                Bottom: new[] { new InfiniteCanvasPort("out:count", BuildPortPill("count", provide: true)) }),
+            ["stats"] = new InfiniteCanvasNodePorts(
+                Top: new[] { new InfiniteCanvasPort("in:count", BuildPortPill("count", provide: false)) },
+                Bottom: new[] { new InfiniteCanvasPort("out:data", BuildPortPill("data", provide: true)) }),
+            ["checklist"] = new InfiniteCanvasNodePorts(
+                Top: new[] { new InfiniteCanvasPort("in:data", BuildPortPill("data", provide: false)) }),
+            ["palette"] = new InfiniteCanvasNodePorts(
+                Right: new[] { new InfiniteCanvasPort("out:color", BuildPortPill("color", provide: true)) }),
+            ["badge"] = new InfiniteCanvasNodePorts(
+                Left: new[] { new InfiniteCanvasPort("in:color", BuildPortPill("color", provide: false)) }),
+        };
+
+    private static IReadOnlyList<InfiniteCanvasEdge> BuildDemoEdges() => new List<InfiniteCanvasEdge>
+    {
+        new("e-intro", "welcome", "counter", "out:intro", "in:intro", "intro"),
+        new("e-count", "counter", "stats", "out:count", "in:count", "count", Animated: true),
+        new("e-data", "stats", "checklist", "out:data", "in:data", "data"),
+        new("e-color", "palette", "badge", "out:color", "in:color", "color"),
+    };
+
+    private static Element BuildPortPill(string label, bool provide) =>
+        Button(label, () => { })
+            .AutomationName($"Canvas port {label}")
+            .CornerRadius(10)
+            .Padding(8, 2, 8, 2)
+            .MinWidth(0)
+            .Background(provide
+                ? ReactorMainShellComponent.ResolveBrush("AccentFillColorDefaultBrush")
+                : ReactorMainShellComponent.ResolveBrush("ControlFillColorDefaultBrush"))
+            .WithBorder(ReactorMainShellComponent.ResolveBrush("CardStrokeColorDefaultBrush"), 1)
+            .Set(button => button.FontSize = 10);
 
     private static InfiniteCanvasNodePosition DemoInitialPosition(string id) => id switch
     {

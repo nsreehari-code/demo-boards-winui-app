@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using DemoBoards_WinUI.Assets;
+using DemoBoards_WinUI.Hooks;
 using Microsoft.UI;
 using Microsoft.UI.Reactor;
 using Microsoft.UI.Reactor.Core;
@@ -37,6 +38,43 @@ public sealed record InfiniteCanvasNode(
 /// <summary>World-space position of a node (top-left).</summary>
 public sealed record InfiniteCanvasNodePosition(double X, double Y);
 
+/// <summary>Which border of a node a port rail is attached to.</summary>
+public enum InfiniteCanvasPortSide
+{
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+
+/// <summary>
+/// A single connection point on a node border. <see cref="Content"/> is host-rendered
+/// (e.g. a handle chip / button); the canvas only lays it out on the rail and exposes its
+/// anchor point to the edge layer via <paramref name="Id"/> (unique within its node).
+/// </summary>
+public sealed record InfiniteCanvasPort(string Id, Element Content);
+
+/// <summary>Per-side port rails for one node (top / bottom / left / right).</summary>
+public sealed record InfiniteCanvasNodePorts(
+    IReadOnlyList<InfiniteCanvasPort>? Top = null,
+    IReadOnlyList<InfiniteCanvasPort>? Bottom = null,
+    IReadOnlyList<InfiniteCanvasPort>? Left = null,
+    IReadOnlyList<InfiniteCanvasPort>? Right = null);
+
+/// <summary>
+/// A connection drawn between two nodes. When <see cref="SourcePort"/> / <see cref="TargetPort"/>
+/// are supplied they anchor the curve to that specific port; otherwise it falls back to the
+/// source's bottom-centre and the target's top-centre.
+/// </summary>
+public sealed record InfiniteCanvasEdge(
+    string Id,
+    string Source,
+    string Target,
+    string? SourcePort = null,
+    string? TargetPort = null,
+    string? Label = null,
+    bool Animated = false);
+
 /// <summary>Pan (content offset in view px) + zoom factor.</summary>
 public sealed record InfiniteCanvasViewport(double OffsetX, double OffsetY, double Zoom);
 
@@ -68,9 +106,11 @@ public sealed record InfiniteCanvasProps(
     InfiniteCanvasLayout? SavedLayout = null,
     Func<string, InfiniteCanvasNodePosition>? GetInitialPosition = null,
     Action<InfiniteCanvasLayout>? OnLayoutChange = null,
-    InfiniteCanvasOptions? Options = null);
+    InfiniteCanvasOptions? Options = null,
+    IReadOnlyDictionary<string, InfiniteCanvasNodePorts>? NodePorts = null,
+    IReadOnlyList<InfiniteCanvasEdge>? Edges = null);
 
-public sealed class InfiniteCanvas : Component<InfiniteCanvasProps>
+public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
 {
     private const double MiniMapWidth = 220;
     private const double MiniMapHeight = 150;
@@ -127,13 +167,27 @@ public sealed class InfiniteCanvas : Component<InfiniteCanvasProps>
         // commits into and the minimap indicator derives from — no live ScrollViewer reads, no tick hack.
         var (viewport, setViewport) = UseState<ViewportState?>(null);
 
-        // Resolve effective positions for every current node.
-        var effective = new Dictionary<string, InfiniteCanvasNodePosition>(StringComparer.Ordinal);
+        // Committed positions for every current node: movedPositions -> SavedLayout ->
+        // GetInitialPosition -> auto-grid. This is the *base* the live-drag draft layers on top of.
+        var committed = new Dictionary<string, InfiniteCanvasNodePosition>(StringComparer.Ordinal);
         int autoIndex = 0;
         foreach (string id in Props.Nodes.Keys)
         {
-            effective[id] = ResolvePosition(id, autoIndex, movedPositions, Props);
+            committed[id] = ResolvePosition(id, autoIndex, movedPositions, Props);
             autoIndex++;
+        }
+
+        // Live drag layer. During a drag the node pointer handlers write the in-flight position into the
+        // draft; because that re-renders, the node shell, its port rails AND the connected edge ends all
+        // move together (not just the node card moving imperatively). On release the position is lifted
+        // into movedPositions (the base), and the matching draft entry prunes itself.
+        DraftState<string, InfiniteCanvasNodePosition> positionDraft = UseDraftState(committed);
+
+        // Resolve effective positions (base + live drag) into a concrete, mutable dictionary.
+        var effective = new Dictionary<string, InfiniteCanvasNodePosition>(StringComparer.Ordinal);
+        foreach (KeyValuePair<string, InfiniteCanvasNodePosition> entry in positionDraft.Values)
+        {
+            effective[entry.Key] = entry.Value;
         }
 
         // Surface bounds (content extent + padding).
@@ -174,38 +228,48 @@ public sealed class InfiniteCanvas : Component<InfiniteCanvasProps>
             EmitLayout(next);
         }
 
-        void CommitPosition(string id, InfiniteCanvasNodePosition committed)
+        void CommitPosition(string id, InfiniteCanvasNodePosition committedPos)
         {
             var next = new Dictionary<string, InfiniteCanvasNodePosition>(movedPositions, StringComparer.Ordinal)
             {
-                [id] = committed,
+                [id] = committedPos,
             };
-            effective[id] = committed;
+            effective[id] = committedPos;
             setMovedPositions(next);
             EmitLayout();
         }
 
-        // ---- Canvas children: background grid + nodes ----
+        // ---- Canvas children: background grid + edges + nodes ----
         var children = new List<Element>();
         if (options.ShowGrid)
         {
             children.AddRange(BuildGridDots(surfaceWidth, surfaceHeight, options.GridSpacing));
         }
 
+        // Edges render under the nodes so the node cards sit on top of the connectors.
+        if (Props.Edges is { Count: > 0 } edges)
+        {
+            children.AddRange(BuildEdges(edges, effective, Props.Nodes, Props.NodePorts));
+        }
+
         foreach ((string id, InfiniteCanvasNode node) in Props.Nodes)
         {
             InfiniteCanvasNodePosition pos = effective[id];
+            InfiniteCanvasNodePorts? nodePorts = null;
+            Props.NodePorts?.TryGetValue(id, out nodePorts);
             children.Add(BuildNode(
                 id,
                 node,
                 pos,
+                nodePorts,
                 canvasRef,
                 draggingKey,
                 dragStartPointer,
                 dragStartPos,
                 dragLatest,
                 options,
-                committed => CommitPosition(id, committed)));
+                committedPos => CommitPosition(id, committedPos),
+                movedPos => positionDraft.SetField(id, movedPos)));
         }
 
         Element surface =
@@ -380,13 +444,15 @@ public sealed class InfiniteCanvas : Component<InfiniteCanvasProps>
         string id,
         InfiniteCanvasNode node,
         InfiniteCanvasNodePosition pos,
+        InfiniteCanvasNodePorts? ports,
         Microsoft.UI.Reactor.Core.Ref<Canvas?> canvasRef,
         Microsoft.UI.Reactor.Core.Ref<string?> draggingKey,
         Microsoft.UI.Reactor.Core.Ref<Point> dragStartPointer,
         Microsoft.UI.Reactor.Core.Ref<InfiniteCanvasNodePosition> dragStartPos,
         Microsoft.UI.Reactor.Core.Ref<InfiniteCanvasNodePosition> dragLatest,
         InfiniteCanvasOptions options,
-        Action<InfiniteCanvasNodePosition> onCommitted)
+        Action<InfiniteCanvasNodePosition> onCommitted,
+        Action<InfiniteCanvasNodePosition> onDragMove)
     {
         Element header = node.Title is null
             ? Rectangle().Fill(new SolidColorBrush(Colors.Transparent)).Height(0)
@@ -394,13 +460,23 @@ public sealed class InfiniteCanvas : Component<InfiniteCanvasProps>
                 .Padding(12, 8, 12, 8)
                 .Background(ReactorMainShellComponent.ResolveBrush("CardStrokeColorDefaultBrush"));
 
-        return Border(
+        // Body fills the node-local canvas (0,0 -> Width,Height). Ports straddle the borders.
+        Element body =
+            Border(
                 VStack(0,
                     header,
                     Border(node.Content).Padding(12)))
             .Background(ReactorMainShellComponent.ResolveBrush("CardBackgroundFillColorDefaultBrush"))
             .WithBorder(ReactorMainShellComponent.ResolveBrush("CardStrokeColorDefaultBrush"), 1)
             .CornerRadius(12)
+            .Width(node.Width)
+            .Height(node.Height)
+            .Canvas(0, 0);
+
+        var nodeChildren = new List<Element> { body };
+        nodeChildren.AddRange(BuildNodePortChips(node, ports));
+
+        return Canvas(nodeChildren.ToArray())
             .Width(node.Width)
             .Height(node.Height)
             .Canvas(pos.X, pos.Y)
@@ -428,7 +504,7 @@ public sealed class InfiniteCanvas : Component<InfiniteCanvasProps>
                 }
 
                 Canvas? canvas = canvasRef.Current;
-                if (canvas is null || element is not UIElement ui)
+                if (canvas is null)
                 {
                     return;
                 }
@@ -436,11 +512,12 @@ public sealed class InfiniteCanvas : Component<InfiniteCanvasProps>
                 Point world = args.GetCurrentPoint(canvas).Position;
                 double nx = Math.Max(0, dragStartPos.Current.X + (world.X - dragStartPointer.Current.X));
                 double ny = Math.Max(0, dragStartPos.Current.Y + (world.Y - dragStartPointer.Current.Y));
-                dragLatest.Current = new InfiniteCanvasNodePosition(nx, ny);
+                var nextPos = new InfiniteCanvasNodePosition(nx, ny);
+                dragLatest.Current = nextPos;
 
-                // Move imperatively for smoothness; commit to state on release.
-                Microsoft.UI.Xaml.Controls.Canvas.SetLeft(ui, nx);
-                Microsoft.UI.Xaml.Controls.Canvas.SetTop(ui, ny);
+                // Drive the move through the reactive draft so the node shell, its port rails and the
+                // connected edge ends all re-render together (no imperative-only node-card move).
+                onDragMove(nextPos);
                 args.Handled = true;
             })
             .OnPointerReleased((element, args) =>
@@ -460,6 +537,235 @@ public sealed class InfiniteCanvas : Component<InfiniteCanvasProps>
                 onCommitted(dragLatest.Current);
             })
             .WithKey($"icv-node-{id}");
+    }
+
+    // ---- Node port rails ----
+
+    /// <summary>
+    /// Lays out host-rendered port chips on the four node borders. Each chip is centred on its
+    /// deterministic border anchor (matching <see cref="PortLocalAnchor"/>) via a SizeChanged
+    /// recentre so the edge layer connects exactly to the visible chip.
+    /// </summary>
+    private static IEnumerable<Element> BuildNodePortChips(InfiniteCanvasNode node, InfiniteCanvasNodePorts? ports)
+    {
+        if (ports is null)
+        {
+            yield break;
+        }
+
+        foreach ((InfiniteCanvasPortSide side, IReadOnlyList<InfiniteCanvasPort>? list) in EnumeratePortSides(ports))
+        {
+            if (list is null || list.Count == 0)
+            {
+                continue;
+            }
+
+            for (int i = 0; i < list.Count; i++)
+            {
+                (double anchorX, double anchorY) = PortLocalAnchor(side, i, list.Count, node.Width, node.Height);
+                yield return BuildPortChip(list[i].Content, anchorX, anchorY);
+            }
+        }
+    }
+
+    private static Element BuildPortChip(Element content, double anchorX, double anchorY)
+    {
+        return Border(content)
+            .Background(new SolidColorBrush(Colors.Transparent))
+            .Canvas(anchorX, anchorY)
+            .Set(chip =>
+            {
+                void Recenter()
+                {
+                    Microsoft.UI.Xaml.Controls.Canvas.SetLeft(chip, anchorX - (chip.ActualWidth / 2));
+                    Microsoft.UI.Xaml.Controls.Canvas.SetTop(chip, anchorY - (chip.ActualHeight / 2));
+                }
+
+                chip.SizeChanged += (_, _) => Recenter();
+                Recenter();
+            });
+    }
+
+    private static IEnumerable<(InfiniteCanvasPortSide Side, IReadOnlyList<InfiniteCanvasPort>? List)> EnumeratePortSides(InfiniteCanvasNodePorts ports)
+    {
+        yield return (InfiniteCanvasPortSide.Top, ports.Top);
+        yield return (InfiniteCanvasPortSide.Bottom, ports.Bottom);
+        yield return (InfiniteCanvasPortSide.Left, ports.Left);
+        yield return (InfiniteCanvasPortSide.Right, ports.Right);
+    }
+
+    /// <summary>Node-local (top-left origin) anchor for port <paramref name="index"/> of <paramref name="count"/> on a side.</summary>
+    private static (double X, double Y) PortLocalAnchor(InfiniteCanvasPortSide side, int index, int count, double width, double height)
+    {
+        double fraction = (index + 0.5) / Math.Max(1, count);
+        return side switch
+        {
+            InfiniteCanvasPortSide.Top => (width * fraction, 0),
+            InfiniteCanvasPortSide.Bottom => (width * fraction, height),
+            InfiniteCanvasPortSide.Left => (0, height * fraction),
+            InfiniteCanvasPortSide.Right => (width, height * fraction),
+            _ => (width * fraction, height),
+        };
+    }
+
+    // ---- Edge layer ----
+
+    /// <summary>
+    /// Draws bezier connectors between nodes in world space (so they pan/zoom with the surface).
+    /// Edges anchor to a specific port when <c>SourcePort</c>/<c>TargetPort</c> resolve, otherwise to
+    /// the source bottom-centre and target top-centre. Rendered beneath the node cards.
+    /// </summary>
+    private static IEnumerable<Element> BuildEdges(
+        IReadOnlyList<InfiniteCanvasEdge> edges,
+        IReadOnlyDictionary<string, InfiniteCanvasNodePosition> positions,
+        IReadOnlyDictionary<string, InfiniteCanvasNode> nodes,
+        IReadOnlyDictionary<string, InfiniteCanvasNodePorts>? nodePorts)
+    {
+        IReadOnlyDictionary<(string Node, string Port), (double X, double Y, InfiniteCanvasPortSide Side)> anchors =
+            BuildPortAnchors(positions, nodes, nodePorts);
+
+        Brush stroke = ReactorMainShellComponent.ResolveBrush("AccentFillColorDefaultBrush");
+
+        foreach (InfiniteCanvasEdge edge in edges)
+        {
+            if (!positions.TryGetValue(edge.Source, out InfiniteCanvasNodePosition? sourcePos)
+                || !positions.TryGetValue(edge.Target, out InfiniteCanvasNodePosition? targetPos)
+                || !nodes.TryGetValue(edge.Source, out InfiniteCanvasNode? sourceNode)
+                || !nodes.TryGetValue(edge.Target, out InfiniteCanvasNode? targetNode))
+            {
+                continue;
+            }
+
+            (double sx, double sy, double sdx, double sdy) =
+                ResolveEndpoint(anchors, edge.Source, edge.SourcePort, sourcePos, sourceNode, isSource: true);
+            (double tx, double ty, double tdx, double tdy) =
+                ResolveEndpoint(anchors, edge.Target, edge.TargetPort, targetPos, targetNode, isSource: false);
+
+            double distance = Math.Sqrt(((tx - sx) * (tx - sx)) + ((ty - sy) * (ty - sy)));
+            double off = Math.Clamp(distance * 0.4, 48, 160);
+
+            // A Geometry can only be attached to a single Path, so build a fresh one per stroke.
+            PathGeometry MakeGeometry() => new()
+            {
+                Figures =
+                {
+                    new PathFigure
+                    {
+                        StartPoint = new Point(sx, sy),
+                        Segments =
+                        {
+                            new BezierSegment
+                            {
+                                Point1 = new Point(sx + (sdx * off), sy + (sdy * off)),
+                                Point2 = new Point(tx + (tdx * off), ty + (tdy * off)),
+                                Point3 = new Point(tx, ty),
+                            },
+                        },
+                    },
+                },
+            };
+
+            if (edge.Animated)
+            {
+                yield return Path2D()
+                    .Set(path => path.Data = MakeGeometry())
+                    .Stroke(stroke)
+                    .StrokeThickness(2.4)
+                    .StrokeDashArray(new[] { 2d, 3d })
+                    .Opacity(0.85)
+                    .WithKey($"icv-edge-flow-{edge.Id}");
+            }
+
+            yield return Path2D()
+                .Set(path => path.Data = MakeGeometry())
+                .Stroke(stroke)
+                .StrokeThickness(edge.Animated ? 1.9 : 1.6)
+                .Opacity(edge.Animated ? 0.95 : 0.78)
+                .WithKey($"icv-edge-{edge.Id}");
+
+            yield return Ellipse().Width(6).Height(6).Fill(stroke).Canvas(sx - 3, sy - 3).WithKey($"icv-edge-s-{edge.Id}");
+            yield return Ellipse().Width(8).Height(8).Fill(stroke).Canvas(tx - 4, ty - 4).WithKey($"icv-edge-t-{edge.Id}");
+
+            if (!string.IsNullOrWhiteSpace(edge.Label))
+            {
+                double cx = (sx + tx) / 2;
+                double cy = (sy + ty) / 2;
+                yield return Border(TextBlock(edge.Label).FontSize(11).Opacity(0.85))
+                    .Padding(5, 1, 5, 1)
+                    .Background(ReactorMainShellComponent.ResolveBrush("LayerFillColorDefaultBrush"))
+                    .WithBorder(ReactorMainShellComponent.ResolveBrush("CardStrokeColorDefaultBrush"), 1)
+                    .CornerRadius(6)
+                    .Canvas(Math.Max(0, cx - 24), Math.Max(0, cy - 10))
+                    .WithKey($"icv-edge-label-{edge.Id}");
+            }
+        }
+    }
+
+    private static (double X, double Y, double Dx, double Dy) ResolveEndpoint(
+        IReadOnlyDictionary<(string Node, string Port), (double X, double Y, InfiniteCanvasPortSide Side)> anchors,
+        string nodeId,
+        string? portId,
+        InfiniteCanvasNodePosition pos,
+        InfiniteCanvasNode node,
+        bool isSource)
+    {
+        if (portId is not null
+            && anchors.TryGetValue((nodeId, portId), out (double X, double Y, InfiniteCanvasPortSide Side) anchor))
+        {
+            (double dx, double dy) = SideDirection(anchor.Side);
+            return (anchor.X, anchor.Y, dx, dy);
+        }
+
+        // Fallback: source leaves the bottom-centre, target enters the top-centre.
+        return isSource
+            ? (pos.X + (node.Width / 2), pos.Y + node.Height, 0, 1)
+            : (pos.X + (node.Width / 2), pos.Y, 0, -1);
+    }
+
+    private static (double Dx, double Dy) SideDirection(InfiniteCanvasPortSide side) => side switch
+    {
+        InfiniteCanvasPortSide.Top => (0, -1),
+        InfiniteCanvasPortSide.Bottom => (0, 1),
+        InfiniteCanvasPortSide.Left => (-1, 0),
+        InfiniteCanvasPortSide.Right => (1, 0),
+        _ => (0, 1),
+    };
+
+    private static IReadOnlyDictionary<(string Node, string Port), (double X, double Y, InfiniteCanvasPortSide Side)> BuildPortAnchors(
+        IReadOnlyDictionary<string, InfiniteCanvasNodePosition> positions,
+        IReadOnlyDictionary<string, InfiniteCanvasNode> nodes,
+        IReadOnlyDictionary<string, InfiniteCanvasNodePorts>? nodePorts)
+    {
+        var anchors = new Dictionary<(string Node, string Port), (double X, double Y, InfiniteCanvasPortSide Side)>();
+        if (nodePorts is null)
+        {
+            return anchors;
+        }
+
+        foreach ((string nodeId, InfiniteCanvasNodePorts ports) in nodePorts)
+        {
+            if (!positions.TryGetValue(nodeId, out InfiniteCanvasNodePosition? pos)
+                || !nodes.TryGetValue(nodeId, out InfiniteCanvasNode? node))
+            {
+                continue;
+            }
+
+            foreach ((InfiniteCanvasPortSide side, IReadOnlyList<InfiniteCanvasPort>? list) in EnumeratePortSides(ports))
+            {
+                if (list is null)
+                {
+                    continue;
+                }
+
+                for (int i = 0; i < list.Count; i++)
+                {
+                    (double lx, double ly) = PortLocalAnchor(side, i, list.Count, node.Width, node.Height);
+                    anchors[(nodeId, list[i].Id)] = (pos.X + lx, pos.Y + ly, side);
+                }
+            }
+        }
+
+        return anchors;
     }
 
     // ---- Background grid ----
