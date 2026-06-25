@@ -37,14 +37,12 @@ public sealed class ReactorMainShellComponent : Component
         var (startupMessage, setStartupMessage) = UseState("Preparing board surface...");
         var (refreshingBoard, setRefreshingBoard) = UseState(false);
         var (configOpen, setConfigOpen) = UseState(false);
-        var (chatRequest, setChatRequest) = UseState<ChatPopoutRequest?>(null);
         var (smokeVisible, setSmokeVisible) = UseState(false);
 
         UseEffect(() =>
         {
             EventHandler<BoardStoreChangedEventArgs> onBoardStateChanged = (_, _) => setRevision(Guid.NewGuid().ToString("N"));
             EventHandler<BoardUiState> onBoardUiStateChanged = (_, _) => setRevision(Guid.NewGuid().ToString("N"));
-            Action<ChatPopoutRequest> onChatRequested = request => setChatRequest(request);
             Action onSmokeRequested = () =>
             {
                 setConfigOpen(false);
@@ -53,14 +51,12 @@ public sealed class ReactorMainShellComponent : Component
 
             boardStore.StateChanged += onBoardStateChanged;
             boardStore.UiStateChanged += onBoardUiStateChanged;
-            ReactorShellBridge.ChatPopoutRequested += onChatRequested;
             ReactorShellBridge.SmokeRunnerRequested += onSmokeRequested;
 
             return () =>
             {
                 boardStore.StateChanged -= onBoardStateChanged;
                 boardStore.UiStateChanged -= onBoardUiStateChanged;
-                ReactorShellBridge.ChatPopoutRequested -= onChatRequested;
                 ReactorShellBridge.SmokeRunnerRequested -= onSmokeRequested;
             };
         });
@@ -129,22 +125,6 @@ public sealed class ReactorMainShellComponent : Component
                             boardStore.GetBoardInfo().BoardId,
                             boardStore.State.ManagedBoardConfig,
                             () => setConfigOpen(false)))));
-        }
-
-        else if (chatRequest is not null)
-        {
-            overlay = Component<ReactorGlobalModalComponent, ReactorGlobalModalProps>(
-                new ReactorGlobalModalProps(
-                    ResolveChatTitle(boardStore, chatRequest),
-                    () => setChatRequest(null),
-                    Component<ReactorChatPaneComponent, ReactorChatPaneProps>(
-                        new ReactorChatPaneProps(
-                            boardStore,
-                            boardClient,
-                            chatRequest.CardId,
-                            Compact: false,
-                            EnablePopout: false,
-                            Title: string.IsNullOrWhiteSpace(chatRequest.Title) ? "Chat" : chatRequest.Title!))));
         }
 
         else if (smokeVisible)
@@ -251,19 +231,6 @@ public sealed class ReactorMainShellComponent : Component
         {
             setRefreshingBoard(false);
         }
-    }
-
-    private static string ResolveChatTitle(BoardStore boardStore, ChatPopoutRequest request)
-    {
-        BoardCard? card = boardStore.GetCardDefinitionAndData(request.CardId);
-        if (!string.IsNullOrWhiteSpace(card?.Title))
-        {
-            return $"Chat {card.Title}";
-        }
-
-        return string.IsNullOrWhiteSpace(request.Title)
-            ? $"Chat {request.CardId}"
-            : request.Title!;
     }
 
     private static (string Title, string Subtitle) ResolvePageTitleAndSubtitle(ManagedBoardConfigState? config, string boardId)

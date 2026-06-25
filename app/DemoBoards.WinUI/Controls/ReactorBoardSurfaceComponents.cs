@@ -14,12 +14,6 @@ using static Microsoft.UI.Reactor.Factories;
 
 namespace DemoBoards_WinUI.Controls;
 
-public static class ReactorBoardSurfaceModes
-{
-    public const string InfiniteCanvas = "infinite-canvas";
-    public const string CardsFlow = "flowing-cards";
-}
-
 public sealed record ReactorInfiniteCanvasProps(
     BoardInfoState BoardInfo,
     BoardSummaryState Summary,
