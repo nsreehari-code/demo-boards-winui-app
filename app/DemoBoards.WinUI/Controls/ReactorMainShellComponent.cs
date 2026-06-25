@@ -171,9 +171,13 @@ public sealed class ReactorMainShellComponent : Component
             sections.Add(overlay);
         }
 
+        // ThemeProvider: resolve the live app theme (from the active BoardTheme pack's resources) and
+        // provide it to the whole subtree. Descendants — including the InfiniteCanvas — read it via
+        // UseContext(AppThemeContext.Current) instead of looking up XAML resources themselves.
         return Border(VStack(16, sections.ToArray()))
             .Padding(16)
-            .Background(ResolveBrush("BoardWindowBackgroundBrush"));
+            .Background(ResolveBrush("BoardWindowBackgroundBrush"))
+            .Provide(AppThemeContext.Current, AppTheme.FromResources());
     }
 
     private static Element BuildTopBar(BoardStore boardStore, bool refreshingBoard, Action<bool> setRefreshingBoard, bool configOpen, Action<bool> setConfigOpen)

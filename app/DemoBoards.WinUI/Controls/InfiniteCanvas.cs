@@ -342,6 +342,11 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         // written back through OnCanvasStateCommit on every geometry/viewport change.
         JsonElement? blob = Props.CanvasState;
 
+        // App theme, consumed from the nearest ThemeProvider via Reactor context (no static resource
+        // lookups inside the canvas). Threaded into the builders below so grid/edges/nodes/minimap/zoom
+        // all follow the active theme pack.
+        AppTheme theme = UseContext(AppThemeContext.Current);
+
         // Resolve geometry for every current node and build its layout box. Position precedence:
         // runtime drag -> persisted blob -> GetInitialNodePos -> auto-grid. Size precedence: persisted
         // blob -> GetInitialNodePos -> default. `committed` doubles as the running `placed` map handed
@@ -419,7 +424,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         var children = new List<Element>();
         if (options.ShowGrid)
         {
-            children.AddRange(BuildGridDots(surfaceWidth, surfaceHeight, options.GridSpacing));
+            children.AddRange(BuildGridDots(surfaceWidth, surfaceHeight, options.GridSpacing, theme));
         }
 
         // Edges are derived internally from the declarative port links — the host declares connections
@@ -428,7 +433,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         IReadOnlyList<InfiniteCanvasEdge> edges = DeriveEdges(Props.NodePorts);
         if (edges.Count > 0)
         {
-            children.AddRange(BuildEdges(edges, effective, boxes, Props.NodePorts));
+            children.AddRange(BuildEdges(edges, effective, boxes, Props.NodePorts, theme));
         }
 
         foreach ((string id, InfiniteCanvasNodeBox node) in boxes)
@@ -447,7 +452,8 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
                 dragLatest,
                 options,
                 committedPos => CommitPosition(id, committedPos),
-                movedPos => positionDraft.SetField(id, movedPos)));
+                movedPos => positionDraft.SetField(id, movedPos),
+                theme));
         }
 
         Element surface =
@@ -570,12 +576,13 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
                 miniNodeDragStartPointer,
                 miniNodeDragStartRect,
                 miniNodeDragLatest,
-                CommitPosition));
+                CommitPosition,
+                theme));
         }
 
         if (options.ShowZoomControls)
         {
-            overlay.Add(BuildZoomControls(scrollViewerRef, effective, boxes, options));
+            overlay.Add(BuildZoomControls(scrollViewerRef, effective, boxes, options, theme));
         }
 
         return Border(
@@ -583,8 +590,8 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
                     new[] { GridSize.Star() },
                     new[] { GridSize.Star() },
                     overlay.ToArray()))
-            .Background(ReactorMainShellComponent.ResolveBrush("SolidBackgroundFillColorBaseAltBrush"))
-            .WithBorder(ReactorMainShellComponent.ResolveBrush("CardStrokeColorDefaultBrush"), 1)
+            .Background(theme.SurfaceBackground)
+            .WithBorder(theme.CardBorder, 1)
             .CornerRadius(14)
             .Padding(12)
             .Flex(grow: 1);
@@ -757,7 +764,8 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         Microsoft.UI.Reactor.Core.Ref<InfiniteCanvasNodePosition> dragLatest,
         InfiniteCanvasOptions options,
         Action<InfiniteCanvasNodePosition> onCommitted,
-        Action<InfiniteCanvasNodePosition> onDragMove)
+        Action<InfiniteCanvasNodePosition> onDragMove,
+        AppTheme theme)
     {
         string id = box.Id;
 
@@ -768,8 +776,8 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         // Body fills the node-local canvas (0,0 -> Width,Height). Ports straddle the borders.
         Element body =
             Border(Border(nodeContent).Padding(12))
-            .Background(ReactorMainShellComponent.ResolveBrush("CardBackgroundFillColorDefaultBrush"))
-            .WithBorder(ReactorMainShellComponent.ResolveBrush("CardStrokeColorDefaultBrush"), 1)
+            .Background(theme.CardBackground)
+            .WithBorder(theme.CardBorder, 1)
             .CornerRadius(12)
             .Width(box.Width)
             .Height(box.Height)
@@ -983,12 +991,13 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         IReadOnlyList<InfiniteCanvasEdge> edges,
         IReadOnlyDictionary<string, InfiniteCanvasNodePosition> positions,
         IReadOnlyDictionary<string, InfiniteCanvasNodeBox> nodes,
-        IReadOnlyDictionary<string, InfiniteCanvasNodePorts>? nodePorts)
+        IReadOnlyDictionary<string, InfiniteCanvasNodePorts>? nodePorts,
+        AppTheme theme)
     {
         IReadOnlyDictionary<(string Node, string Port), (double X, double Y, InfiniteCanvasPortSide Side)> anchors =
             BuildPortAnchors(positions, nodes, nodePorts);
 
-        Brush stroke = ReactorMainShellComponent.ResolveBrush("AccentFillColorDefaultBrush");
+        Brush stroke = theme.Accent;
 
         foreach (InfiniteCanvasEdge edge in edges)
         {
@@ -1056,8 +1065,8 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
                 double cy = (sy + ty) / 2;
                 yield return Border(TextBlock(edge.Label).FontSize(11).Opacity(0.85))
                     .Padding(5, 1, 5, 1)
-                    .Background(ReactorMainShellComponent.ResolveBrush("LayerFillColorDefaultBrush"))
-                    .WithBorder(ReactorMainShellComponent.ResolveBrush("CardStrokeColorDefaultBrush"), 1)
+                    .Background(theme.Layer)
+                    .WithBorder(theme.CardBorder, 1)
                     .CornerRadius(6)
                     .Canvas(Math.Max(0, cx - 24), Math.Max(0, cy - 10))
                     .WithKey($"icv-edge-label-{edge.Id}");
@@ -1134,9 +1143,9 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
 
     // ---- Background grid ----
 
-    private static IEnumerable<Element> BuildGridDots(double width, double height, double spacing)
+    private static IEnumerable<Element> BuildGridDots(double width, double height, double spacing, AppTheme theme)
     {
-        var brush = new SolidColorBrush(Windows.UI.Color.FromArgb(0x22, 0x88, 0x88, 0x88));
+        var brush = new SolidColorBrush(theme.GridDotColor);
         int columns = (int)(width / spacing);
         int rows = (int)(height / spacing);
         for (int row = 0; row <= rows; row++)
@@ -1175,7 +1184,8 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         Microsoft.UI.Reactor.Core.Ref<Point> miniNodeDragStartPointer,
         Microsoft.UI.Reactor.Core.Ref<Point> miniNodeDragStartRect,
         Microsoft.UI.Reactor.Core.Ref<Point> miniNodeDragLatest,
-        Action<string, InfiniteCanvasNodePosition> onCommitPosition)
+        Action<string, InfiniteCanvasNodePosition> onCommitPosition,
+        AppTheme theme)
     {
         // The minimap maps the full scrollable surface (0,0 -> surfaceWidth/Height), so it is a
         // faithful scaled picture of the canvas: the cards sit where they actually are and the
@@ -1257,8 +1267,8 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
                 (vy + vh) >= worldBottom - 0.5;
 
             var indicator = Rectangle()
-                .Fill(new SolidColorBrush(Windows.UI.Color.FromArgb(0x33, 0x30, 0x90, 0xF0)))
-                .WithBorder(ReactorMainShellComponent.ResolveBrush("TextFillColorPrimaryBrush"), 1.5)
+                .Fill(new SolidColorBrush(theme.MiniMapViewportFill))
+                .WithBorder(theme.TextPrimary, 1.5)
                 .Width(rectW)
                 .Height(rectH)
                 .Canvas(rectLeft, rectTop)
@@ -1345,7 +1355,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
             double nodeTop = ToMiniY(pos.Y);
             string nodeId = id;
             miniChildren.Add(Rectangle()
-                .Fill(ReactorMainShellComponent.ResolveBrush("AccentFillColorDefaultBrush"))
+                .Fill(theme.Accent)
                 .Width(nodeRectW)
                 .Height(nodeRectH)
                 .Canvas(nodeLeft, nodeTop)
@@ -1465,8 +1475,8 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
 
                     args.Handled = true;
                 }))
-            .Background(ReactorMainShellComponent.ResolveBrush("LayerFillColorAltBrush"))
-            .WithBorder(ReactorMainShellComponent.ResolveBrush("CardStrokeColorDefaultBrush"), 1)
+            .Background(theme.LayerAlt)
+            .WithBorder(theme.CardBorder, 1)
             .CornerRadius(8)
             .Padding(4)
             .HAlign(horizontal)
@@ -1479,7 +1489,8 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         Microsoft.UI.Reactor.Core.Ref<ScrollViewer?> scrollViewerRef,
         IReadOnlyDictionary<string, InfiniteCanvasNodePosition> positions,
         IReadOnlyDictionary<string, InfiniteCanvasNodeBox> nodes,
-        InfiniteCanvasOptions options)
+        InfiniteCanvasOptions options,
+        AppTheme theme)
     {
         // Floating icon buttons stacked as a single connected toolbar group: a bordered container
         // holds borderless square buttons with zero spacing, anchored bottom-left with a small margin.
@@ -1490,8 +1501,8 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
                     ZoomIconButton(HostIconSources.ControlFitView, "Fit to content", () => FitToContent(scrollViewerRef.Current, positions, nodes, options)),
                     ZoomIconButton(HostIconSources.ControlActualSize, "Actual size", () => ResetZoom(scrollViewerRef.Current)))
                 .Set(panel => panel.Spacing = 0)))
-            .Background(ReactorMainShellComponent.ResolveBrush("LayerFillColorDefaultBrush"))
-            .WithBorder(ReactorMainShellComponent.ResolveBrush("CardStrokeColorDefaultBrush"), 1)
+            .Background(theme.Layer)
+            .WithBorder(theme.CardBorder, 1)
             .CornerRadius(8)
             .Padding(0)
             .HAlign(HorizontalAlignment.Left)
