@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using DemoBoards_WinUI.Assets;
 using DemoBoards_WinUI.Hooks;
 using Microsoft.UI;
@@ -16,24 +17,30 @@ namespace DemoBoards_WinUI.Controls;
 
 // =====================================================================================
 //  InfiniteCanvas — an independent, declarative pan/zoom surface for arbitrary Reactor
-//  components. It is a *controlled* component:
+//  components. It is a *controlled* component aligned to the frontend on seven props:
 //
-//    • Nodes            : map of id -> node (content + intrinsic size). WHAT to render.
-//    • SavedLayout      : persisted positions (+ viewport). WHERE things are.
-//    • GetInitialPosition: fallback seed for ids not present in SavedLayout.
-//    • OnLayoutChange   : fired when positions/viewport change (drag / pan / zoom);
-//                         the host persists it and feeds it back as SavedLayout.
+//    • Nodes              : list of opaque node descriptors. WHAT to render.
+//    • NodePorts          : opaque per-side port descriptors per node.
+//    • RenderNode         : (node) => element.
+//    • RenderNodePort     : (port, { side, node }) => element.
+//    • GetInitialNodePos  : (descriptor, { index, nodeCount, nodes, placed }) => { x, y, w, h }.
+//                           Seeds geometry for any node not present in CanvasState. WinUI needs a
+//                           concrete box, so (unlike the frontend) it also returns width/height.
+//    • CanvasState        : a single OPAQUE blob the canvas owns. It seeds geometry/viewport from it
+//                           and stores back whatever it needs (positions, sizes, viewport, …). The
+//                           consumer round-trips it verbatim and never inspects it.
+//    • OnCanvasStateCommit: fired with the new opaque blob whenever geometry/viewport changes.
 //
+//  Guarantee: anything the canvas needs to restore itself lives in the opaque blob; if a node is
+//  missing (or its blob entry is unusable) the canvas re-seeds it from GetInitialNodePos.
 //  The canvas owns viewport + presentation chrome only (grid, minimap, zoom controls).
 //  It knows nothing about boards or cards.
 // =====================================================================================
 
-/// <summary>A single placeable node: any Reactor element plus its intrinsic size.</summary>
-public sealed record InfiniteCanvasNode(
-    Element Content,
-    double Width,
-    double Height,
-    string? Title = null);
+// A node "descriptor" is an OPAQUE backend object (a JSON value). The canvas reads only "id"; size is
+// NOT a node concern (any "width" on a node is a consumer-owned semantic hint the canvas ignores).
+// Geometry comes from GetInitialNodePos (seed) and the opaque CanvasState blob (persisted actuals).
+// This mirrors the frontend `nodes: [{ id, ...viewState }]`, so the SAME backend data drives either stack.
 
 /// <summary>World-space position of a node (top-left).</summary>
 public sealed record InfiniteCanvasNodePosition(double X, double Y);
@@ -48,25 +55,53 @@ public enum InfiniteCanvasPortSide
 }
 
 /// <summary>
-/// A single connection point on a node border. <see cref="Content"/> is host-rendered
-/// (e.g. a handle chip / button); the canvas only lays it out on the rail and exposes its
-/// anchor point to the edge layer via <paramref name="Id"/> (unique within its node).
+/// Per-side port rails for one node. Each rail is a list of OPAQUE port descriptors (JSON values).
+/// The canvas reads only each port's "id" (and the optional "links" it uses to derive the edge
+/// layer); the whole descriptor is handed to <c>RenderNodePort</c>. Mirrors the frontend
+/// <c>nodePorts[id] = { top?, bottom?, left?, right? }</c>.
 /// </summary>
-public sealed record InfiniteCanvasPort(string Id, Element Content);
-
-/// <summary>Per-side port rails for one node (top / bottom / left / right).</summary>
 public sealed record InfiniteCanvasNodePorts(
-    IReadOnlyList<InfiniteCanvasPort>? Top = null,
-    IReadOnlyList<InfiniteCanvasPort>? Bottom = null,
-    IReadOnlyList<InfiniteCanvasPort>? Left = null,
-    IReadOnlyList<InfiniteCanvasPort>? Right = null);
+    IReadOnlyList<JsonElement>? Top = null,
+    IReadOnlyList<JsonElement>? Bottom = null,
+    IReadOnlyList<JsonElement>? Left = null,
+    IReadOnlyList<JsonElement>? Right = null);
 
 /// <summary>
-/// A connection drawn between two nodes. When <see cref="SourcePort"/> / <see cref="TargetPort"/>
-/// are supplied they anchor the curve to that specific port; otherwise it falls back to the
-/// source's bottom-centre and the target's top-centre.
+/// Placement context for <c>GetInitialNodePos</c> — mirrors the frontend
+/// <c>getInitialNodePos(descriptor, { index, nodeCount, nodes, placed })</c>. <see cref="Placed"/>
+/// is the running map of already-placed node positions.
 /// </summary>
-public sealed record InfiniteCanvasEdge(
+public sealed record InfiniteCanvasNodePlacement(
+    JsonElement Node,
+    int Index,
+    int NodeCount,
+    IReadOnlyList<JsonElement> Nodes,
+    IReadOnlyDictionary<string, InfiniteCanvasNodePosition> Placed);
+
+/// <summary>
+/// The seed geometry <c>GetInitialNodePos</c> returns for a node — top-left position plus the box
+/// size. The frontend only seeds <c>{ x, y }</c> (ReactFlow auto-measures); WinUI needs a concrete
+/// box, so it also seeds <see cref="Width"/> / <see cref="Height"/>. The seed is only used until the
+/// node's geometry is captured in the opaque CanvasState blob.
+/// </summary>
+public sealed record InfiniteCanvasNodeGeometry(double X, double Y, double Width, double Height);
+
+/// <summary>
+/// Render context for <c>RenderNodePort</c> — mirrors the frontend
+/// <c>renderNodePort(port, { side, node })</c>: the rail <see cref="Side"/> and the owning opaque
+/// node descriptor.
+/// </summary>
+public sealed record InfiniteCanvasPortRenderContext(
+    InfiniteCanvasPortSide Side,
+    JsonElement Node);
+
+/// <summary>
+/// Internal, derived representation of a connector. The canvas builds these from the optional
+/// "links" on the opaque port descriptors — edges are NOT a public prop; the topology lives inside
+/// the node/port declaration. When <see cref="SourcePort"/> / <see cref="TargetPort"/> resolve they
+/// anchor the curve to that port; otherwise it falls back to source bottom-centre / target top-centre.
+/// </summary>
+internal sealed record InfiniteCanvasEdge(
     string Id,
     string Source,
     string Target,
@@ -75,13 +110,19 @@ public sealed record InfiniteCanvasEdge(
     string? Label = null,
     bool Animated = false);
 
-/// <summary>Pan (content offset in view px) + zoom factor.</summary>
-public sealed record InfiniteCanvasViewport(double OffsetX, double OffsetY, double Zoom);
+/// <summary>
+/// Internal: the canvas's resolved view of one opaque node descriptor — its <see cref="Id"/>, the
+/// concrete layout box (<see cref="Width"/> / <see cref="Height"/>) the WinUI canvas needs to place
+/// it, and the original opaque <see cref="Descriptor"/> handed back to <c>RenderNode</c>.
+/// </summary>
+internal sealed record InfiniteCanvasNodeBox(
+    string Id,
+    double Width,
+    double Height,
+    JsonElement Descriptor);
 
-/// <summary>The full persisted layout that round-trips through the host.</summary>
-public sealed record InfiniteCanvasLayout(
-    IReadOnlyDictionary<string, InfiniteCanvasNodePosition> Positions,
-    InfiniteCanvasViewport? Viewport = null);
+/// <summary>Internal: pan (content offset in view px) + zoom factor, persisted inside the opaque blob.</summary>
+internal sealed record InfiniteCanvasViewport(double OffsetX, double OffsetY, double Zoom);
 
 public enum InfiniteCanvasMiniMapPlacement
 {
@@ -101,14 +142,121 @@ public sealed record InfiniteCanvasOptions(
     double ContentPadding = 240,
     double GridSpacing = 28);
 
+/// <summary>
+/// The InfiniteCanvas public contract.
+/// <para>
+/// ⚠️ FROZEN CONTRACT — the seven core props below (<c>Nodes</c>, <c>NodePorts</c>, <c>RenderNode</c>,
+/// <c>RenderNodePort</c>, <c>GetInitialNodePos</c>, <c>CanvasState</c>, <c>OnCanvasStateCommit</c>) are
+/// deliberately aligned 1:1 with the frontend InfiniteCanvas. Their names, shapes, and semantics MUST
+/// NOT change — neither renamed, retyped, reordered, removed, nor have their behaviour altered —
+/// without EXPLICIT, DOUBLE user approval (the user must confirm twice). Do not "improve" or refactor
+/// them speculatively. <c>Options</c> is the only non-core prop and may evolve more freely.
+/// </para>
+/// </summary>
 public sealed record InfiniteCanvasProps(
-    IReadOnlyDictionary<string, InfiniteCanvasNode> Nodes,
-    InfiniteCanvasLayout? SavedLayout = null,
-    Func<string, InfiniteCanvasNodePosition>? GetInitialPosition = null,
-    Action<InfiniteCanvasLayout>? OnLayoutChange = null,
-    InfiniteCanvasOptions? Options = null,
+    // --- BEGIN FROZEN SEVEN-PROP CONTRACT (do not change without explicit double user approval) ---
+    IReadOnlyList<JsonElement> Nodes,
+    Func<JsonElement, Element> RenderNode,
     IReadOnlyDictionary<string, InfiniteCanvasNodePorts>? NodePorts = null,
-    IReadOnlyList<InfiniteCanvasEdge>? Edges = null);
+    Func<JsonElement, InfiniteCanvasPortRenderContext, Element>? RenderNodePort = null,
+    Func<InfiniteCanvasNodePlacement, InfiniteCanvasNodeGeometry?>? GetInitialNodePos = null,
+    JsonElement? CanvasState = null,
+    Action<JsonElement>? OnCanvasStateCommit = null,
+    // --- END FROZEN SEVEN-PROP CONTRACT ---
+    InfiniteCanvasOptions? Options = null);
+
+/// <summary>
+/// A convenience parser that splits one backend graph JSON into the two aligned props
+/// (<c>Nodes</c> + <c>NodePorts</c>). This is the entry point for <b>dynamically created</b> graphs —
+/// e.g. emitted by an agent as JSON. Nodes and ports stay OPAQUE: the canvas reads only the structural
+/// fields it needs (node "id"/"width"/"height", port "id"/"links"); every other field is preserved as
+/// a cloned <see cref="JsonElement"/> for the host's <c>RenderNode</c> / <c>RenderNodePort</c> callbacks.
+/// <para>
+/// Expected JSON shape:
+/// <code>
+/// {
+///   "nodes": [ { "id": "n1", "width": 320, "height": 150, "title": "…", … } ],
+///   "ports": {
+///     "n1": {
+///       "top|bottom|left|right": [
+///         { "id": "out:x", "links": [ { "target": "n2", "port": "in:y", "label": "…", "animated": false } ], … }
+///       ]
+///     }
+///   }
+/// }
+/// </code>
+/// </para>
+/// </summary>
+public sealed record InfiniteCanvasGraph(
+    IReadOnlyList<JsonElement> Nodes,
+    IReadOnlyDictionary<string, InfiniteCanvasNodePorts> NodePorts)
+{
+    /// <summary>Parses a graph from a JSON string. See the type doc for the expected shape.</summary>
+    public static InfiniteCanvasGraph FromJson(string json)
+    {
+        using JsonDocument doc = JsonDocument.Parse(json);
+        return FromJson(doc.RootElement);
+    }
+
+    /// <summary>Parses a graph from a JSON object with "nodes" (array) and "ports" (map) members.</summary>
+    public static InfiniteCanvasGraph FromJson(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            throw new ArgumentException("InfiniteCanvas graph JSON must be an object with 'nodes' and 'ports'.", nameof(root));
+        }
+
+        var nodes = new List<JsonElement>();
+        if (root.TryGetProperty("nodes", out JsonElement nodesEl) && nodesEl.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement node in nodesEl.EnumerateArray())
+            {
+                nodes.Add(node.Clone());
+            }
+        }
+
+        var ports = new Dictionary<string, InfiniteCanvasNodePorts>(StringComparer.Ordinal);
+        if (root.TryGetProperty("ports", out JsonElement portsMap) && portsMap.ValueKind == JsonValueKind.Object)
+        {
+            foreach (JsonProperty entry in portsMap.EnumerateObject())
+            {
+                if (entry.Value.ValueKind == JsonValueKind.Object && ParsePorts(entry.Value) is { } parsed)
+                {
+                    ports[entry.Name] = parsed;
+                }
+            }
+        }
+
+        return new InfiniteCanvasGraph(nodes, ports);
+    }
+
+    private static InfiniteCanvasNodePorts? ParsePorts(JsonElement portsEl)
+    {
+        IReadOnlyList<JsonElement>? top = ParseRail(portsEl, "top");
+        IReadOnlyList<JsonElement>? bottom = ParseRail(portsEl, "bottom");
+        IReadOnlyList<JsonElement>? left = ParseRail(portsEl, "left");
+        IReadOnlyList<JsonElement>? right = ParseRail(portsEl, "right");
+        return top is null && bottom is null && left is null && right is null
+            ? null
+            : new InfiniteCanvasNodePorts(top, bottom, left, right);
+    }
+
+    private static IReadOnlyList<JsonElement>? ParseRail(JsonElement portsEl, string side)
+    {
+        if (!portsEl.TryGetProperty(side, out JsonElement arr) || arr.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        var list = new List<JsonElement>();
+        foreach (JsonElement p in arr.EnumerateArray())
+        {
+            list.Add(p.Clone());
+        }
+
+        return list.Count == 0 ? null : list;
+    }
+}
 
 public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
 {
@@ -158,8 +306,8 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         var panStartPointer = UseRef<Point>(new Point(0, 0));
         var panStartOffset = UseRef<Point>(new Point(0, 0));
 
-        // Positions that have been explicitly moved this session. Falls back to SavedLayout /
-        // GetInitialPosition / auto-grid for anything not yet here.
+        // Positions that have been explicitly moved this session (canvas-owned at runtime; live drags
+        // win). Falls back to the persisted blob / GetInitialNodePos / auto-grid for anything not yet here.
         var (movedPositions, setMovedPositions) = UseState<IReadOnlyDictionary<string, InfiniteCanvasNodePosition>>(
             new Dictionary<string, InfiniteCanvasNodePosition>(StringComparer.Ordinal));
 
@@ -167,14 +315,24 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         // commits into and the minimap indicator derives from — no live ScrollViewer reads, no tick hack.
         var (viewport, setViewport) = UseState<ViewportState?>(null);
 
-        // Committed positions for every current node: movedPositions -> SavedLayout ->
-        // GetInitialPosition -> auto-grid. This is the *base* the live-drag draft layers on top of.
+        // Opaque persisted blob the canvas owns: node geometry + viewport live here. Read for seeding,
+        // written back through OnCanvasStateCommit on every geometry/viewport change.
+        JsonElement? blob = Props.CanvasState;
+
+        // Resolve geometry for every current node and build its layout box. Position precedence:
+        // runtime drag -> persisted blob -> GetInitialNodePos -> auto-grid. Size precedence: persisted
+        // blob -> GetInitialNodePos -> default. `committed` doubles as the running `placed` map handed
+        // to GetInitialNodePos (frontend parity); the live-drag draft layers on top of it.
+        var boxes = new Dictionary<string, InfiniteCanvasNodeBox>(StringComparer.Ordinal);
         var committed = new Dictionary<string, InfiniteCanvasNodePosition>(StringComparer.Ordinal);
-        int autoIndex = 0;
-        foreach (string id in Props.Nodes.Keys)
+        for (int index = 0; index < Props.Nodes.Count; index++)
         {
-            committed[id] = ResolvePosition(id, autoIndex, movedPositions, Props);
-            autoIndex++;
+            JsonElement descriptor = Props.Nodes[index];
+            string id = NodeId(descriptor);
+            (InfiniteCanvasNodePosition pos, double width, double height) =
+                ResolveGeometry(descriptor, id, index, Props.Nodes, committed, movedPositions, blob, Props);
+            committed[id] = pos;
+            boxes[id] = new InfiniteCanvasNodeBox(id, width, height, descriptor);
         }
 
         // Live drag layer. During a drag the node pointer handlers write the in-flight position into the
@@ -193,7 +351,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         // Surface bounds (content extent + padding).
         double maxRight = 0;
         double maxBottom = 0;
-        foreach ((string id, InfiniteCanvasNode node) in Props.Nodes)
+        foreach ((string id, InfiniteCanvasNodeBox node) in boxes)
         {
             InfiniteCanvasNodePosition pos = effective[id];
             maxRight = Math.Max(maxRight, pos.X + node.Width);
@@ -203,29 +361,24 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         double surfaceWidth = Math.Max(1400, maxRight + options.ContentPadding);
         double surfaceHeight = Math.Max(900, maxBottom + options.ContentPadding);
 
-        void EmitLayout(ViewportState? viewportOverride = null)
+        // Persist the opaque canvas blob (node geometry + viewport) through OnCanvasStateCommit. The
+        // viewport override is passed because setViewport is async — the captured `viewport` is stale here.
+        void Commit(ViewportState? viewportOverride = null)
         {
-            if (Props.OnLayoutChange is null)
+            if (Props.OnCanvasStateCommit is null)
             {
                 return;
             }
 
-            ViewportState? current = viewportOverride ?? viewport;
-            InfiniteCanvasViewport? persisted = current is { } v
-                ? new InfiniteCanvasViewport(v.OffsetX, v.OffsetY, v.Zoom)
-                : Props.SavedLayout?.Viewport;
-
-            Props.OnLayoutChange(new InfiniteCanvasLayout(
-                new Dictionary<string, InfiniteCanvasNodePosition>(effective, StringComparer.Ordinal),
-                persisted));
+            JsonElement next = BuildBlob(effective, boxes, viewportOverride ?? viewport, Props.CanvasState);
+            Props.OnCanvasStateCommit(next);
         }
 
-        // Commit viewport changes to state (re-renders the minimap) and persist via OnLayoutChange.
-        // The override is passed because setViewport is async — the captured `viewport` is still stale here.
+        // Commit viewport changes to state (re-renders the minimap) and persist via the blob.
         void CommitViewport(ViewportState next)
         {
             setViewport(next);
-            EmitLayout(next);
+            Commit(next);
         }
 
         void CommitPosition(string id, InfiniteCanvasNodePosition committedPos)
@@ -236,7 +389,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
             };
             effective[id] = committedPos;
             setMovedPositions(next);
-            EmitLayout();
+            Commit();
         }
 
         // ---- Canvas children: background grid + edges + nodes ----
@@ -246,19 +399,21 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
             children.AddRange(BuildGridDots(surfaceWidth, surfaceHeight, options.GridSpacing));
         }
 
-        // Edges render under the nodes so the node cards sit on top of the connectors.
-        if (Props.Edges is { Count: > 0 } edges)
+        // Edges are derived internally from the declarative port links — the host declares connections
+        // on the source ports, the canvas owns the whole edge layer. Rendered under the nodes so the
+        // node cards sit on top of the connectors.
+        IReadOnlyList<InfiniteCanvasEdge> edges = DeriveEdges(Props.NodePorts);
+        if (edges.Count > 0)
         {
-            children.AddRange(BuildEdges(edges, effective, Props.Nodes, Props.NodePorts));
+            children.AddRange(BuildEdges(edges, effective, boxes, Props.NodePorts));
         }
 
-        foreach ((string id, InfiniteCanvasNode node) in Props.Nodes)
+        foreach ((string id, InfiniteCanvasNodeBox node) in boxes)
         {
             InfiniteCanvasNodePosition pos = effective[id];
             InfiniteCanvasNodePorts? nodePorts = null;
             Props.NodePorts?.TryGetValue(id, out nodePorts);
             children.Add(BuildNode(
-                id,
                 node,
                 pos,
                 nodePorts,
@@ -368,14 +523,14 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
                 scrollViewer.MinZoomFactor = (float)options.MinZoom;
                 scrollViewer.MaxZoomFactor = (float)options.MaxZoom;
                 AttachViewportFit(scrollViewer);
-                RestoreSavedViewport(scrollViewer, Props.SavedLayout?.Viewport, restoredViewportRef);
+                RestoreSavedViewport(scrollViewer, BlobViewport(Props.CanvasState), restoredViewportRef);
             });
 
         var overlay = new List<Element> { surface };
         if (options.MiniMap != InfiniteCanvasMiniMapPlacement.Off)
         {
             overlay.Add(BuildMiniMap(
-                Props.Nodes,
+                boxes,
                 effective,
                 surfaceWidth,
                 surfaceHeight,
@@ -397,7 +552,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
 
         if (options.ShowZoomControls)
         {
-            overlay.Add(BuildZoomControls(scrollViewerRef, effective, Props.Nodes, options));
+            overlay.Add(BuildZoomControls(scrollViewerRef, effective, boxes, options));
         }
 
         return Border(
@@ -412,37 +567,164 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
             .Flex(grow: 1);
     }
 
-    private static InfiniteCanvasNodePosition ResolvePosition(
+    // ---- Opaque-descriptor readers ----
+    // The canvas treats node and port descriptors as opaque JSON; it reads only the structural fields
+    // it needs and hands the whole descriptor to the host's render callbacks.
+
+    private static string NodeId(JsonElement node) =>
+        node.TryGetProperty("id", out JsonElement v) && v.ValueKind == JsonValueKind.String
+            ? v.GetString()!
+            : throw new ArgumentException("InfiniteCanvas node descriptor is missing a string 'id'.");
+
+    private static string PortId(JsonElement port) =>
+        port.TryGetProperty("id", out JsonElement v) && v.ValueKind == JsonValueKind.String
+            ? v.GetString()!
+            : throw new ArgumentException("InfiniteCanvas port descriptor is missing a string 'id'.");
+
+    private static string? GetStr(JsonElement el, string name) =>
+        el.TryGetProperty(name, out JsonElement v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+
+    // ---- Opaque CanvasState blob ----
+    // Shape (private to the canvas; the consumer round-trips it verbatim):
+    //   { "v": 1, "viewport": { "x", "y", "zoom" } | null, "nodes": { id: { "x", "y", "w", "h" } } }
+
+    private static bool TryBlobNode(JsonElement? blob, string id, out JsonElement node)
+    {
+        node = default;
+        return blob is { ValueKind: JsonValueKind.Object } b
+            && b.TryGetProperty("nodes", out JsonElement nodes)
+            && nodes.ValueKind == JsonValueKind.Object
+            && nodes.TryGetProperty(id, out node)
+            && node.ValueKind == JsonValueKind.Object;
+    }
+
+    private static InfiniteCanvasNodePosition? BlobNodePos(JsonElement? blob, string id) =>
+        TryBlobNode(blob, id, out JsonElement n)
+            && n.TryGetProperty("x", out JsonElement xe) && xe.ValueKind == JsonValueKind.Number
+            && n.TryGetProperty("y", out JsonElement ye) && ye.ValueKind == JsonValueKind.Number
+            ? new InfiniteCanvasNodePosition(xe.GetDouble(), ye.GetDouble())
+            : null;
+
+    private static (double Width, double Height)? BlobNodeSize(JsonElement? blob, string id) =>
+        TryBlobNode(blob, id, out JsonElement n)
+            && n.TryGetProperty("w", out JsonElement we) && we.ValueKind == JsonValueKind.Number
+            && n.TryGetProperty("h", out JsonElement he) && he.ValueKind == JsonValueKind.Number
+            ? (we.GetDouble(), he.GetDouble())
+            : null;
+
+    private static InfiniteCanvasViewport? BlobViewport(JsonElement? blob) =>
+        blob is { ValueKind: JsonValueKind.Object } b
+            && b.TryGetProperty("viewport", out JsonElement vp) && vp.ValueKind == JsonValueKind.Object
+            && vp.TryGetProperty("x", out JsonElement xe) && xe.ValueKind == JsonValueKind.Number
+            && vp.TryGetProperty("y", out JsonElement ye) && ye.ValueKind == JsonValueKind.Number
+            && vp.TryGetProperty("zoom", out JsonElement ze) && ze.ValueKind == JsonValueKind.Number
+            ? new InfiniteCanvasViewport(xe.GetDouble(), ye.GetDouble(), ze.GetDouble())
+            : null;
+
+    private static JsonElement BuildBlob(
+        IReadOnlyDictionary<string, InfiniteCanvasNodePosition> positions,
+        IReadOnlyDictionary<string, InfiniteCanvasNodeBox> boxes,
+        ViewportState? viewport,
+        JsonElement? previousBlob)
+    {
+        var nodes = new Dictionary<string, object>(StringComparer.Ordinal);
+        foreach ((string id, InfiniteCanvasNodeBox box) in boxes)
+        {
+            InfiniteCanvasNodePosition pos = positions.TryGetValue(id, out InfiniteCanvasNodePosition? p)
+                ? p
+                : new InfiniteCanvasNodePosition(0, 0);
+            nodes[id] = new { x = pos.X, y = pos.Y, w = box.Width, h = box.Height };
+        }
+
+        // Keep the previously-persisted viewport when this commit is geometry-only.
+        InfiniteCanvasViewport? vp = viewport is { } v
+            ? new InfiniteCanvasViewport(v.OffsetX, v.OffsetY, v.Zoom)
+            : BlobViewport(previousBlob);
+        object? viewportObj = vp is { } vv ? new { x = vv.OffsetX, y = vv.OffsetY, zoom = vv.Zoom } : null;
+
+        return JsonSerializer.SerializeToElement(new
+        {
+            v = 1,
+            viewport = viewportObj,
+            nodes,
+        });
+    }
+
+    /// <summary>
+    /// Resolves a node's geometry. Position precedence: runtime drag -> persisted blob ->
+    /// GetInitialNodePos -> auto-grid. Size precedence: persisted blob -> GetInitialNodePos -> default.
+    /// GetInitialNodePos is invoked at most once per node (it returns both position and size).
+    /// </summary>
+    private static (InfiniteCanvasNodePosition Pos, double Width, double Height) ResolveGeometry(
+        JsonElement descriptor,
         string id,
         int index,
+        IReadOnlyList<JsonElement> nodes,
+        IReadOnlyDictionary<string, InfiniteCanvasNodePosition> placed,
         IReadOnlyDictionary<string, InfiniteCanvasNodePosition> moved,
+        JsonElement? blob,
         InfiniteCanvasProps props)
     {
+        InfiniteCanvasNodeGeometry? seed = null;
+        bool seedComputed = false;
+        InfiniteCanvasNodeGeometry? Seed()
+        {
+            if (!seedComputed)
+            {
+                seedComputed = true;
+                seed = props.GetInitialNodePos?.Invoke(
+                    new InfiniteCanvasNodePlacement(descriptor, index, nodes.Count, nodes, placed));
+            }
+
+            return seed;
+        }
+
+        // Position.
+        InfiniteCanvasNodePosition pos;
         if (moved.TryGetValue(id, out InfiniteCanvasNodePosition? movedPos))
         {
-            return movedPos;
+            pos = movedPos;
         }
-
-        if (props.SavedLayout?.Positions.TryGetValue(id, out InfiniteCanvasNodePosition? savedPos) == true)
+        else if (BlobNodePos(blob, id) is { } blobPos)
         {
-            return savedPos;
+            pos = blobPos;
         }
-
-        if (props.GetInitialPosition is not null)
+        else if (Seed() is { } s && double.IsFinite(s.X) && double.IsFinite(s.Y))
         {
-            return props.GetInitialPosition(id);
+            pos = new InfiniteCanvasNodePosition(s.X, s.Y);
+        }
+        else
+        {
+            int column = index % 3;
+            int row = index / 3;
+            pos = new InfiniteCanvasNodePosition(80 + (column * 440), 80 + (row * 320));
         }
 
-        int column = index % 3;
-        int row = index / 3;
-        return new InfiniteCanvasNodePosition(80 + (column * 440), 80 + (row * 320));
+        // Size.
+        double width;
+        double height;
+        if (BlobNodeSize(blob, id) is { } size)
+        {
+            (width, height) = size;
+        }
+        else if (Seed() is { } s2 && double.IsFinite(s2.Width) && double.IsFinite(s2.Height) && s2.Width > 0 && s2.Height > 0)
+        {
+            width = s2.Width;
+            height = s2.Height;
+        }
+        else
+        {
+            width = 240;
+            height = 140;
+        }
+
+        return (pos, width, height);
     }
 
     // ---- Node ----
 
     private Element BuildNode(
-        string id,
-        InfiniteCanvasNode node,
+        InfiniteCanvasNodeBox box,
         InfiniteCanvasNodePosition pos,
         InfiniteCanvasNodePorts? ports,
         Microsoft.UI.Reactor.Core.Ref<Canvas?> canvasRef,
@@ -454,31 +736,28 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         Action<InfiniteCanvasNodePosition> onCommitted,
         Action<InfiniteCanvasNodePosition> onDragMove)
     {
-        Element header = node.Title is null
-            ? Rectangle().Fill(new SolidColorBrush(Colors.Transparent)).Height(0)
-            : Border(TextBlock(node.Title).Bold().FontSize(13))
-                .Padding(12, 8, 12, 8)
-                .Background(ReactorMainShellComponent.ResolveBrush("CardStrokeColorDefaultBrush"));
+        string id = box.Id;
+
+        // The node body is rendered entirely on demand by the host's RenderNode callback from the
+        // opaque descriptor (no canvas-owned chrome — titles etc. are the consumer's to render).
+        Element nodeContent = Props.RenderNode(box.Descriptor);
 
         // Body fills the node-local canvas (0,0 -> Width,Height). Ports straddle the borders.
         Element body =
-            Border(
-                VStack(0,
-                    header,
-                    Border(node.Content).Padding(12)))
+            Border(Border(nodeContent).Padding(12))
             .Background(ReactorMainShellComponent.ResolveBrush("CardBackgroundFillColorDefaultBrush"))
             .WithBorder(ReactorMainShellComponent.ResolveBrush("CardStrokeColorDefaultBrush"), 1)
             .CornerRadius(12)
-            .Width(node.Width)
-            .Height(node.Height)
+            .Width(box.Width)
+            .Height(box.Height)
             .Canvas(0, 0);
 
         var nodeChildren = new List<Element> { body };
-        nodeChildren.AddRange(BuildNodePortChips(node, ports));
+        nodeChildren.AddRange(BuildNodePortChips(box, ports, Props.RenderNodePort));
 
         return Canvas(nodeChildren.ToArray())
-            .Width(node.Width)
-            .Height(node.Height)
+            .Width(box.Width)
+            .Height(box.Height)
             .Canvas(pos.X, pos.Y)
             .OnPointerPressed((element, args) =>
             {
@@ -542,18 +821,22 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
     // ---- Node port rails ----
 
     /// <summary>
-    /// Lays out host-rendered port chips on the four node borders. Each chip is centred on its
-    /// deterministic border anchor (matching <see cref="PortLocalAnchor"/>) via a SizeChanged
-    /// recentre so the edge layer connects exactly to the visible chip.
+    /// Lays out host-rendered port chips on the four node borders. Each chip is produced by the
+    /// host's <paramref name="renderPort"/> callback and centred on its deterministic border anchor
+    /// (matching <see cref="PortLocalAnchor"/>) via a SizeChanged recentre so the edge layer connects
+    /// exactly to the visible chip. When no callback is supplied, no chips are rendered.
     /// </summary>
-    private static IEnumerable<Element> BuildNodePortChips(InfiniteCanvasNode node, InfiniteCanvasNodePorts? ports)
+    private static IEnumerable<Element> BuildNodePortChips(
+        InfiniteCanvasNodeBox box,
+        InfiniteCanvasNodePorts? ports,
+        Func<JsonElement, InfiniteCanvasPortRenderContext, Element>? renderPort)
     {
-        if (ports is null)
+        if (ports is null || renderPort is null)
         {
             yield break;
         }
 
-        foreach ((InfiniteCanvasPortSide side, IReadOnlyList<InfiniteCanvasPort>? list) in EnumeratePortSides(ports))
+        foreach ((InfiniteCanvasPortSide side, IReadOnlyList<JsonElement>? list) in EnumeratePortSides(ports))
         {
             if (list is null || list.Count == 0)
             {
@@ -562,8 +845,9 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
 
             for (int i = 0; i < list.Count; i++)
             {
-                (double anchorX, double anchorY) = PortLocalAnchor(side, i, list.Count, node.Width, node.Height);
-                yield return BuildPortChip(list[i].Content, anchorX, anchorY);
+                (double anchorX, double anchorY) = PortLocalAnchor(side, i, list.Count, box.Width, box.Height);
+                Element content = renderPort(list[i], new InfiniteCanvasPortRenderContext(side, box.Descriptor));
+                yield return BuildPortChip(content, anchorX, anchorY);
             }
         }
     }
@@ -586,7 +870,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
             });
     }
 
-    private static IEnumerable<(InfiniteCanvasPortSide Side, IReadOnlyList<InfiniteCanvasPort>? List)> EnumeratePortSides(InfiniteCanvasNodePorts ports)
+    private static IEnumerable<(InfiniteCanvasPortSide Side, IReadOnlyList<JsonElement>? List)> EnumeratePortSides(InfiniteCanvasNodePorts ports)
     {
         yield return (InfiniteCanvasPortSide.Top, ports.Top);
         yield return (InfiniteCanvasPortSide.Bottom, ports.Bottom);
@@ -611,6 +895,63 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
     // ---- Edge layer ----
 
     /// <summary>
+    /// Builds the internal edge list from the declarative port links. Every port that declares a
+    /// <see cref="InfiniteCanvasPortLink"/> contributes one connector, anchored from that port to the
+    /// link's target port. This is what makes edges internal to the canvas rather than a host prop.
+    /// </summary>
+    private static IReadOnlyList<InfiniteCanvasEdge> DeriveEdges(
+        IReadOnlyDictionary<string, InfiniteCanvasNodePorts>? nodePorts)
+    {
+        var edges = new List<InfiniteCanvasEdge>();
+        if (nodePorts is null)
+        {
+            return edges;
+        }
+
+        foreach ((string nodeId, InfiniteCanvasNodePorts ports) in nodePorts)
+        {
+            foreach ((_, IReadOnlyList<JsonElement>? list) in EnumeratePortSides(ports))
+            {
+                if (list is null)
+                {
+                    continue;
+                }
+
+                foreach (JsonElement port in list)
+                {
+                    string portId = PortId(port);
+                    if (!port.TryGetProperty("links", out JsonElement links) || links.ValueKind != JsonValueKind.Array)
+                    {
+                        continue;
+                    }
+
+                    foreach (JsonElement link in links.EnumerateArray())
+                    {
+                        string? target = GetStr(link, "target") ?? GetStr(link, "targetNode");
+                        string? targetPort = GetStr(link, "port") ?? GetStr(link, "targetPort");
+                        if (target is null || targetPort is null)
+                        {
+                            continue;
+                        }
+
+                        bool animated = link.TryGetProperty("animated", out JsonElement a) && a.ValueKind == JsonValueKind.True;
+                        edges.Add(new InfiniteCanvasEdge(
+                            $"{nodeId}:{portId}->{target}:{targetPort}",
+                            nodeId,
+                            target,
+                            portId,
+                            targetPort,
+                            GetStr(link, "label"),
+                            animated));
+                    }
+                }
+            }
+        }
+
+        return edges;
+    }
+
+    /// <summary>
     /// Draws bezier connectors between nodes in world space (so they pan/zoom with the surface).
     /// Edges anchor to a specific port when <c>SourcePort</c>/<c>TargetPort</c> resolve, otherwise to
     /// the source bottom-centre and target top-centre. Rendered beneath the node cards.
@@ -618,7 +959,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
     private static IEnumerable<Element> BuildEdges(
         IReadOnlyList<InfiniteCanvasEdge> edges,
         IReadOnlyDictionary<string, InfiniteCanvasNodePosition> positions,
-        IReadOnlyDictionary<string, InfiniteCanvasNode> nodes,
+        IReadOnlyDictionary<string, InfiniteCanvasNodeBox> nodes,
         IReadOnlyDictionary<string, InfiniteCanvasNodePorts>? nodePorts)
     {
         IReadOnlyDictionary<(string Node, string Port), (double X, double Y, InfiniteCanvasPortSide Side)> anchors =
@@ -630,8 +971,8 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         {
             if (!positions.TryGetValue(edge.Source, out InfiniteCanvasNodePosition? sourcePos)
                 || !positions.TryGetValue(edge.Target, out InfiniteCanvasNodePosition? targetPos)
-                || !nodes.TryGetValue(edge.Source, out InfiniteCanvasNode? sourceNode)
-                || !nodes.TryGetValue(edge.Target, out InfiniteCanvasNode? targetNode))
+                || !nodes.TryGetValue(edge.Source, out InfiniteCanvasNodeBox? sourceNode)
+                || !nodes.TryGetValue(edge.Target, out InfiniteCanvasNodeBox? targetNode))
             {
                 continue;
             }
@@ -706,7 +1047,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         string nodeId,
         string? portId,
         InfiniteCanvasNodePosition pos,
-        InfiniteCanvasNode node,
+        InfiniteCanvasNodeBox node,
         bool isSource)
     {
         if (portId is not null
@@ -733,7 +1074,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
 
     private static IReadOnlyDictionary<(string Node, string Port), (double X, double Y, InfiniteCanvasPortSide Side)> BuildPortAnchors(
         IReadOnlyDictionary<string, InfiniteCanvasNodePosition> positions,
-        IReadOnlyDictionary<string, InfiniteCanvasNode> nodes,
+        IReadOnlyDictionary<string, InfiniteCanvasNodeBox> nodes,
         IReadOnlyDictionary<string, InfiniteCanvasNodePorts>? nodePorts)
     {
         var anchors = new Dictionary<(string Node, string Port), (double X, double Y, InfiniteCanvasPortSide Side)>();
@@ -745,12 +1086,12 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         foreach ((string nodeId, InfiniteCanvasNodePorts ports) in nodePorts)
         {
             if (!positions.TryGetValue(nodeId, out InfiniteCanvasNodePosition? pos)
-                || !nodes.TryGetValue(nodeId, out InfiniteCanvasNode? node))
+                || !nodes.TryGetValue(nodeId, out InfiniteCanvasNodeBox? node))
             {
                 continue;
             }
 
-            foreach ((InfiniteCanvasPortSide side, IReadOnlyList<InfiniteCanvasPort>? list) in EnumeratePortSides(ports))
+            foreach ((InfiniteCanvasPortSide side, IReadOnlyList<JsonElement>? list) in EnumeratePortSides(ports))
             {
                 if (list is null)
                 {
@@ -760,7 +1101,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
                 for (int i = 0; i < list.Count; i++)
                 {
                     (double lx, double ly) = PortLocalAnchor(side, i, list.Count, node.Width, node.Height);
-                    anchors[(nodeId, list[i].Id)] = (pos.X + lx, pos.Y + ly, side);
+                    anchors[(nodeId, PortId(list[i]))] = (pos.X + lx, pos.Y + ly, side);
                 }
             }
         }
@@ -794,7 +1135,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
     // ---- Mini-map ----
 
     private Element BuildMiniMap(
-        IReadOnlyDictionary<string, InfiniteCanvasNode> nodes,
+        IReadOnlyDictionary<string, InfiniteCanvasNodeBox> nodes,
         IReadOnlyDictionary<string, InfiniteCanvasNodePosition> positions,
         double surfaceWidth,
         double surfaceHeight,
@@ -972,7 +1313,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         }
 
         // Node rectangles (draggable: the real node on the canvas moves on release).
-        foreach ((string id, InfiniteCanvasNode node) in nodes)
+        foreach ((string id, InfiniteCanvasNodeBox node) in nodes)
         {
             InfiniteCanvasNodePosition pos = positions[id];
             double nodeRectW = Math.Max(6, node.Width * scale);
@@ -1114,7 +1455,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
     private Element BuildZoomControls(
         Microsoft.UI.Reactor.Core.Ref<ScrollViewer?> scrollViewerRef,
         IReadOnlyDictionary<string, InfiniteCanvasNodePosition> positions,
-        IReadOnlyDictionary<string, InfiniteCanvasNode> nodes,
+        IReadOnlyDictionary<string, InfiniteCanvasNodeBox> nodes,
         InfiniteCanvasOptions options)
     {
         // Floating icon buttons stacked as a single connected toolbar group: a bordered container
@@ -1172,7 +1513,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
     private static void FitToContent(
         ScrollViewer? scrollViewer,
         IReadOnlyDictionary<string, InfiniteCanvasNodePosition> positions,
-        IReadOnlyDictionary<string, InfiniteCanvasNode> nodes,
+        IReadOnlyDictionary<string, InfiniteCanvasNodeBox> nodes,
         InfiniteCanvasOptions options)
     {
         if (scrollViewer is null || nodes.Count == 0)
@@ -1184,7 +1525,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         double minTop = double.MaxValue;
         double maxRight = double.MinValue;
         double maxBottom = double.MinValue;
-        foreach ((string id, InfiniteCanvasNode node) in nodes)
+        foreach ((string id, InfiniteCanvasNodeBox node) in nodes)
         {
             InfiniteCanvasNodePosition pos = positions[id];
             minLeft = Math.Min(minLeft, pos.X);

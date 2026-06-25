@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using DemoBoards.RuntimeHost;
 using DemoBoards_WinUI.State;
 using Microsoft.UI;
@@ -32,68 +33,62 @@ public sealed class ReactorInfiniteCanvasComponent : Component<ReactorInfiniteCa
     public override Element Render()
     {
         // DEMO HOST for the independent, declarative InfiniteCanvas component.
-        // It owns the layout (positions + viewport) as state and feeds it back through
-        // SavedLayout, proving the controlled round-trip. The canvas itself knows nothing
-        // about boards or cards — it just renders whatever nodes it is handed.
-        var (layout, setLayout) = UseState<InfiniteCanvasLayout?>(null);
+        // It owns the canvas's opaque state blob and feeds it back through CanvasState, proving the
+        // controlled round-trip. The blob is opaque — the host never inspects it, it just persists
+        // whatever comes back. The canvas knows nothing about boards or cards.
+        var (canvasState, setCanvasState) = UseState<JsonElement?>(null);
         var (clickCount, setClickCount) = UseState(0);
         var (likes, setLikes) = UseState(12);
 
-        var nodes = new Dictionary<string, InfiniteCanvasNode>(StringComparer.Ordinal)
+        // The node/port/link graph is plain JSON (here a constant, but in practice this is exactly
+        // what an agent emits dynamically). InfiniteCanvasGraph.FromJson splits it into the canvas's
+        // two aligned props (Nodes + NodePorts) — both opaque descriptors. Only the RenderNode /
+        // RenderNodePort callbacks below stay in C#, because rendering is behaviour, not data.
+
+        // RenderNode: opaque node descriptor -> element. Closes over the reactive state (clickCount /
+        // likes) so interactive nodes stay live across re-renders. The canvas owns no chrome, so the
+        // node renders its own title.
+        Element RenderNode(JsonElement node)
         {
-            ["welcome"] = new InfiniteCanvasNode(
-                VStack(8,
+            string id = node.GetProperty("id").GetString()!;
+            string? title = node.TryGetProperty("title", out JsonElement t) && t.ValueKind == JsonValueKind.String
+                ? t.GetString()
+                : null;
+
+            Element body = id switch
+            {
+                "welcome" => VStack(8,
                     TextBlock("This surface is rendered by the standalone InfiniteCanvas component.")
                         .Set(text => text.TextWrapping = TextWrapping.WrapWholeWords),
                     TextBlock("Drag any node to move it. Ports sit on the node borders and edges connect them — pan, zoom, and watch the minimap.")
                         .Opacity(0.72)
                         .Set(text => text.TextWrapping = TextWrapping.WrapWholeWords)),
-                Width: 320,
-                Height: 150,
-                Title: "Welcome"),
 
-            ["counter"] = new InfiniteCanvasNode(
-                VStack(10,
+                "counter" => VStack(10,
                     TextBlock($"Clicked {clickCount} time(s)").FontSize(16).Bold(),
                     Button("Click me", () => setClickCount(clickCount + 1)).AccentButton(),
                     Button("Reset", () => setClickCount(0)).SubtleButton()),
-                Width: 240,
-                Height: 180,
-                Title: "Interactive button"),
 
-            ["stats"] = new InfiniteCanvasNode(
-                VStack(6,
+                "stats" => VStack(6,
                     BuildStatRow("Nodes", "5"),
                     BuildStatRow("Zoom range", "0.3x – 2.0x"),
                     BuildStatRow("Grid spacing", "28 px"),
                     BuildStatRow("Likes", likes.ToString()),
                     Button("\U0001F44D Like", () => setLikes(likes + 1)).SubtleButton()),
-                Width: 260,
-                Height: 230,
-                Title: "Stats panel"),
 
-            ["palette"] = new InfiniteCanvasNode(
-                HStack(8,
+                "palette" => HStack(8,
                     BuildSwatch(Colors.Crimson),
                     BuildSwatch(Colors.SteelBlue),
                     BuildSwatch(Colors.MediumSeaGreen),
                     BuildSwatch(Colors.Goldenrod)),
-                Width: 280,
-                Height: 130,
-                Title: "Colour swatches"),
 
-            ["checklist"] = new InfiniteCanvasNode(
-                VStack(6,
+                "checklist" => VStack(6,
                     BuildBullet("Declarative node map"),
-                    BuildBullet("getInitialPosition fallback"),
-                    BuildBullet("onLayoutChange round-trip"),
+                    BuildBullet("getInitialNodePos seeds x/y/w/h"),
+                    BuildBullet("onCanvasStateCommit round-trip"),
                     BuildBullet("Port rails + edge connectors")),
-                Width: 280,
-                Height: 190,
-                Title: "Feature checklist"),
 
-            ["badge"] = new InfiniteCanvasNode(
-                VStack(8,
+                "badge" => VStack(8,
                     Ellipse()
                         .Fill(new SolidColorBrush(Colors.MediumPurple))
                         .Width(56)
@@ -101,50 +96,71 @@ public sealed class ReactorInfiniteCanvasComponent : Component<ReactorInfiniteCa
                         .HAlign(HorizontalAlignment.Center),
                     TextBlock("Arbitrary Reactor content").Opacity(0.75).HAlign(HorizontalAlignment.Center)
                         .Set(text => text.TextWrapping = TextWrapping.WrapWholeWords)),
-                Width: 220,
-                Height: 160,
-                Title: "Shapes + text"),
-        };
+
+                _ => TextBlock(id),
+            };
+
+            return title is null
+                ? body
+                : VStack(8, TextBlock(title).Bold().FontSize(13), body);
+        }
 
         return Component<InfiniteCanvas, InfiniteCanvasProps>(
             new InfiniteCanvasProps(
-                Nodes: nodes,
-                SavedLayout: layout,
-                GetInitialPosition: DemoInitialPosition,
-                OnLayoutChange: setLayout,
-                Options: new InfiniteCanvasOptions(ShowGrid: true, MiniMap: InfiniteCanvasMiniMapPlacement.BottomRight, ShowZoomControls: true),
-                NodePorts: BuildDemoPorts(),
-                Edges: BuildDemoEdges()));
+                Nodes: DemoGraph.Nodes,
+                RenderNode: RenderNode,
+                NodePorts: DemoGraph.NodePorts,
+                RenderNodePort: RenderDemoPort,
+                GetInitialNodePos: DemoInitialGeometry,
+                CanvasState: canvasState,
+                OnCanvasStateCommit: blob => setCanvasState(blob),
+                Options: new InfiniteCanvasOptions(ShowGrid: true, MiniMap: InfiniteCanvasMiniMapPlacement.BottomRight, ShowZoomControls: true)));
     }
 
-    // Demo port rails: a small "provide" pill on the source border and a "require" pill on the
-    // target border, wired together by the edges below — exercising the canvas's port + edge layers.
-    private static IReadOnlyDictionary<string, InfiniteCanvasNodePorts> BuildDemoPorts() =>
-        new Dictionary<string, InfiniteCanvasNodePorts>(StringComparer.Ordinal)
-        {
-            ["welcome"] = new InfiniteCanvasNodePorts(
-                Bottom: new[] { new InfiniteCanvasPort("out:intro", BuildPortPill("intro", provide: true)) }),
-            ["counter"] = new InfiniteCanvasNodePorts(
-                Top: new[] { new InfiniteCanvasPort("in:intro", BuildPortPill("intro", provide: false)) },
-                Bottom: new[] { new InfiniteCanvasPort("out:count", BuildPortPill("count", provide: true)) }),
-            ["stats"] = new InfiniteCanvasNodePorts(
-                Top: new[] { new InfiniteCanvasPort("in:count", BuildPortPill("count", provide: false)) },
-                Bottom: new[] { new InfiniteCanvasPort("out:data", BuildPortPill("data", provide: true)) }),
-            ["checklist"] = new InfiniteCanvasNodePorts(
-                Top: new[] { new InfiniteCanvasPort("in:data", BuildPortPill("data", provide: false)) }),
-            ["palette"] = new InfiniteCanvasNodePorts(
-                Right: new[] { new InfiniteCanvasPort("out:color", BuildPortPill("color", provide: true)) }),
-            ["badge"] = new InfiniteCanvasNodePorts(
-                Left: new[] { new InfiniteCanvasPort("in:color", BuildPortPill("color", provide: false)) }),
-        };
+    // The whole node/port/link graph as JSON — the shape an agent would emit dynamically. "nodes" is an
+    // array of opaque node descriptors (id + consumer fields like title); "ports" maps a node id to its
+    // per-side opaque port descriptors. Size/position are NOT in the node — they are seeded by
+    // GetInitialNodePos and then owned by the canvas in its opaque blob. Parsed once into the two props.
+    private static readonly InfiniteCanvasGraph DemoGraph = InfiniteCanvasGraph.FromJson(DemoGraphJson);
 
-    private static IReadOnlyList<InfiniteCanvasEdge> BuildDemoEdges() => new List<InfiniteCanvasEdge>
+    private const string DemoGraphJson = """
     {
-        new("e-intro", "welcome", "counter", "out:intro", "in:intro", "intro"),
-        new("e-count", "counter", "stats", "out:count", "in:count", "count", Animated: true),
-        new("e-data", "stats", "checklist", "out:data", "in:data", "data"),
-        new("e-color", "palette", "badge", "out:color", "in:color", "color"),
-    };
+      "nodes": [
+        { "id": "welcome", "title": "Welcome" },
+        { "id": "counter", "title": "Interactive button" },
+        { "id": "stats", "title": "Stats panel" },
+        { "id": "palette", "title": "Colour swatches" },
+        { "id": "checklist", "title": "Feature checklist" },
+        { "id": "badge", "title": "Shapes + text" }
+      ],
+      "ports": {
+        "welcome": { "bottom": [ { "id": "out:intro", "label": "intro",
+          "links": [ { "target": "counter", "port": "in:intro", "label": "intro" } ] } ] },
+        "counter": { "top": [ { "id": "in:intro", "label": "intro" } ],
+          "bottom": [ { "id": "out:count", "label": "count",
+            "links": [ { "target": "stats", "port": "in:count", "label": "count", "animated": true } ] } ] },
+        "stats": { "top": [ { "id": "in:count", "label": "count" } ],
+          "bottom": [ { "id": "out:data", "label": "data",
+            "links": [ { "target": "checklist", "port": "in:data", "label": "data" } ] } ] },
+        "palette": { "right": [ { "id": "out:color", "label": "color",
+          "links": [ { "target": "badge", "port": "in:color", "label": "color" } ] } ] },
+        "checklist": { "top": [ { "id": "in:data", "label": "data" } ] },
+        "badge": { "left": [ { "id": "in:color", "label": "color" } ] }
+      }
+    }
+    """;
+
+    // RenderNodePort: opaque port descriptor + context -> pill. Provide ports (out:) get the accent
+    // fill, require ports (in:) the neutral fill; the label comes from the port's JSON "label".
+    private static Element RenderDemoPort(JsonElement port, InfiniteCanvasPortRenderContext ctx)
+    {
+        string id = port.GetProperty("id").GetString()!;
+        bool provide = id.StartsWith("out:", StringComparison.Ordinal);
+        string label = port.TryGetProperty("label", out JsonElement l) && l.ValueKind == JsonValueKind.String
+            ? l.GetString() ?? id
+            : id;
+        return BuildPortPill(label, provide);
+    }
 
     private static Element BuildPortPill(string label, bool provide) =>
         Button(label, () => { })
@@ -158,16 +174,19 @@ public sealed class ReactorInfiniteCanvasComponent : Component<ReactorInfiniteCa
             .WithBorder(ReactorMainShellComponent.ResolveBrush("CardStrokeColorDefaultBrush"), 1)
             .Set(button => button.FontSize = 10);
 
-    private static InfiniteCanvasNodePosition DemoInitialPosition(string id) => id switch
-    {
-        "welcome" => new InfiniteCanvasNodePosition(80, 80),
-        "counter" => new InfiniteCanvasNodePosition(460, 80),
-        "stats" => new InfiniteCanvasNodePosition(760, 80),
-        "palette" => new InfiniteCanvasNodePosition(80, 300),
-        "checklist" => new InfiniteCanvasNodePosition(420, 320),
-        "badge" => new InfiniteCanvasNodePosition(760, 360),
-        _ => new InfiniteCanvasNodePosition(80, 80),
-    };
+    // GetInitialNodePos: seed full geometry (x, y, w, h) from the opaque descriptor's id. Used only
+    // until the canvas captures the node's geometry in its opaque blob (re-seeds if it goes missing).
+    private static InfiniteCanvasNodeGeometry DemoInitialGeometry(InfiniteCanvasNodePlacement placement) =>
+        placement.Node.GetProperty("id").GetString() switch
+        {
+            "welcome" => new InfiniteCanvasNodeGeometry(80, 80, 320, 150),
+            "counter" => new InfiniteCanvasNodeGeometry(460, 80, 240, 180),
+            "stats" => new InfiniteCanvasNodeGeometry(760, 80, 260, 230),
+            "palette" => new InfiniteCanvasNodeGeometry(80, 300, 280, 130),
+            "checklist" => new InfiniteCanvasNodeGeometry(420, 320, 280, 190),
+            "badge" => new InfiniteCanvasNodeGeometry(760, 360, 220, 160),
+            _ => new InfiniteCanvasNodeGeometry(80, 80, 240, 140),
+        };
 
     private static Element BuildStatRow(string label, string value) =>
         HStack(8,
