@@ -35,6 +35,14 @@ namespace DemoBoards_WinUI.Controls;
 //  missing (or its blob entry is unusable) the canvas re-seeds it from GetInitialNodePos.
 //  The canvas owns viewport + presentation chrome only (grid, minimap, zoom controls).
 //  It knows nothing about boards or cards.
+//
+//  Beyond the seven, two non-core knobs (NOT part of the frozen contract):
+//    • StateKey : changing it re-seeds the whole canvas (discards live drags + viewport) — used when
+//                 the host swaps to a logically different graph. Mirrors the frontend `stateKey`.
+//    • Options  : zoom limits, grid, minimap placement, zoom controls, grid spacing. Any future
+//                 presentation/interaction knob goes HERE rather than as a new bespoke prop.
+//  Edges are NOT a prop: the topology is declared via port "links" and the canvas derives the edge
+//  layer internally (intentional divergence from the frontend's explicit `edges` prop).
 // =====================================================================================
 
 // A node "descriptor" is an OPAQUE backend object (a JSON value). The canvas reads only "id"; size is
@@ -163,6 +171,7 @@ public sealed record InfiniteCanvasProps(
     JsonElement? CanvasState = null,
     Action<JsonElement>? OnCanvasStateCommit = null,
     // --- END FROZEN SEVEN-PROP CONTRACT ---
+    string? StateKey = null,
     InfiniteCanvasOptions? Options = null);
 
 /// <summary>
@@ -314,6 +323,20 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         // Reactive viewport (pan + zoom + visible size). Single source of truth that the ScrollViewer
         // commits into and the minimap indicator derives from — no live ScrollViewer reads, no tick hack.
         var (viewport, setViewport) = UseState<ViewportState?>(null);
+
+        // Re-seed on StateKey change (frontend parity). When the host swaps StateKey it is declaring a
+        // logically different graph: discard the live-drag layer and reset the viewport so the next
+        // render re-seeds every node's geometry/viewport purely from CanvasState / GetInitialNodePos.
+        // No-op on first mount (state already empty). Not one of the frozen seven.
+        UseEffect(
+            () =>
+            {
+                setMovedPositions(new Dictionary<string, InfiniteCanvasNodePosition>(StringComparer.Ordinal));
+                setViewport(null);
+                restoredViewportRef.Current = false;
+                return () => { };
+            },
+            Props.StateKey ?? string.Empty);
 
         // Opaque persisted blob the canvas owns: node geometry + viewport live here. Read for seeding,
         // written back through OnCanvasStateCommit on every geometry/viewport change.

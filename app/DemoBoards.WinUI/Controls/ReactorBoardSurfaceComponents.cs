@@ -114,6 +114,7 @@ public sealed class ReactorInfiniteCanvasComponent : Component<ReactorInfiniteCa
                 GetInitialNodePos: DemoInitialGeometry,
                 CanvasState: canvasState,
                 OnCanvasStateCommit: blob => setCanvasState(blob),
+                StateKey: "demo-board",
                 Options: new InfiniteCanvasOptions(ShowGrid: true, MiniMap: InfiniteCanvasMiniMapPlacement.BottomRight, ShowZoomControls: true)));
     }
 
