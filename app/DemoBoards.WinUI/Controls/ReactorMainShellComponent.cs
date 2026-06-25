@@ -117,7 +117,6 @@ public sealed class ReactorMainShellComponent : Component
             .Flex(grow: 1));
 
         Element? overlay = null;
-        string? inspectedCardId = boardStore.UiState.InspectedCardId;
 
         if (configOpen)
         {
@@ -130,15 +129,6 @@ public sealed class ReactorMainShellComponent : Component
                             boardStore.GetBoardInfo().BoardId,
                             boardStore.State.ManagedBoardConfig,
                             () => setConfigOpen(false)))));
-        }
-        else if (!string.IsNullOrWhiteSpace(inspectedCardId))
-        {
-            overlay = Component<ReactorGlobalModalComponent, ReactorGlobalModalProps>(
-                new ReactorGlobalModalProps(
-                    $"Inspect {inspectedCardId}",
-                    () => boardStore.SetInspectedCardId(null),
-                    Component<ReactorInspectCardComponent, ReactorInspectCardProps>(
-                        new ReactorInspectCardProps(boardStore, inspectedCardId))));
         }
 
         else if (chatRequest is not null)
@@ -319,37 +309,8 @@ public sealed class ReactorMainBoardComponent : Component<ReactorMainBoardProps>
 {
     public override Element Render()
     {
-        var columns = new List<Element>();
-
-        if (Props.GandalfCards.Count > 0)
-        {
-            columns.Add(Component<ReactorGandalfPaneComponent, ReactorPreviewPaneProps>(
-                new ReactorPreviewPaneProps(
-                    "Board Manager",
-                    Props.GandalfCards,
-                    Props.RendererRules,
-                    ShowPhase: false,
-                    EmptyMessage: "No matching cards",
-                    Tone: "fresh")));
-        }
-
-        columns.Add(
-            Component<ReactorCentrePaneComponent, ReactorMainBoardProps>(Props)
-                .Flex(grow: 1));
-
-        if (Props.TruthsetCards.Count > 0)
-        {
-            columns.Add(Component<ReactorTruthsetExplorePaneComponent, ReactorPreviewPaneProps>(
-                new ReactorPreviewPaneProps(
-                    "Truthset Explore",
-                    Props.TruthsetCards,
-                    Props.RendererRules,
-                    ShowPhase: true,
-                    EmptyMessage: "No matching cards",
-                    Tone: "completed")));
-        }
-
-        return HStack(16, columns.ToArray()).Flex(grow: 1);
+        return Component<ReactorCentrePaneComponent, ReactorMainBoardProps>(Props)
+            .Flex(grow: 1);
     }
 }
 
@@ -357,174 +318,14 @@ public sealed class ReactorCentrePaneComponent : Component<ReactorMainBoardProps
 {
     public override Element Render()
     {
-        var (surfaceMode, setSurfaceMode) = UseState(ReactorBoardSurfaceModes.InfiniteCanvas);
-
-        UseEffect(() =>
-        {
-            setSurfaceMode(ReactorBoardSurfaceModes.InfiniteCanvas);
-        }, Props.BoardInfo.BoardId);
-
-        Element activeSurface = string.Equals(surfaceMode, ReactorBoardSurfaceModes.CardsFlow, StringComparison.Ordinal)
-            ? Component<ReactorCardsFlowComponent, ReactorCardsFlowProps>(
-                new ReactorCardsFlowProps(
-                    Props.BoardInfo,
-                    Props.Summary,
-                    Props.CentreCards,
-                    Props.LayoutState,
-                    Props.DataObjects,
-                    Props.RendererRules))
-            : Component<ReactorInfiniteCanvasComponent, ReactorInfiniteCanvasProps>(
+        return Component<ReactorInfiniteCanvasComponent, ReactorInfiniteCanvasProps>(
                 new ReactorInfiniteCanvasProps(
                     Props.BoardInfo,
                     Props.Summary,
                     Props.CentreCards,
                     Props.LayoutState,
                     Props.DataObjects,
-                    Props.RendererRules));
-
-        return VStack(10,
-                BuildSurfaceModeToggle(surfaceMode, setSurfaceMode),
-                activeSurface.Flex(grow: 1))
+                    Props.RendererRules))
             .Flex(grow: 1);
-    }
-
-    private static Element BuildSurfaceModeToggle(string surfaceMode, Action<string> setSurfaceMode)
-    {
-        return HStack(8,
-                BuildSurfaceModeButton(
-                    "Infinite canvas",
-                    ReactorBoardSurfaceModes.InfiniteCanvas,
-                    surfaceMode,
-                    setSurfaceMode,
-                    "Spatial board surface"),
-                BuildSurfaceModeButton(
-                    "Cards flow",
-                    ReactorBoardSurfaceModes.CardsFlow,
-                    surfaceMode,
-                    setSurfaceMode,
-                    "Linear cards surface"))
-            .HAlign(HorizontalAlignment.Left);
-    }
-
-    private static Element BuildSurfaceModeButton(
-        string label,
-        string mode,
-        string selectedMode,
-        Action<string> setSurfaceMode,
-        string automationName)
-    {
-        bool selected = string.Equals(mode, selectedMode, StringComparison.Ordinal);
-        return Button(label, () => setSurfaceMode(mode))
-            .AutomationName(automationName)
-            .Background(selected
-                ? BoardTheme.CreateResourceBrush("BoardColorAccentSoft", 0xCC, Microsoft.UI.Colors.LightBlue)
-                : BoardTheme.CreateResourceBrush("BoardColorSurfaceStrong", 0xD8, Microsoft.UI.Colors.WhiteSmoke))
-            .WithBorder(selected
-                ? BoardTheme.CreateResourceBrush("BoardColorAccentStrong", 0xB8, Microsoft.UI.Colors.CornflowerBlue)
-                : BoardTheme.CreateResourceBrush("BoardColorBorderStrong", 0x52, Microsoft.UI.Colors.SlateGray), 1)
-            .CornerRadius(999)
-            .Padding(14, 6, 14, 6);
-    }
-}
-
-public sealed record ReactorPreviewPaneProps(
-    string Title,
-    IReadOnlyList<BoardCard> Cards,
-    IReadOnlyList<RendererRule>? RendererRules,
-    bool ShowPhase,
-    string EmptyMessage,
-    string Tone);
-
-public sealed class ReactorGandalfPaneComponent : Component<ReactorPreviewPaneProps>
-{
-    public override Element Render()
-    {
-        return Component<ReactorPreviewPaneComponent, ReactorPreviewPaneProps>(Props);
-    }
-}
-
-public sealed class ReactorTruthsetExplorePaneComponent : Component<ReactorPreviewPaneProps>
-{
-    public override Element Render()
-    {
-        return Component<ReactorPreviewPaneComponent, ReactorPreviewPaneProps>(Props);
-    }
-}
-
-public sealed class ReactorPreviewPaneComponent : Component<ReactorPreviewPaneProps>
-{
-    public override Element Render()
-    {
-        var (open, setOpen) = UseState(Props.Cards.Count > 0);
-        var (currentIndex, setCurrentIndex) = UseState(0);
-
-        UseEffect(() =>
-        {
-            if (Props.Cards.Count == 0)
-            {
-                setOpen(false);
-            }
-        }, Props.Cards.Count);
-
-        int safeIndex = Props.Cards.Count == 0
-            ? 0
-            : Math.Min(currentIndex, Props.Cards.Count - 1);
-        BoardCard? currentCard = Props.Cards.Count == 0 ? null : Props.Cards[safeIndex];
-
-        var sectionItems = new List<Element>
-        {
-            HStack(12,
-                VStack(2,
-                    TextBlock(Props.Title).Bold(),
-                    TextBlock(Props.Cards.Count == 0 ? Props.EmptyMessage : $"{Props.Cards.Count} cards").Opacity(0.68))
-                .Flex(grow: 1),
-                Button(open ? "Hide" : "Show", () => setOpen(!open))
-                    .AutomationName(open ? $"Hide {Props.Title}" : $"Show {Props.Title}")
-                    .SubtleButton())
-        };
-
-        if (open && currentCard is not null)
-        {
-            var navItems = new List<Element>
-            {
-                TextBlock(currentCard.Title).Bold().Flex(grow: 1),
-            };
-
-            if (Props.ShowPhase)
-            {
-                string phase = ResolvePhase(currentCard);
-                string tone = string.Equals(phase, "done", StringComparison.OrdinalIgnoreCase) ? "completed" : Props.Tone;
-                navItems.Add(
-                    Border(TextBlock(phase).Bold())
-                        .Background(CardToneBrushes.CreateToneBrush(tone, 0x33))
-                        .WithBorder(CardToneBrushes.CreateToneBrush(tone, 0x88), 1)
-                        .CornerRadius(10)
-                        .Padding(8));
-            }
-
-            navItems.Add(Button("Prev", () => setCurrentIndex(Math.Max(0, safeIndex - 1))).AutomationName($"Previous {Props.Title} card").SubtleButton());
-            navItems.Add(TextBlock($"{safeIndex + 1} / {Props.Cards.Count}").Opacity(0.68));
-            navItems.Add(Button("Next", () => setCurrentIndex(Math.Min(Props.Cards.Count - 1, safeIndex + 1))).AutomationName($"Next {Props.Title} card").SubtleButton());
-
-            sectionItems.Add(HStack(8, navItems.ToArray()));
-            sectionItems.Add(Component<ReactorCardRendererComponent, ReactorCardRendererProps>(
-                new ReactorCardRendererProps(currentCard, Props.RendererRules)));
-        }
-
-        return Border(VStack(10, sectionItems.ToArray()))
-            .Padding(14)
-            .Background(ReactorMainShellComponent.ResolveBrush("CardBackgroundFillColorSecondaryBrush"))
-            .CornerRadius(14)
-            .Width(352);
-    }
-    private static string ResolvePhase(BoardCard card)
-    {
-        BoardCardField? phaseField = card.Fields.FirstOrDefault(field => string.Equals(field.Key, "phase", StringComparison.OrdinalIgnoreCase));
-        if (phaseField is not null && !string.IsNullOrWhiteSpace(phaseField.Value))
-        {
-            return phaseField.Value;
-        }
-
-        return "active";
     }
 }
