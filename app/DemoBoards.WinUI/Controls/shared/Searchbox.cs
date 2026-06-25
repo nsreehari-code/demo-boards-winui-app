@@ -9,10 +9,11 @@ namespace DemoBoards_WinUI.Controls.Shared;
 
 /// <summary>
 /// Mirrors <c>Searchbox.jsx</c> — a self-contained search input. Owns its journal and type-aware
-/// coercion; <c>OnSubmit</c> fires with the coerced value. <c>Prop</c> is the resolved field schema.
+/// coercion; <c>OnSubmit</c> fires with the coerced value. <c>Prop</c> is the plain field-schema data
+/// object (<c>{ type, format, minimum, maximum, title, placeholder }</c>), converted internally.
 /// </summary>
 public sealed record SearchboxProps(
-    FieldSchema Prop,
+    IReadOnlyDictionary<string, object?>? Prop = null,
     string? FieldKey = null,
     object? Value = null,
     bool IsRequired = false,
@@ -24,6 +25,7 @@ public sealed class Searchbox : Component<SearchboxProps>
     public override Element Render()
     {
         AppTheme theme = UseContext(AppThemeContext.Current);
+        FieldSchema prop = FieldSchema.FromData(Props.Prop);
         var (journal, setJournal) = UseState(Props.Value?.ToString() ?? string.Empty);
 
         void Submit()
@@ -34,7 +36,7 @@ public sealed class Searchbox : Component<SearchboxProps>
             }
 
             object? next = journal;
-            if (Props.Prop.Type is "number" or "integer")
+            if (prop.Type is "number" or "integer")
             {
                 next = journal.Length == 0
                     ? string.Empty
@@ -44,10 +46,10 @@ public sealed class Searchbox : Component<SearchboxProps>
             Props.OnSubmit?.Invoke(next);
         }
 
-        string placeholder = Props.Prop.Placeholder ?? Props.Prop.Title ?? Props.FieldKey ?? string.Empty;
+        string placeholder = prop.Placeholder ?? prop.Title ?? Props.FieldKey ?? string.Empty;
 
         Element input = TextBox(journal, setJournal)
-            .AutomationName(Props.Prop.Title ?? Props.FieldKey ?? "Search")
+            .AutomationName(prop.Title ?? Props.FieldKey ?? "Search")
             .PlaceholderText(placeholder)
             .Foreground(theme.TextPrimary)
             .Flex(grow: 1);

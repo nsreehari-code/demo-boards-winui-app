@@ -1,12 +1,96 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using Microsoft.UI.Reactor;
 using Microsoft.UI.Reactor.Core;
+using Microsoft.UI.Xaml.Media;
 using static Microsoft.UI.Reactor.Factories;
 using DemoBoards_WinUI;
+using DemoBoards.RuntimeHost;
 
 namespace DemoBoards_WinUI.Controls.Shared;
+
+/// <summary>The schema half of a <see cref="FormSpec"/> — mirrors <c>spec.fields</c>.</summary>
+public sealed record FormFields(
+    IReadOnlyDictionary<string, FieldSchema> Properties,
+    IReadOnlyList<string>? Required = null);
+
+/// <summary>
+/// The typed form spec the component works with internally. Callers do <b>not</b> build this — they pass
+/// the plain <c>spec</c> data object on <see cref="FormProps.Spec"/> and the component converts it via
+/// <see cref="FromData"/>, mirroring how the frontend reads its plain <c>spec</c> object.
+/// </summary>
+public sealed record FormSpec(
+    FormFields Fields,
+    string? SaveLabel = null,
+    IReadOnlyList<JsonataValidator>? Validators = null)
+{
+    /// <summary>
+    /// Parses the frontend-shaped <c>spec</c> data object —
+    /// <c>{ fields: { properties, required }, saveLabel?, validators? }</c> — into a typed
+    /// <see cref="FormSpec"/>. <c>validators</c> are the same <c>[expr, message]</c> pairs (arrays or
+    /// <c>{ expr, message }</c> objects) the frontend authors.
+    /// </summary>
+    public static FormSpec FromData(IReadOnlyDictionary<string, object?>? data)
+    {
+        IReadOnlyDictionary<string, object?> map = data ?? BoardData.Empty;
+        IReadOnlyDictionary<string, object?> fields = BoardData.AsMap(BoardData.Get(map, "fields"));
+
+        var properties = new Dictionary<string, FieldSchema>(StringComparer.Ordinal);
+        if (BoardData.Get(fields, "properties") is IReadOnlyDictionary<string, object?> propMap)
+        {
+            foreach (KeyValuePair<string, object?> entry in propMap)
+            {
+                properties[entry.Key] = FieldSchema.FromData(entry.Value);
+            }
+        }
+
+        return new FormSpec(
+            new FormFields(properties, BoardData.StrList(fields, "required")),
+            BoardData.Str(map, "saveLabel"),
+            ParseValidators(BoardData.List(map, "validators")));
+    }
+
+    private static IReadOnlyList<JsonataValidator>? ParseValidators(IReadOnlyList<object?>? list)
+    {
+        if (list is null || list.Count == 0)
+        {
+            return null;
+        }
+
+        var result = new List<JsonataValidator>();
+        foreach (object? entry in list)
+        {
+            switch (entry)
+            {
+                case JsonataValidator ready:
+                    result.Add(ready);
+                    break;
+                case IReadOnlyDictionary<string, object?> m when !string.IsNullOrWhiteSpace(BoardData.Str(m, "expr")):
+                    result.Add(new JsonataValidator(BoardData.Str(m, "expr")!, BoardData.Str(m, "message") ?? "Invalid value"));
+                    break;
+                default:
+                    IReadOnlyList<object?>? pair = BoardData.ToList(entry);
+                    if (pair is { Count: > 0 } && pair[0] is { } exprObj)
+                    {
+                        string expr = BoardShared.Stringify(exprObj);
+                        if (!string.IsNullOrWhiteSpace(expr))
+                        {
+                            string message = pair.Count > 1 && pair[1] is { } msg ? BoardShared.Stringify(msg) : "Invalid value";
+                            result.Add(new JsonataValidator(expr, message));
+                        }
+                    }
+
+                    break;
+            }
+        }
+
+        return result;
+    }
+}
+
+internal sealed record FormValidation(bool Checked, IReadOnlyList<string> Errors);
 
 /// <summary>
 /// Mirrors <c>Form.jsx</c> — a self-contained schema form. Owns its own draft state (layered over
@@ -14,18 +98,24 @@ namespace DemoBoards_WinUI.Controls.Shared;
 /// Discard / Save actions.
 /// </summary>
 /// <remarks>
-/// The frontend's JSONata <c>validators</c> are not ported (no C# JSONata runtime here); required-field
-/// gating via <c>AlwaysShowActions</c> is preserved.
+/// All props are plain data (the frontend's <c>spec</c> / <c>baseValues</c> objects) plus callbacks —
+/// the component converts the <c>Spec</c> data into a <see cref="FormSpec"/> internally. <c>Spec.validators</c>
+/// are the same declarative JSONata <c>[expr, message]</c> pairs the frontend uses: each is evaluated
+/// against <c>{ data: values }</c> via the shared <see cref="JsonataSync"/> bridge (the C# side of
+/// <c>compileSync</c>) and must return literal <c>true</c> to pass — run on every edit and on submit.
+/// DOM-only props (<c>idPrefix</c>, <c>colSpan</c> grid classes, button class/style overrides) are dropped.
 /// </remarks>
 public sealed record FormProps(
-    IReadOnlyDictionary<string, FieldSchema> Properties,
-    IReadOnlyList<string>? Required = null,
+    IReadOnlyDictionary<string, object?>? Spec = null,
     IReadOnlyDictionary<string, object?>? BaseValues = null,
-    string? SubmitLabel = null,
-    string CancelLabel = "Discard",
-    bool AlwaysShowActions = false,
     Action<IReadOnlyDictionary<string, object?>>? OnSave = null,
-    Action? OnCancel = null);
+    Action? OnCancel = null,
+    string CancelLabel = "Discard",
+    string? SubmitLabel = null,
+    bool Submitting = false,
+    bool CanSubmit = true,
+    bool AlwaysShowActions = false,
+    string Error = "");
 
 public sealed class Form : Component<FormProps>
 {
@@ -34,17 +124,45 @@ public sealed class Form : Component<FormProps>
         AppTheme theme = UseContext(AppThemeContext.Current);
         var (overrides, setOverrides) = UseState<IReadOnlyDictionary<string, object?>>(
             new Dictionary<string, object?>(StringComparer.Ordinal));
+        var (validation, setValidation) = UseState(new FormValidation(false, Array.Empty<string>()));
 
-        IReadOnlyList<string> required = Props.Required ?? Array.Empty<string>();
+        FormSpec spec = FormSpec.FromData(Props.Spec);
+        FormFields schema = spec.Fields;
+        IReadOnlyDictionary<string, FieldSchema> properties = schema.Properties;
+        IReadOnlyList<string> required = schema.Required ?? Array.Empty<string>();
+        IReadOnlyList<JsonataValidator> validators = spec.Validators ?? Array.Empty<JsonataValidator>();
+        string saveLabel = Props.SubmitLabel ?? spec.SaveLabel ?? "Save";
 
         object? Effective(string key) =>
             overrides.TryGetValue(key, out object? value) ? value
             : Props.BaseValues != null && Props.BaseValues.TryGetValue(key, out object? baseValue) ? baseValue
             : null;
 
-        void SetField(string key, FieldSchema schema, object? raw)
+        IReadOnlyDictionary<string, object?> Merge(IReadOnlyDictionary<string, object?> ov)
         {
-            object? next = schema.Type switch
+            var merged = new Dictionary<string, object?>(StringComparer.Ordinal);
+            if (Props.BaseValues != null)
+            {
+                foreach (KeyValuePair<string, object?> pair in Props.BaseValues)
+                {
+                    merged[pair.Key] = pair.Value;
+                }
+            }
+
+            foreach (KeyValuePair<string, object?> pair in ov)
+            {
+                merged[pair.Key] = pair.Value;
+            }
+
+            return merged;
+        }
+
+        IReadOnlyList<string> RunValidate(IReadOnlyDictionary<string, object?> values) =>
+            validators.Count == 0 ? Array.Empty<string>() : JsonataSync.RunValidators(validators, values);
+
+        void SetField(string key, FieldSchema field, object? raw)
+        {
+            object? next = field.Type switch
             {
                 "boolean" => raw is bool b && b,
                 "number" or "integer" => BoardShared.AsNumber(raw) ?? 0d,
@@ -52,6 +170,11 @@ public sealed class Form : Component<FormProps>
             };
             var dict = new Dictionary<string, object?>(overrides, StringComparer.Ordinal) { [key] = next };
             setOverrides(dict);
+
+            if (validators.Count > 0)
+            {
+                setValidation(new FormValidation(true, RunValidate(Merge(dict))));
+            }
         }
 
         bool dirty = overrides.Count > 0;
@@ -66,49 +189,70 @@ public sealed class Form : Component<FormProps>
             };
         });
 
-        var fields = Props.Properties
-            .Select(entry => BuildField(entry.Key, entry.Value, Effective(entry.Key), SetField, theme))
+        bool submitDisabled = Props.Submitting || !Props.CanSubmit
+            || (validation.Checked && validation.Errors.Count > 0)
+            || (Props.AlwaysShowActions && !requiredComplete);
+
+        var fields = properties
+            .Select(entry => BuildField(entry.Key, entry.Value, Effective(entry.Key), required.Contains(entry.Key), SetField, theme))
             .ToList();
 
         bool showActions = Props.AlwaysShowActions || dirty;
-        if (showActions)
+
+        var messages = new List<string>();
+        if (!string.IsNullOrWhiteSpace(Props.Error))
         {
-            fields.Add(HStack(8,
-                Button(Props.CancelLabel, () =>
+            messages.Add(Props.Error);
+        }
+
+        messages.AddRange(validation.Errors);
+
+        if (showActions || messages.Count > 0)
+        {
+            var footer = new List<Element>();
+            if (messages.Count > 0)
+            {
+                var danger = new SolidColorBrush(BoardShared.ToneColor("danger"));
+                footer.Add(VStack(2, messages
+                    .Select(message => (Element)TextBlock(message).FontSize(11).Foreground(danger))
+                    .ToArray()).Flex(grow: 1));
+            }
+
+            if (showActions)
+            {
+                footer.Add(Button(Props.CancelLabel, () =>
                     {
                         setOverrides(new Dictionary<string, object?>(StringComparer.Ordinal));
+                        setValidation(new FormValidation(false, Array.Empty<string>()));
                         Props.OnCancel?.Invoke();
                     })
-                    .SubtleButton().AutomationName(Props.CancelLabel),
-                Button(Props.SubmitLabel ?? "Save", () =>
+                    .SubtleButton().AutomationName(Props.CancelLabel)
+                    .Set(button => button.IsEnabled = !Props.Submitting));
+                footer.Add(Button(saveLabel, () =>
                     {
-                        var merged = new Dictionary<string, object?>(StringComparer.Ordinal);
-                        if (Props.BaseValues != null)
+                        IReadOnlyDictionary<string, object?> values = Merge(overrides);
+                        IReadOnlyList<string> errors = RunValidate(values);
+                        setValidation(new FormValidation(true, errors));
+                        if (errors.Count > 0)
                         {
-                            foreach (KeyValuePair<string, object?> pair in Props.BaseValues)
-                            {
-                                merged[pair.Key] = pair.Value;
-                            }
+                            return;
                         }
 
-                        foreach (KeyValuePair<string, object?> pair in overrides)
-                        {
-                            merged[pair.Key] = pair.Value;
-                        }
-
-                        Props.OnSave?.Invoke(merged);
+                        Props.OnSave?.Invoke(values);
                     })
-                    .AccentButton().AutomationName(Props.SubmitLabel ?? "Save")
-                    .Set(button => button.IsEnabled = !Props.AlwaysShowActions || requiredComplete)));
+                    .AccentButton().AutomationName(saveLabel)
+                    .Set(button => button.IsEnabled = !submitDisabled));
+            }
+
+            fields.Add(HStack(8, footer.ToArray()));
         }
 
         return VStack(10, fields.ToArray());
     }
 
-    private static Element BuildField(string key, FieldSchema schema, object? value, Action<string, FieldSchema, object?> setField, AppTheme theme)
+    private static Element BuildField(string key, FieldSchema schema, object? value, bool isRequired, Action<string, FieldSchema, object?> setField, AppTheme theme)
     {
         string title = schema.Title ?? key;
-        bool isRequired = false;
         bool disabled = schema.ReadOnly || schema.Disabled;
         string? hint = schema.Description ?? schema.Hint;
 
@@ -160,6 +304,10 @@ public sealed class Form : Component<FormProps>
                 Title: title,
                 OnChange: next => setField(key, schema, next)));
         }
+        else if (IsDate(schema) || IsTime(schema))
+        {
+            control = BuildTemporalControl(key, schema, value, setField, disabled);
+        }
         else if (schema.Format == "textarea" || schema.Multiline)
         {
             control = TextBox(BoardShared.Stringify(value), text => setField(key, schema, text))
@@ -171,7 +319,21 @@ public sealed class Form : Component<FormProps>
         {
             double current = BoardShared.AsNumber(value) ?? 0d;
             control = NumberBox(current, number => setField(key, schema, number), schema.Placeholder ?? string.Empty)
-                .Set(box => box.IsEnabled = !disabled);
+                .Set(box =>
+                {
+                    box.IsEnabled = !disabled;
+                    if (schema.Minimum is double min)
+                    {
+                        box.Minimum = min;
+                    }
+
+                    if (schema.Maximum is double max)
+                    {
+                        box.Maximum = max;
+                    }
+
+                    box.SmallChange = schema.Type == "integer" ? 1 : 0.1;
+                });
         }
         else
         {
@@ -194,6 +356,58 @@ public sealed class Form : Component<FormProps>
     private static bool IsMultiSelect(FieldSchema schema) =>
         schema.Type == "array"
         && ((schema.Items?.Enum is { Count: > 0 }) || (schema.Items?.OneOf is { Count: > 0 }) || (schema.Options is { Count: > 0 }));
+
+    private static bool IsDate(FieldSchema schema) => schema.Format is "date" or "date-time" or "datetime";
+
+    private static bool IsTime(FieldSchema schema) => schema.Format is "time" or "date-time" or "datetime";
+
+    /// <summary>
+    /// Renders the temporal field shapes (<c>format: date | time | date-time</c>) as native
+    /// pickers, storing the value back as the ISO-ish string the frontend uses
+    /// (<c>yyyy-MM-dd</c>, <c>HH:mm</c> or <c>yyyy-MM-ddTHH:mm</c>).
+    /// </summary>
+    private static Element BuildTemporalControl(string key, FieldSchema schema, object? value, Action<string, FieldSchema, object?> setField, bool disabled)
+    {
+        bool wantsDate = IsDate(schema);
+        bool wantsTime = IsTime(schema);
+        string text = BoardShared.Stringify(value);
+        DateTimeOffset? parsed = DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out DateTimeOffset dto)
+            ? dto
+            : null;
+
+        string Compose(DateTimeOffset? date, TimeSpan? time)
+        {
+            if (wantsDate && wantsTime)
+            {
+                DateTimeOffset d = date ?? parsed ?? DateTimeOffset.Now;
+                TimeSpan t = time ?? parsed?.TimeOfDay ?? TimeSpan.Zero;
+                return new DateTime(d.Year, d.Month, d.Day, 0, 0, 0).Add(t).ToString("yyyy-MM-ddTHH:mm", CultureInfo.InvariantCulture);
+            }
+
+            if (wantsDate)
+            {
+                return (date ?? parsed)?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? string.Empty;
+            }
+
+            return (time ?? parsed?.TimeOfDay)?.ToString(@"hh\:mm", CultureInfo.InvariantCulture) ?? string.Empty;
+        }
+
+        var slots = new List<Element>();
+        if (wantsDate)
+        {
+            slots.Add(CalendarDatePicker(parsed, picked => setField(key, schema, Compose(picked, parsed?.TimeOfDay)))
+                .Set(picker => picker.IsEnabled = !disabled));
+        }
+
+        if (wantsTime)
+        {
+            TimeSpan currentTime = parsed?.TimeOfDay ?? TimeSpan.Zero;
+            slots.Add(TimePicker(currentTime, picked => setField(key, schema, Compose(parsed, picked)))
+                .Set(picker => picker.IsEnabled = !disabled));
+        }
+
+        return slots.Count == 1 ? slots[0] : HStack(8, slots.ToArray());
+    }
 
     private static IReadOnlyList<object?>? BuildFieldOptions(FieldSchema schema)
     {

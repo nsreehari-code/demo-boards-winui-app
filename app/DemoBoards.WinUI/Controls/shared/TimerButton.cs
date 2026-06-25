@@ -14,32 +14,43 @@ public sealed record TimerButtonRenderState(double RemainingMs, bool Pending);
 /// <summary>
 /// Mirrors <c>TimerButton.jsx</c> — a button with a <c>Duration</c> (ms) countdown that fires
 /// <c>OnClick</c> automatically when it elapses (then restarts), and immediately when clicked. While
-/// <c>OnClick</c> resolves the button reports a pending state and is disabled. <c>Children</c> builds the
-/// label from the live <see cref="TimerButtonRenderState"/>.
+/// <c>OnClick</c> resolves the button reports a pending state and is disabled. <c>Children</c> is a render
+/// function building the visible content (any element) from the live <see cref="TimerButtonRenderState"/>;
+/// a static node is just a function that ignores the state.
 /// </summary>
 public sealed record TimerButtonProps(
     double Duration = 0,
     Func<Task>? OnClick = null,
     bool Disabled = false,
-    Func<TimerButtonRenderState, string>? Children = null);
+    Func<TimerButtonRenderState, Element>? Children = null);
 
 public sealed class TimerButton : Component<TimerButtonProps>
 {
     public override Element Render()
     {
-        _ = UseContext(AppThemeContext.Current);
+        AppTheme theme = UseContext(AppThemeContext.Current);
 
-        var deadlineRef = UseRef(DateTime.UtcNow.AddMilliseconds(Props.Duration <= 0 ? 0 : Props.Duration));
-        var pendingRef = UseRef(false);
-        var tickRef = UseRef(0);
-        var (_, setTick) = UseState(0);
+        // Same shape as the frontend: the countdown lives in state (deadline + nowMs);
+        // remainingMs is derived. Refs only guard re-entrancy and the "armed" gate.
+        var (deadline, setDeadline) = UseState(DateTime.UtcNow.AddMilliseconds(Props.Duration));
+        var (nowMs, setNowMs) = UseState(DateTime.UtcNow);
         var (pending, setPending) = UseState(false);
+        var pendingRef = UseRef(false);
+        var armedRef = UseRef(false);
 
-        double remaining = Math.Max(0, (deadlineRef.Current - DateTime.UtcNow).TotalMilliseconds);
+        double remainingMs = Math.Max(0, (deadline - nowMs).TotalMilliseconds);
+
+        void ResetCountdown()
+        {
+            DateTime now = DateTime.UtcNow;
+            setNowMs(now);
+            setDeadline(now.AddMilliseconds(Props.Duration));
+            armedRef.Current = false;
+        }
 
         async void Fire()
         {
-            if (pendingRef.Current || Props.Disabled)
+            if (pendingRef.Current)
             {
                 return;
             }
@@ -57,48 +68,61 @@ public sealed class TimerButton : Component<TimerButtonProps>
             {
                 pendingRef.Current = false;
                 setPending(false);
-                deadlineRef.Current = DateTime.UtcNow.AddMilliseconds(Props.Duration <= 0 ? 0 : Props.Duration);
-                tickRef.Current++;
-                setTick(tickRef.Current);
+                ResetCountdown();
             }
         }
 
+        // Restart the countdown whenever the duration changes (frontend: effect on resetCountdown).
+        UseEffect(ResetCountdown, Props.Duration);
+
+        // Tick nowMs once a second while idle (frontend: window.setInterval gated on !pending).
         UseEffect(() =>
         {
-            if (Props.Duration <= 0)
-            {
-                return null;
-            }
-
-            DispatcherQueue? queue = DispatcherQueue.GetForCurrentThread();
+            DispatcherQueue? queue = pending ? null : DispatcherQueue.GetForCurrentThread();
             if (queue is null)
             {
                 return null;
             }
 
             DispatcherQueueTimer timer = queue.CreateTimer();
-            timer.Interval = TimeSpan.FromMilliseconds(250);
+            timer.Interval = TimeSpan.FromSeconds(1);
             timer.Tick += (_, _) =>
             {
-                tickRef.Current++;
-                setTick(tickRef.Current);
-                double rem = (deadlineRef.Current - DateTime.UtcNow).TotalMilliseconds;
-                if (rem <= 0 && !pendingRef.Current && !Props.Disabled)
-                {
-                    Fire();
-                }
+                armedRef.Current = true;
+                setNowMs(DateTime.UtcNow);
             };
             timer.Start();
             return () => timer.Stop();
-        }, "timer-button");
+        }, pending);
 
-        string label = Props.Children != null
-            ? Props.Children(new TimerButtonRenderState(remaining, pending))
-            : pending ? "Working..." : $"{Math.Ceiling(remaining / 1000.0):0}s";
+        // Auto-fire when the countdown elapses (frontend: effect on [remainingMs, pending, disabled]).
+        UseEffect(() =>
+        {
+            if (armedRef.Current && remainingMs <= 0 && !pending && !Props.Disabled)
+            {
+                Fire();
+            }
+        }, (remainingMs, pending, Props.Disabled));
 
-        return Button(label, () => Fire())
-            .AccentButton()
+        Element content = Props.Children != null
+            ? Props.Children(new TimerButtonRenderState(remainingMs, pending))
+            : TextBlock(pending ? "Working..." : $"{Math.Ceiling(remainingMs / 1000.0):0}s").Foreground(theme.TextPrimary);
+
+        return Border(content)
+            .Padding(10)
+            .Background(theme.Accent)
+            .CornerRadius(8)
             .AutomationName("Timer action")
-            .Set(button => button.IsEnabled = !Props.Disabled && !pending);
+            .Set(border =>
+            {
+                border.Opacity = Props.Disabled || pending ? 0.5 : 1.0;
+                border.Tapped += (_, _) =>
+                {
+                    if (!Props.Disabled && !pending)
+                    {
+                        Fire();
+                    }
+                };
+            });
     }
 }

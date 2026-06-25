@@ -10,15 +10,53 @@ namespace DemoBoards_WinUI.Controls.Shared;
 
 /// <summary>
 /// Mirrors <c>EditableTable.jsx</c> — a self-contained editable grid. Owns its own draft rows (layered
-/// over <c>BaseRows</c>), derives columns from <c>Columns</c> / the row keys, and exposes inline cell
-/// editing plus add/delete-row and dirty-gated Discard / Save actions.
+/// over <c>BaseRows</c>), derives columns from the spec / the row keys, and exposes inline cell
+/// editing plus add/delete-row and dirty-gated Discard / Save actions. Configuration travels as a single
+/// data <see cref="EditableTableSpec"/> record (schema properties, explicit columns, add/delete toggles,
+/// empty placeholder) — the parity equivalent of the frontend <c>spec</c> object.
 /// </summary>
-public sealed record EditableTableProps(
-    IReadOnlyDictionary<string, FieldSchema>? SchemaProperties = null,
+/// <summary>The schema half of the table spec — the per-column <see cref="FieldSchema"/> map.</summary>
+public sealed record EditableTableSchema(
+    IReadOnlyDictionary<string, FieldSchema>? Properties = null);
+
+/// <summary>
+/// The typed table spec the component works with internally. Callers do <b>not</b> build this — they
+/// pass the plain <c>spec</c> data object on <see cref="EditableTableProps.Spec"/> and the component
+/// converts it via <see cref="FromData"/>, mirroring the frontend's plain <c>spec</c> object
+/// (<c>{ schema: { properties }, columns?, addRow?, deleteRow?, placeholder? }</c>).
+/// </summary>
+public sealed record EditableTableSpec(
+    EditableTableSchema? Schema = null,
     IReadOnlyList<string>? Columns = null,
-    bool AllowAddRow = true,
-    bool AllowDeleteRow = true,
-    string Placeholder = "No data",
+    bool AddRow = true,
+    bool DeleteRow = true,
+    string Placeholder = "No data")
+{
+    /// <summary>Parses the frontend-shaped <c>spec</c> data object into a typed <see cref="EditableTableSpec"/>.</summary>
+    public static EditableTableSpec FromData(IReadOnlyDictionary<string, object?>? data)
+    {
+        IReadOnlyDictionary<string, object?> map = data ?? BoardData.Empty;
+
+        var properties = new Dictionary<string, FieldSchema>(StringComparer.Ordinal);
+        if (BoardData.Get(BoardData.AsMap(BoardData.Get(map, "schema")), "properties") is IReadOnlyDictionary<string, object?> propMap)
+        {
+            foreach (KeyValuePair<string, object?> entry in propMap)
+            {
+                properties[entry.Key] = FieldSchema.FromData(entry.Value);
+            }
+        }
+
+        return new EditableTableSpec(
+            new EditableTableSchema(properties),
+            BoardData.StrList(map, "columns"),
+            BoardData.BoolOr(map, "addRow", true),
+            BoardData.BoolOr(map, "deleteRow", true),
+            BoardData.Str(map, "placeholder") ?? "No data");
+    }
+}
+
+public sealed record EditableTableProps(
+    IReadOnlyDictionary<string, object?>? Spec = null,
     IReadOnlyList<IReadOnlyDictionary<string, object?>>? BaseRows = null,
     Action<IReadOnlyList<IReadOnlyDictionary<string, object?>>>? OnSave = null);
 
@@ -30,8 +68,12 @@ public sealed class EditableTable : Component<EditableTableProps>
         var (rows, setRows) = UseState(BoardShared.MergeRows(Props.BaseRows));
         var (dirty, setDirty) = UseState(false);
 
-        IReadOnlyDictionary<string, FieldSchema> schemaProps = Props.SchemaProperties ?? new Dictionary<string, FieldSchema>();
-        IReadOnlyList<string> columns = BoardShared.GetObjectColumns(rows, Props.Columns);
+        EditableTableSpec spec = EditableTableSpec.FromData(Props.Spec);
+        IReadOnlyDictionary<string, FieldSchema> schemaProps = spec.Schema?.Properties ?? new Dictionary<string, FieldSchema>();
+        bool allowAddRow = spec.AddRow;
+        bool allowDeleteRow = spec.DeleteRow;
+        string placeholder = spec.Placeholder;
+        IReadOnlyList<string> columns = BoardShared.GetObjectColumns(rows, spec.Columns);
 
         void Commit(List<Dictionary<string, object?>> next)
         {
@@ -39,14 +81,14 @@ public sealed class EditableTable : Component<EditableTableProps>
             setDirty(true);
         }
 
-        if (columns.Count == 0 && !Props.AllowAddRow)
+        if (columns.Count == 0 && !allowAddRow)
         {
-            return TextBlock(Props.Placeholder).Opacity(0.7).Foreground(theme.TextPrimary);
+            return TextBlock(placeholder).Opacity(0.7).Foreground(theme.TextPrimary);
         }
 
         var headerCells = new List<Element>(columns
             .Select(column => (Element)TextBlock(column).Bold().FontSize(12).Foreground(theme.TextPrimary).Flex(grow: 1)));
-        if (Props.AllowDeleteRow)
+        if (allowDeleteRow)
         {
             headerCells.Add(TextBlock(string.Empty).Width(28));
         }
@@ -55,7 +97,7 @@ public sealed class EditableTable : Component<EditableTableProps>
 
         if (rows.Count == 0)
         {
-            body.Add(TextBlock(Props.Placeholder).Opacity(0.6).Foreground(theme.TextPrimary));
+            body.Add(TextBlock(placeholder).Opacity(0.6).Foreground(theme.TextPrimary));
         }
         else
         {
@@ -76,7 +118,7 @@ public sealed class EditableTable : Component<EditableTableProps>
                         }).Flex(grow: 1);
                 }));
 
-                if (Props.AllowDeleteRow)
+                if (allowDeleteRow)
                 {
                     cells.Add(Button("\u2715", () => Commit(rows.Where((_, index) => index != capturedRow).Select(r => new Dictionary<string, object?>(r, StringComparer.Ordinal)).ToList()))
                         .SubtleButton().AutomationName("Remove row").Width(28));
@@ -87,7 +129,7 @@ public sealed class EditableTable : Component<EditableTableProps>
         }
 
         var actions = new List<Element>();
-        if (Props.AllowAddRow)
+        if (allowAddRow)
         {
             actions.Add(Button("+ Add row", () =>
                 {

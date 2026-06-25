@@ -1,24 +1,31 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Microsoft.UI.Reactor;
 using Microsoft.UI.Reactor.Core;
+using Windows.ApplicationModel.DataTransfer;
+using Windows.Storage;
 using static Microsoft.UI.Reactor.Factories;
 using DemoBoards_WinUI;
 
 namespace DemoBoards_WinUI.Controls.Shared;
 
 /// <summary>
-/// Mirrors <c>FileUpload.jsx</c> — a file-picker control. Because WinUI has no drag-drop browser surface,
-/// this opens the native picker (<see cref="NativeFilePicker"/>) on click and normalises the selection
-/// into an array handed to <c>OnFiles</c>. <c>Variant</c> selects a plain button or a bordered dropzone.
+/// Mirrors <c>FileUpload.jsx</c> — a file-picker / drop surface. Opens the native picker
+/// (<see cref="NativeFilePicker"/>) on tap, honouring the <c>Accept</c> filter, and (when
+/// <c>EnableDrop</c>) accepts files dropped onto the surface — normalising the selection into an array
+/// handed to <c>OnFiles</c>. <c>Variant</c> <c>"dropzone"</c> renders the clickable surface (its visible
+/// content is <c>Children</c>); <c>"input"</c> renders nothing and is driven imperatively via the
+/// <c>OnReady(open)</c> callback (the parity equivalent of the frontend ref's <c>open()</c> method).
 /// </summary>
+/// <remarks>DOM-only props (<c>as</c>, <c>className</c>/<c>activeClassName</c>/<c>disabledClassName</c>) are dropped.</remarks>
 public sealed record FileUploadProps(
+    Action<IReadOnlyList<NativeAttachmentFile>>? OnFiles = null,
+    IReadOnlyList<string>? Accept = null,
     bool Multiple = false,
     bool Disabled = false,
     string Variant = "dropzone",
-    string Label = "Choose files",
-    Action<IReadOnlyList<NativeAttachmentFile>>? OnFiles = null,
+    bool EnableDrop = true,
+    Action<Action>? OnReady = null,
     Element? Children = null);
 
 public sealed class FileUpload : Component<FileUploadProps>
@@ -26,7 +33,6 @@ public sealed class FileUpload : Component<FileUploadProps>
     public override Element Render()
     {
         AppTheme theme = UseContext(AppThemeContext.Current);
-        var (files, setFiles) = UseState<IReadOnlyList<NativeAttachmentFile>>(Array.Empty<NativeAttachmentFile>());
 
         async void Open()
         {
@@ -35,34 +41,58 @@ public sealed class FileUpload : Component<FileUploadProps>
                 return;
             }
 
-            IReadOnlyList<NativeAttachmentFile> picked = await NativeFilePicker.PickMultipleAttachmentsAsync(Props.Multiple);
-            if (picked.Count == 0)
+            IReadOnlyList<NativeAttachmentFile> picked = await NativeFilePicker.PickMultipleAttachmentsAsync(Props.Multiple, Props.Accept);
+            if (picked.Count > 0)
             {
-                return;
+                Props.OnFiles?.Invoke(picked);
             }
-
-            setFiles(picked);
-            Props.OnFiles?.Invoke(picked);
         }
 
-        Element trigger = Button(Props.Label, () => Open())
-            .AutomationName(Props.Label)
-            .Set(button => button.IsEnabled = !Props.Disabled);
+        UseEffect(() =>
+        {
+            Props.OnReady?.Invoke(Open);
+            return null;
+        }, "file-upload-ready");
 
-        Element surface = Props.Variant == "dropzone"
-            ? Border(VStack(6, Props.Children ?? Empty(), trigger))
-                .Padding(14)
-                .WithBorder(theme.CardBorder, 1)
-                .CornerRadius(10)
-            : trigger;
+        if (Props.Variant == "input")
+        {
+            return Empty();
+        }
 
-        Element chips = files.Count == 0
-            ? Empty()
-            : VStack(2, files
-                .Select(file => (Element)TextBlock($"{file.Name} ({FormatSize(file.Size)})").FontSize(12).Opacity(0.8).Foreground(theme.TextPrimary))
-                .ToArray());
+        Element content = Props.Children ?? TextBlock("Choose files").Foreground(theme.TextPrimary);
 
-        return VStack(6, surface, chips);
+        return Border(content)
+            .Padding(14)
+            .Background(theme.Layer)
+            .WithBorder(theme.CardBorder, 1)
+            .CornerRadius(10)
+            .AutomationName("File upload")
+            .Set(border =>
+            {
+                border.Opacity = Props.Disabled ? 0.5 : 1.0;
+                border.Tapped += (_, _) => Open();
+                if (!Props.EnableDrop)
+                {
+                    return;
+                }
+
+                border.AllowDrop = true;
+                border.DragOver += (_, e) => e.AcceptedOperation = DataPackageOperation.Copy;
+                border.Drop += async (_, e) =>
+                {
+                    if (Props.Disabled || !e.DataView.Contains(StandardDataFormats.StorageItems))
+                    {
+                        return;
+                    }
+
+                    IReadOnlyList<IStorageItem> items = await e.DataView.GetStorageItemsAsync();
+                    IReadOnlyList<NativeAttachmentFile> files = await NativeFilePicker.ReadAttachmentsAsync(items);
+                    if (files.Count > 0)
+                    {
+                        Props.OnFiles?.Invoke(files);
+                    }
+                };
+            });
     }
 
     internal static string FormatSize(long size)

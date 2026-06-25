@@ -173,7 +173,151 @@ public sealed record FieldSchema(
     int? ColSpan = null,
     int? Rows = null,
     bool Multiline = false,
-    Func<object?>? GetOptions = null);
+    Func<object?>? GetOptions = null)
+{
+    /// <summary>
+    /// Parses a plain data field descriptor (the JSON-schema-ish <c>properties.&lt;key&gt;</c> object the
+    /// frontend passes) into a typed <see cref="FieldSchema"/>. Accepts a dictionary, an already-typed
+    /// <see cref="FieldSchema"/>, or anything else (treated as an empty schema). A <c>getOptions</c>
+    /// callback (<see cref="Func{Object}"/>) is carried through unchanged.
+    /// </summary>
+    public static FieldSchema FromData(object? data)
+    {
+        if (data is FieldSchema ready)
+        {
+            return ready;
+        }
+
+        if (data is not IReadOnlyDictionary<string, object?> map)
+        {
+            return new FieldSchema();
+        }
+
+        return new FieldSchema(
+            Type: BoardData.Str(map, "type"),
+            Format: BoardData.Str(map, "format"),
+            Title: BoardData.Str(map, "title"),
+            Description: BoardData.Str(map, "description"),
+            Hint: BoardData.Str(map, "hint"),
+            Placeholder: BoardData.Str(map, "placeholder"),
+            Enum: BoardData.List(map, "enum"),
+            EnumNames: BoardData.StrList(map, "enumNames"),
+            OneOf: ParseOneOf(BoardData.List(map, "oneOf")),
+            Options: BoardData.List(map, "options"),
+            Items: map.ContainsKey("items") ? FromData(map["items"]) : null,
+            Minimum: BoardData.Dbl(map, "minimum"),
+            Maximum: BoardData.Dbl(map, "maximum"),
+            MinLength: BoardData.Int(map, "minLength"),
+            MaxLength: BoardData.Int(map, "maxLength"),
+            Pattern: BoardData.Str(map, "pattern"),
+            ReadOnly: BoardData.Bool(map, "readOnly"),
+            Disabled: BoardData.Bool(map, "disabled"),
+            ColSpan: BoardData.Int(map, "colSpan"),
+            Rows: BoardData.Int(map, "rows"),
+            Multiline: BoardData.Bool(map, "multiline"),
+            GetOptions: BoardData.Func(map, "getOptions"));
+    }
+
+    private static IReadOnlyList<OneOfEntry>? ParseOneOf(IReadOnlyList<object?>? list)
+    {
+        if (list is null)
+        {
+            return null;
+        }
+
+        var entries = new List<OneOfEntry>(list.Count);
+        foreach (object? item in list)
+        {
+            entries.Add(item switch
+            {
+                OneOfEntry ready => ready,
+                IReadOnlyDictionary<string, object?> m => new OneOfEntry(BoardData.Get(m, "const"), BoardData.Str(m, "title")),
+                _ => new OneOfEntry(item),
+            });
+        }
+
+        return entries;
+    }
+}
 
 /// <summary>A labelled enum entry — mirrors JSON Schema <c>oneOf: [{ const, title }]</c>.</summary>
 public sealed record OneOfEntry(object? Const, string? Title = null);
+
+/// <summary>
+/// Small readers that coerce a loosely-typed data map (the plain-object props the components accept)
+/// into the scalars, lists and callbacks the typed records need. Keeps the data → record conversion
+/// in one place so every component parses props the same way.
+/// </summary>
+internal static class BoardData
+{
+    internal static readonly IReadOnlyDictionary<string, object?> Empty =
+        new Dictionary<string, object?>(StringComparer.Ordinal);
+
+    internal static IReadOnlyDictionary<string, object?> AsMap(object? value) =>
+        value as IReadOnlyDictionary<string, object?> ?? Empty;
+
+    internal static object? Get(IReadOnlyDictionary<string, object?> map, string key) =>
+        map.TryGetValue(key, out object? value) ? value : null;
+
+    internal static string? Str(IReadOnlyDictionary<string, object?> map, string key)
+    {
+        object? value = Get(map, key);
+        return value is null ? null : BoardShared.Stringify(value);
+    }
+
+    internal static bool Bool(IReadOnlyDictionary<string, object?> map, string key) =>
+        Get(map, key) switch
+        {
+            bool b => b,
+            string s when bool.TryParse(s, out bool parsed) => parsed,
+            _ => false,
+        };
+
+    internal static bool BoolOr(IReadOnlyDictionary<string, object?> map, string key, bool fallback) =>
+        Get(map, key) switch
+        {
+            bool b => b,
+            string s when bool.TryParse(s, out bool parsed) => parsed,
+            _ => fallback,
+        };
+
+    internal static double? Dbl(IReadOnlyDictionary<string, object?> map, string key) =>
+        BoardShared.AsNumber(Get(map, key));
+
+    internal static int? Int(IReadOnlyDictionary<string, object?> map, string key)
+    {
+        double? value = BoardShared.AsNumber(Get(map, key));
+        return value.HasValue ? (int)Math.Round(value.Value) : null;
+    }
+
+    internal static IReadOnlyList<object?>? List(IReadOnlyDictionary<string, object?> map, string key) =>
+        ToList(Get(map, key));
+
+    internal static IReadOnlyList<object?>? ToList(object? value)
+    {
+        switch (value)
+        {
+            case null:
+            case string:
+                return null;
+            case IReadOnlyList<object?> ready:
+                return ready;
+            case System.Collections.IEnumerable seq:
+                var list = new List<object?>();
+                foreach (object? item in seq)
+                {
+                    list.Add(item);
+                }
+
+                return list;
+            default:
+                return null;
+        }
+    }
+
+    internal static IReadOnlyList<string>? StrList(IReadOnlyDictionary<string, object?> map, string key) =>
+        List(map, key)?.Select(BoardShared.Stringify).ToList();
+
+    internal static Func<object?>? Func(IReadOnlyDictionary<string, object?> map, string key) =>
+        Get(map, key) as Func<object?>;
+}

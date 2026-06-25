@@ -1,8 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Microsoft.UI.Input;
 using Microsoft.UI.Reactor;
 using Microsoft.UI.Reactor.Core;
+using Windows.System;
+using Windows.UI.Core;
 using static Microsoft.UI.Reactor.Factories;
 using DemoBoards_WinUI;
 
@@ -12,19 +15,28 @@ namespace DemoBoards_WinUI.Controls.Shared;
 public sealed record MessageSubmitPayload(string Text, IReadOnlyList<NativeAttachmentFile> Files);
 
 /// <summary>
-/// Mirrors <c>MessageWithAttachmentsInput.jsx</c> — a text field + attachment picker + staged-file chips
-/// behind a single submit action. It owns its own text/staged-file state; the staged files and trimmed
-/// text are handed to <c>OnSubmit</c> together. <c>RequireText</c>/<c>RequireAttachment</c> gate submit.
+/// Mirrors <c>MessageWithAttachmentsInput.jsx</c> — a text field + attachment picker + (optionally)
+/// staged-file chips behind a single submit action. It owns its own text/staged-file state. Two
+/// attachment models: <c>Staged</c> (default) keeps files as chips and hands them to <c>OnSubmit({text,files})</c>;
+/// immediate (<c>Staged=false</c>) forwards each selection to <c>OnAttach</c> right away while <c>OnSubmit</c>
+/// only carries the text. <c>RequireText</c>/<c>RequireAttachment</c> gate submit; <c>SubmitOnEnter</c>
+/// submits on Enter (Shift+Enter inserts a newline when <c>Multiline</c>).
 /// </summary>
+/// <remarks>DOM-only render/style slots (className, dropzone/attach/submit content, renderChip) are dropped.</remarks>
 public sealed record MessageWithAttachmentsInputProps(
+    Action<MessageSubmitPayload>? OnSubmit = null,
+    Action<IReadOnlyList<NativeAttachmentFile>>? OnAttach = null,
+    bool Staged = true,
     bool Multiple = false,
     bool Disabled = false,
-    bool Multiline = false,
-    string Placeholder = "",
-    string SubmitLabel = "Send",
+    IReadOnlyList<string>? Accept = null,
     bool RequireText = false,
     bool RequireAttachment = false,
-    Action<MessageSubmitPayload>? OnSubmit = null);
+    bool Multiline = false,
+    bool? AutoResize = null,
+    string Placeholder = "",
+    bool SubmitOnEnter = true,
+    string SubmitLabel = "Send");
 
 public sealed class MessageWithAttachmentsInput : Component<MessageWithAttachmentsInputProps>
 {
@@ -34,6 +46,33 @@ public sealed class MessageWithAttachmentsInput : Component<MessageWithAttachmen
         var (text, setText) = UseState(string.Empty);
         var (files, setFiles) = UseState<IReadOnlyList<NativeAttachmentFile>>(Array.Empty<NativeAttachmentFile>());
 
+        void AddFiles(IReadOnlyList<NativeAttachmentFile> incoming)
+        {
+            if (incoming.Count == 0)
+            {
+                return;
+            }
+
+            IReadOnlyList<NativeAttachmentFile> accepted = (Props.Multiple ? incoming : incoming.Take(1)).ToList();
+            if (Props.Staged)
+            {
+                var merged = files.ToList();
+                foreach (NativeAttachmentFile file in accepted)
+                {
+                    if (!merged.Any(entry => entry.Name == file.Name && entry.Size == file.Size))
+                    {
+                        merged.Add(file);
+                    }
+                }
+
+                setFiles(merged);
+            }
+            else
+            {
+                Props.OnAttach?.Invoke(accepted);
+            }
+        }
+
         async void Attach()
         {
             if (Props.Disabled)
@@ -41,23 +80,8 @@ public sealed class MessageWithAttachmentsInput : Component<MessageWithAttachmen
                 return;
             }
 
-            IReadOnlyList<NativeAttachmentFile> picked = await NativeFilePicker.PickMultipleAttachmentsAsync(Props.Multiple);
-            if (picked.Count == 0)
-            {
-                return;
-            }
-
-            IEnumerable<NativeAttachmentFile> accepted = Props.Multiple ? picked : picked.Take(1);
-            var merged = files.ToList();
-            foreach (NativeAttachmentFile file in accepted)
-            {
-                if (!merged.Any(entry => entry.Name == file.Name && entry.Size == file.Size))
-                {
-                    merged.Add(file);
-                }
-            }
-
-            setFiles(merged);
+            IReadOnlyList<NativeAttachmentFile> picked = await NativeFilePicker.PickMultipleAttachmentsAsync(Props.Multiple, Props.Accept);
+            AddFiles(picked);
         }
 
         string trimmed = text.Trim();
@@ -84,7 +108,7 @@ public sealed class MessageWithAttachmentsInput : Component<MessageWithAttachmen
             setFiles(Array.Empty<NativeAttachmentFile>());
         }
 
-        Element chips = hasFiles
+        Element chips = Props.Staged && hasFiles
             ? VStack(2, files
                 .Select((file, index) => (Element)HStack(6,
                     TextBlock($"{file.Name} ({FileUpload.FormatSize(file.Size)})").FontSize(12).Foreground(theme.TextPrimary).Flex(grow: 1),
@@ -93,12 +117,39 @@ public sealed class MessageWithAttachmentsInput : Component<MessageWithAttachmen
                 .ToArray())
             : Empty();
 
+        bool autoResize = Props.AutoResize ?? Props.Multiline;
         var input = TextBox(text, setText).PlaceholderText(Props.Placeholder).Flex(grow: 1);
-        Element field = Props.Multiline ? input.AcceptsReturn(true).TextWrapping(Microsoft.UI.Xaml.TextWrapping.Wrap) : input;
+        var field = Props.Multiline
+            ? input.AcceptsReturn(true).TextWrapping(Microsoft.UI.Xaml.TextWrapping.Wrap)
+            : input;
+
+        Element configured = field.Set(box =>
+        {
+            box.IsEnabled = !Props.Disabled;
+            if (autoResize)
+            {
+                box.MaxHeight = 160;
+            }
+
+            box.KeyDown += (_, e) =>
+            {
+                if (!Props.SubmitOnEnter || e.Key != VirtualKey.Enter)
+                {
+                    return;
+                }
+
+                bool shift = (InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Shift) & CoreVirtualKeyStates.Down) == CoreVirtualKeyStates.Down;
+                if (!Props.Multiline || !shift)
+                {
+                    e.Handled = true;
+                    Submit();
+                }
+            };
+        });
 
         Element row = HStack(6,
             Button("\uE723", () => Attach()).SubtleButton().AutomationName("Attach files").Set(button => button.IsEnabled = !Props.Disabled),
-            field,
+            configured,
             Button(Props.SubmitLabel, Submit).AccentButton().AutomationName(Props.SubmitLabel).Set(button => button.IsEnabled = canSubmit));
 
         return VStack(6, chips, row);

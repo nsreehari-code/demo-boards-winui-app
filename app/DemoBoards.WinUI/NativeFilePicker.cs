@@ -55,9 +55,12 @@ public static class NativeFilePicker
         return ReadAttachmentsInternalAsync(items ?? Array.Empty<IStorageItem>());
     }
 
-    public static async Task<IReadOnlyList<NativeAttachmentFile>> PickMultipleAttachmentsAsync(bool allowMultiple = true)
+    public static Task<IReadOnlyList<NativeAttachmentFile>> PickMultipleAttachmentsAsync(bool allowMultiple = true)
+        => PickMultipleAttachmentsAsync(allowMultiple, null);
+
+    public static async Task<IReadOnlyList<NativeAttachmentFile>> PickMultipleAttachmentsAsync(bool allowMultiple, IReadOnlyList<string>? fileTypes)
     {
-        FileOpenPicker picker = CreatePicker();
+        FileOpenPicker picker = CreatePicker(fileTypes);
         if (!allowMultiple)
         {
             StorageFile? file = await picker.PickSingleFileAsync();
@@ -85,21 +88,68 @@ public static class NativeFilePicker
         return attachments;
     }
 
-    private static FileOpenPicker CreatePicker()
+    private static FileOpenPicker CreatePicker(IReadOnlyList<string>? fileTypes)
     {
         var picker = new FileOpenPicker
         {
             SuggestedStartLocation = PickerLocationId.DocumentsLibrary,
             ViewMode = PickerViewMode.List
         };
-        picker.FileTypeFilter.Add("*");
+        foreach (string filter in NormalizeFileTypes(fileTypes))
+        {
+            picker.FileTypeFilter.Add(filter);
+        }
+
         InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(App.Current.MainWindow));
         return picker;
     }
 
+    /// <summary>
+    /// Maps the frontend <c>accept</c> tokens (extensions, MIME types or wildcards) to WinUI
+    /// <see cref="FileOpenPicker.FileTypeFilter"/> entries. Only concrete <c>.ext</c> tokens map
+    /// cleanly; MIME types / wildcards fall back to <c>*</c> (the picker requires at least one entry).
+    /// </summary>
+    private static IReadOnlyList<string> NormalizeFileTypes(IReadOnlyList<string>? fileTypes)
+    {
+        if (fileTypes is null || fileTypes.Count == 0)
+        {
+            return new[] { "*" };
+        }
+
+        var filters = new List<string>();
+        bool wildcard = false;
+        foreach (string token in fileTypes)
+        {
+            string trimmed = (token ?? string.Empty).Trim();
+            if (trimmed.Length == 0)
+            {
+                continue;
+            }
+
+            if (trimmed == "*" || trimmed.Contains('/') || trimmed.Contains('*'))
+            {
+                wildcard = true;
+                continue;
+            }
+
+            string ext = trimmed.StartsWith('.') ? trimmed : "." + trimmed;
+            if (!filters.Contains(ext, StringComparer.OrdinalIgnoreCase))
+            {
+                filters.Add(ext);
+            }
+        }
+
+        if (wildcard || filters.Count == 0)
+        {
+            return new[] { "*" };
+        }
+
+        return filters;
+    }
+
     private static async Task<StorageFile?> PickSingleJsonFileAsync()
     {
-        FileOpenPicker picker = CreatePicker();
+        FileOpenPicker picker = CreatePicker(null);
         picker.FileTypeFilter.Clear();
         picker.FileTypeFilter.Add(".json");
         return await picker.PickSingleFileAsync();

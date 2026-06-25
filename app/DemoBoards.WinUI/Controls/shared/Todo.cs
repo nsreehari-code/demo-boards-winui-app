@@ -9,27 +9,46 @@ using DemoBoards_WinUI;
 
 namespace DemoBoards_WinUI.Controls.Shared;
 
-/// <summary>One todo entry — mirrors the frontend item shape <c>{ text, done }</c>.</summary>
-public sealed record TodoItem(string Text, bool Done = false);
+/// <summary>
+/// One todo entry — the typed conversion target the component builds internally from each plain
+/// <c>{ text, done }</c> data object.
+/// </summary>
+public sealed record TodoItem(string Text, bool Done = false)
+{
+    /// <summary>Parses a frontend-shaped item data object into a typed <see cref="TodoItem"/>.</summary>
+    public static TodoItem FromData(IReadOnlyDictionary<string, object?>? data)
+    {
+        IReadOnlyDictionary<string, object?> map = data ?? BoardData.Empty;
+        return new TodoItem(BoardData.Str(map, "text") ?? string.Empty, BoardData.Bool(map, "done"));
+    }
+
+    /// <summary>Projects this item back to the plain <c>{ text, done }</c> data object the callback emits.</summary>
+    public IReadOnlyDictionary<string, object?> ToData() =>
+        new Dictionary<string, object?> { ["text"] = Text, ["done"] = Done };
+}
 
 /// <summary>
 /// Mirrors <c>Todo.jsx</c> — a self-contained todo list. Owns its draft items, the add composer and
-/// per-item toggle/remove; <c>OnSave</c> fires with the committed items whenever the list mutates.
+/// per-item toggle/remove; <c>BaseItems</c> is the plain frontend data array (<c>[{ text, done }]</c>)
+/// and <c>OnSave</c> fires with the committed items as the same plain data whenever the list mutates.
 /// </summary>
-public sealed record TodoProps(IReadOnlyList<TodoItem> BaseItems, Action<IReadOnlyList<TodoItem>>? OnSave = null);
+public sealed record TodoProps(
+    IReadOnlyList<IReadOnlyDictionary<string, object?>>? BaseItems = null,
+    Action<IReadOnlyList<IReadOnlyDictionary<string, object?>>>? OnSave = null);
 
 public sealed class Todo : Component<TodoProps>
 {
     public override Element Render()
     {
         AppTheme theme = UseContext(AppThemeContext.Current);
-        var (pending, setPending) = UseState<IReadOnlyList<TodoItem>>(Props.BaseItems ?? Array.Empty<TodoItem>());
+        var (pending, setPending) = UseState<IReadOnlyList<TodoItem>>(
+            (Props.BaseItems ?? Array.Empty<IReadOnlyDictionary<string, object?>>()).Select(TodoItem.FromData).ToList());
         var (composerText, setComposerText) = UseState(string.Empty);
 
         void Save(IReadOnlyList<TodoItem> next)
         {
             setPending(next);
-            Props.OnSave?.Invoke(next);
+            Props.OnSave?.Invoke(next.Select(item => item.ToData()).ToList());
         }
 
         Element[] rows = pending.Select((item, index) =>
