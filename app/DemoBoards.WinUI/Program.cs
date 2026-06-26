@@ -12,6 +12,12 @@ public static class Program
     [STAThread]
     public static void Main()
     {
+        if (Array.Exists(Environment.GetCommandLineArgs(), arg => string.Equals(arg, "--render-harness", StringComparison.OrdinalIgnoreCase)))
+        {
+            RenderHarness.RunAndExit();
+            return;
+        }
+
         App.Current.Start();
 
         try

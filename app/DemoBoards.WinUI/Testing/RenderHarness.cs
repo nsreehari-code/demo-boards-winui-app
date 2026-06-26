@@ -1,0 +1,414 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using DemoBoards_WinUI.Controls.Shared;
+using Microsoft.UI.Dispatching;
+using Microsoft.UI.Reactor;
+using Microsoft.UI.Reactor.Core;
+using Microsoft.UI.Reactor.Hosting;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
+using static Microsoft.UI.Reactor.Factories;
+
+namespace DemoBoards_WinUI;
+
+/// <summary>
+/// Reactor-level render parity harness (run via <c>--render-harness</c>). Unlike the data-only
+/// ConverterHarness, this actually mounts each shared component through the real
+/// <see cref="ReactorApp"/> reconciler on a hidden, off-screen window and walks the produced native
+/// WinUI visual tree — asserting that the plain-data props each component takes are reconciled into
+/// the expected <c>Button</c>/<c>TextBlock</c>/<c>CheckBox</c>/<c>ComboBox</c> elements. It prints
+/// <c>[i/N] PASS/FAIL</c> lines plus a final banner, mirroring the other harnesses.
+/// </summary>
+internal static class RenderHarness
+{
+    internal static Window? Window;
+    internal static Border?[] Slots = Array.Empty<Border?>();
+    internal static readonly List<(string Name, bool Pass, string? Detail)> Results = new();
+    internal static IReadOnlyList<RenderCase>? Cases;
+
+    private static bool scheduled;
+    private static bool finished;
+
+    public static void RunAndExit()
+    {
+        try
+        {
+            ReactorApp.Run<RenderHarnessRoot>(
+                "DemoBoards.RenderHarness",
+                width: 1024,
+                height: 768,
+                configure: host =>
+                {
+                    XamlInterop.Register(host.Reconciler);
+                    Window = host.Window;
+                    MoveOffscreen(host.Window);
+                });
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[harness] render host crashed: {ex}");
+            Environment.ExitCode = 1;
+            return;
+        }
+
+        if (!finished)
+        {
+            Console.Error.WriteLine("[harness] render host exited before assertions ran");
+            Environment.ExitCode = 1;
+        }
+    }
+
+    // The window must stay activated (so layout/render run) but should not flash on-screen; park it
+    // far off the visible desktop instead of minimising (a minimised window skips layout).
+    private static void MoveOffscreen(Window window)
+    {
+        Microsoft.UI.Windowing.AppWindow? appWindow = window.AppWindow;
+        appWindow?.MoveAndResize(new Windows.Graphics.RectInt32(-4000, -4000, 1024, 768));
+    }
+
+    internal static void ScheduleAssertions()
+    {
+        if (scheduled)
+        {
+            return;
+        }
+
+        scheduled = true;
+
+        DispatcherQueue? queue = DispatcherQueue.GetForCurrentThread();
+        if (queue is null)
+        {
+            RunAssertions();
+            return;
+        }
+
+        // Low priority runs after the first layout/render pass, so the visual tree is realised.
+        queue.TryEnqueue(DispatcherQueuePriority.Low, RunAssertions);
+    }
+
+    private static void RunAssertions()
+    {
+        IReadOnlyList<RenderCase> cases = Cases ?? Array.Empty<RenderCase>();
+        for (int i = 0; i < cases.Count; i++)
+        {
+            bool pass;
+            string? detail;
+            try
+            {
+                Border? border = i < Slots.Length ? Slots[i] : null;
+                if (border is null)
+                {
+                    pass = false;
+                    detail = "no element captured";
+                }
+                else
+                {
+                    border.UpdateLayout();
+                    (pass, detail) = cases[i].Assert(border);
+                }
+            }
+            catch (Exception ex)
+            {
+                pass = false;
+                detail = $"{ex.GetType().Name}: {ex.Message}";
+            }
+
+            Results.Add((cases[i].Name, pass, detail));
+        }
+
+        Finish();
+    }
+
+    private static void Finish()
+    {
+        int n = Results.Count;
+        int failures = 0;
+        for (int i = 0; i < n; i++)
+        {
+            (string name, bool pass, string? detail) = Results[i];
+            if (!pass)
+            {
+                failures++;
+            }
+
+            Console.WriteLine($"[{i + 1}/{n}] {(pass ? "PASS" : "FAIL")} {name}{(pass ? string.Empty : $" -> {detail}")}");
+        }
+
+        if (failures == 0 && n > 0)
+        {
+            Console.WriteLine("[harness] ALL RENDER CHECKS PASSED");
+            Environment.ExitCode = 0;
+        }
+        else
+        {
+            Console.Error.WriteLine($"[harness] {(n == 0 ? "NO" : failures.ToString())} RENDER CHECK(S) FAILED");
+            Environment.ExitCode = 1;
+        }
+
+        finished = true;
+
+        try
+        {
+            Application.Current.Exit();
+        }
+        catch
+        {
+            // Best effort — the process exit code is already set.
+        }
+    }
+
+    // ---- Test cases -----------------------------------------------------------------------------
+
+    internal static IReadOnlyList<RenderCase> BuildCases() => new List<RenderCase>
+    {
+        new("Actions renders one button per data entry with labels + disabled state",
+            Component<Actions, ActionsProps>(new ActionsProps(Buttons: new IReadOnlyDictionary<string, object?>[]
+            {
+                D(("id", "save"), ("label", "Save"), ("style", "primary")),
+                D(("id", "cancel"), ("label", "Cancel")),
+                D(("id", "archive")),
+                D(("id", "del"), ("label", "Delete"), ("disabled", true)),
+            })),
+            border =>
+            {
+                List<Button> buttons = OfType<Button>(border);
+                List<string> labels = buttons.Select(Label).ToList();
+                if (buttons.Count != 4)
+                {
+                    return (false, $"expected 4 buttons, got {buttons.Count} [{string.Join("|", labels)}]");
+                }
+
+                if (!labels.SequenceEqual(new[] { "Save", "Cancel", "archive", "Delete" }))
+                {
+                    return (false, $"labels [{string.Join("|", labels)}] (archive should fall back to id)");
+                }
+
+                if (buttons[3].IsEnabled)
+                {
+                    return (false, "disabled button is still enabled");
+                }
+
+                if (buttons.Take(3).Any(button => !button.IsEnabled))
+                {
+                    return (false, "a non-disabled button was disabled");
+                }
+
+                return (true, null);
+            }),
+
+        new("Actions with no buttons renders nothing",
+            Component<Actions, ActionsProps>(new ActionsProps(Buttons: null)),
+            border =>
+            {
+                int count = OfType<Button>(border).Count;
+                return count == 0 ? (true, null) : (false, $"expected 0 buttons, got {count}");
+            }),
+
+        new("Todo renders a row per item with text + checkbox state plus a composer",
+            Component<Todo, TodoProps>(new TodoProps(BaseItems: new IReadOnlyDictionary<string, object?>[]
+            {
+                D(("text", "Buy milk"), ("done", true)),
+                D(("text", "Walk dog"), ("done", false)),
+            })),
+            border =>
+            {
+                List<string> texts = OfType<TextBlock>(border).Select(text => text.Text).ToList();
+                if (!texts.Contains("Buy milk") || !texts.Contains("Walk dog"))
+                {
+                    return (false, $"item texts [{string.Join("|", texts)}]");
+                }
+
+                List<CheckBox> checks = OfType<CheckBox>(border);
+                if (checks.Count < 2)
+                {
+                    return (false, $"expected >= 2 checkboxes, got {checks.Count}");
+                }
+
+                if (checks[0].IsChecked != true)
+                {
+                    return (false, "first item should be checked (done:true)");
+                }
+
+                if (checks[1].IsChecked != false)
+                {
+                    return (false, "second item should be unchecked (done:false)");
+                }
+
+                if (!OfType<TextBox>(border).Any(box => AutoName(box) == "Add todo item"))
+                {
+                    return (false, "composer text box missing");
+                }
+
+                return (true, null);
+            }),
+
+        new("EditableTable renders headers from spec columns and the empty placeholder",
+            Component<EditableTable, EditableTableProps>(new EditableTableProps(
+                Spec: D(
+                    ("schema", D(("properties", D(
+                        ("name", D(("title", "Name"))),
+                        ("qty", D(("title", "Qty"))))))),
+                    ("columns", new object?[] { "name", "qty" }),
+                    ("placeholder", "Nothing here")),
+                BaseRows: null)),
+            border =>
+            {
+                List<string> texts = OfType<TextBlock>(border).Select(text => text.Text).ToList();
+                if (!texts.Contains("name") || !texts.Contains("qty"))
+                {
+                    return (false, $"header cells [{string.Join("|", texts)}]");
+                }
+
+                if (!texts.Contains("Nothing here"))
+                {
+                    return (false, "empty-state placeholder missing");
+                }
+
+                if (!OfType<Button>(border).Any(button => AutoName(button) == "Add row"))
+                {
+                    return (false, "add-row button missing");
+                }
+
+                return (true, null);
+            }),
+
+        new("EditableTable with addRow:false and no columns shows only the placeholder",
+            Component<EditableTable, EditableTableProps>(new EditableTableProps(
+                Spec: D(("addRow", false)),
+                BaseRows: null)),
+            border =>
+            {
+                List<string> texts = OfType<TextBlock>(border).Select(text => text.Text).ToList();
+                int buttons = OfType<Button>(border).Count;
+                if (!texts.Contains("No data"))
+                {
+                    return (false, $"default placeholder missing, texts [{string.Join("|", texts)}]");
+                }
+
+                return buttons == 0 ? (true, null) : (false, $"expected 0 buttons, got {buttons}");
+            }),
+
+        new("Form renders the field label and save/cancel actions from the spec",
+            Component<Form, FormProps>(new FormProps(
+                Spec: D(
+                    ("fields", D(("properties", D(
+                        ("name", D(("type", "string"), ("title", "Full Name"))))))),
+                    ("saveLabel", "Apply")),
+                AlwaysShowActions: true)),
+            border =>
+            {
+                List<string> texts = OfType<TextBlock>(border).Select(text => text.Text).ToList();
+                if (!texts.Contains("Full Name"))
+                {
+                    return (false, $"field label missing, texts [{string.Join("|", texts)}]");
+                }
+
+                List<string> names = OfType<Button>(border).Select(Label).ToList();
+                if (!names.Contains("Apply"))
+                {
+                    return (false, $"save button (saveLabel) missing [{string.Join("|", names)}]");
+                }
+
+                if (!names.Contains("Discard"))
+                {
+                    return (false, $"cancel button missing [{string.Join("|", names)}]");
+                }
+
+                return (true, null);
+            }),
+
+        new("Select renders a ComboBox with normalized options and the selected index from Value",
+            Component<SelectControl, SelectControlProps>(new SelectControlProps(
+                Value: "b",
+                Options: new object?[] { "a", D(("value", "b"), ("label", "Bee")), "c" })),
+            border =>
+            {
+                List<ComboBox> combos = OfType<ComboBox>(border);
+                if (combos.Count != 1)
+                {
+                    return (false, $"expected 1 combobox, got {combos.Count}");
+                }
+
+                ComboBox combo = combos[0];
+                int itemCount = combo.Items.Count;
+                if (itemCount == 0 && combo.ItemsSource is IEnumerable source)
+                {
+                    itemCount = source.Cast<object?>().Count();
+                }
+
+                if (itemCount != 3)
+                {
+                    return (false, $"expected 3 options, got {itemCount}");
+                }
+
+                return combo.SelectedIndex == 1
+                    ? (true, null)
+                    : (false, $"expected SelectedIndex 1 (Value 'b'), got {combo.SelectedIndex}");
+            }),
+    };
+
+    // ---- Visual-tree helpers --------------------------------------------------------------------
+
+    private static IReadOnlyDictionary<string, object?> D(params (string Key, object? Value)[] entries) =>
+        entries.ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.Ordinal);
+
+    private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
+    {
+        int count = VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < count; i++)
+        {
+            DependencyObject child = VisualTreeHelper.GetChild(root, i);
+            yield return child;
+            foreach (DependencyObject grandChild in Descendants(child))
+            {
+                yield return grandChild;
+            }
+        }
+    }
+
+    private static List<T> OfType<T>(DependencyObject root)
+        where T : DependencyObject => Descendants(root).OfType<T>().ToList();
+
+    private static string? AutoName(DependencyObject element) => AutomationProperties.GetName(element);
+
+    private static string Label(Button button) =>
+        AutoName(button) is { Length: > 0 } name ? name : Convert.ToString(button.Content) ?? string.Empty;
+}
+
+/// <summary>A single render parity case: the component element to mount and an assertion over its tree.</summary>
+internal sealed record RenderCase(string Name, Element Node, Func<Border, (bool Pass, string? Detail)> Assert);
+
+/// <summary>
+/// Root component for the render harness. Mounts every <see cref="RenderHarness.BuildCases"/> entry
+/// (each wrapped in a captured <c>Border</c>) under a theme provider, then schedules the visual-tree
+/// assertions to run once after the first render commit.
+/// </summary>
+internal sealed class RenderHarnessRoot : Component
+{
+    public override Element Render()
+    {
+        App.Current.EnsureUiResources();
+
+        IReadOnlyList<RenderCase> cases = RenderHarness.Cases ??= RenderHarness.BuildCases();
+        if (RenderHarness.Slots.Length != cases.Count)
+        {
+            RenderHarness.Slots = new Border?[cases.Count];
+        }
+
+        var children = new Element[cases.Count];
+        for (int i = 0; i < cases.Count; i++)
+        {
+            int index = i;
+            children[i] = Border(cases[i].Node).Set(border => RenderHarness.Slots[index] = border);
+        }
+
+        UseEffect(() => RenderHarness.ScheduleAssertions());
+
+        return ScrollViewer(VStack(8, children))
+            .Provide(AppThemeContext.Current, AppTheme.FromResources());
+    }
+}
