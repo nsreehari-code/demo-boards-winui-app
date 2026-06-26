@@ -30,8 +30,8 @@ public sealed class EditableTable : Component<EditableTableProps>
 
         EditableTableSpec spec = EditableTableSpec.FromData(Props.Spec);
         IReadOnlyDictionary<string, FieldSchema> schemaProps = spec.Schema?.Properties ?? new Dictionary<string, FieldSchema>();
-        bool allowAddRow = spec.AddRow;
-        bool allowDeleteRow = spec.DeleteRow;
+        bool allowAddRow = spec.AllowAddRow;
+        bool allowDeleteRow = spec.AllowDeleteRow;
         string placeholder = spec.Placeholder;
         IReadOnlyList<string> columns = BoardShared.GetObjectColumns(rows, spec.Columns);
 

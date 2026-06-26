@@ -94,15 +94,15 @@ internal static class Program
                 && spec.Schema!.Properties!["qty"].Type == "integer"
                 && spec.Schema.Properties["qty"].Title == "Qty"
                 && spec.Columns is { Count: 1 } && spec.Columns![0] == "qty"
-                && spec.AddRow == false
-                && spec.DeleteRow
+                && spec.AllowAddRow == false
+                && spec.AllowDeleteRow
                 && spec.Placeholder == "None";
         }));
 
         checks.Add(("EditableTableSpec defaults (empty data) keep add/delete on", () =>
         {
             var spec = EditableTableSpec.FromData(null);
-            return spec.AddRow && spec.DeleteRow
+            return spec.AllowAddRow && spec.AllowDeleteRow
                 && spec.Placeholder == "No data"
                 && (spec.Schema?.Properties?.Count ?? 0) == 0;
         }));

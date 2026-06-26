@@ -98,8 +98,8 @@ public sealed record EditableTableSchema(
 public sealed record EditableTableSpec(
     EditableTableSchema? Schema = null,
     IReadOnlyList<string>? Columns = null,
-    bool AddRow = true,
-    bool DeleteRow = true,
+    bool AllowAddRow = true,
+    bool AllowDeleteRow = true,
     string Placeholder = "No data")
 {
     /// <summary>Parses the frontend-shaped <c>spec</c> data object into a typed <see cref="EditableTableSpec"/>.</summary>
