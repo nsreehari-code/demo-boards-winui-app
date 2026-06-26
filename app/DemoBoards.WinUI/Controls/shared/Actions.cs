@@ -9,27 +9,9 @@ using DemoBoards_WinUI;
 namespace DemoBoards_WinUI.Controls.Shared;
 
 /// <summary>
-/// One button in an <see cref="Actions"/> row — the typed conversion target the component builds
-/// internally from each plain <c>{ id, label?, style?, size?, disabled? }</c> data object.
-/// </summary>
-public sealed record ActionButton(string Id, string? Label = null, string? Style = null, string? Size = null, bool Disabled = false)
-{
-    /// <summary>Parses a frontend-shaped button data object into a typed <see cref="ActionButton"/>.</summary>
-    public static ActionButton FromData(IReadOnlyDictionary<string, object?>? data)
-    {
-        IReadOnlyDictionary<string, object?> map = data ?? BoardData.Empty;
-        return new ActionButton(
-            BoardData.Str(map, "id") ?? string.Empty,
-            BoardData.Str(map, "label"),
-            BoardData.Str(map, "style"),
-            BoardData.Str(map, "size"),
-            BoardData.Bool(map, "disabled"));
-    }
-}
-
-/// <summary>
 /// Mirrors <c>Actions.jsx</c> — a reusable button row. <c>Buttons</c> is the plain frontend data array
-/// (<c>[{ id, label?, style?, size?, disabled? }]</c>); <c>OnAction</c> fires with the button id.
+/// (<c>[{ id, label?, style?, size?, disabled? }]</c>); <c>OnAction</c> fires with the button id. Each
+/// entry is converted to an <see cref="ActionButton"/> internally (defined in DemoBoards.Shared).
 /// </summary>
 public sealed record ActionsProps(
     IReadOnlyList<IReadOnlyDictionary<string, object?>>? Buttons = null,

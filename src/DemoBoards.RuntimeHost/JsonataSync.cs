@@ -3,12 +3,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using DemoBoards_WinUI.Controls.Shared;
 using Microsoft.ClearScript.V8;
 
 namespace DemoBoards.RuntimeHost;
-
-/// <summary>A single JSONata validator — mirrors a frontend <c>[expr, message]</c> pair.</summary>
-public sealed record JsonataValidator(string Expr, string Message);
 
 /// <summary>
 /// Synchronous JSONata evaluation bridge — the C# counterpart of the frontend's <c>compileSync</c>

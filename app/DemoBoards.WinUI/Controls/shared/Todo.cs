@@ -10,27 +10,10 @@ using DemoBoards_WinUI;
 namespace DemoBoards_WinUI.Controls.Shared;
 
 /// <summary>
-/// One todo entry — the typed conversion target the component builds internally from each plain
-/// <c>{ text, done }</c> data object.
-/// </summary>
-public sealed record TodoItem(string Text, bool Done = false)
-{
-    /// <summary>Parses a frontend-shaped item data object into a typed <see cref="TodoItem"/>.</summary>
-    public static TodoItem FromData(IReadOnlyDictionary<string, object?>? data)
-    {
-        IReadOnlyDictionary<string, object?> map = data ?? BoardData.Empty;
-        return new TodoItem(BoardData.Str(map, "text") ?? string.Empty, BoardData.Bool(map, "done"));
-    }
-
-    /// <summary>Projects this item back to the plain <c>{ text, done }</c> data object the callback emits.</summary>
-    public IReadOnlyDictionary<string, object?> ToData() =>
-        new Dictionary<string, object?> { ["text"] = Text, ["done"] = Done };
-}
-
-/// <summary>
 /// Mirrors <c>Todo.jsx</c> — a self-contained todo list. Owns its draft items, the add composer and
 /// per-item toggle/remove; <c>BaseItems</c> is the plain frontend data array (<c>[{ text, done }]</c>)
 /// and <c>OnSave</c> fires with the committed items as the same plain data whenever the list mutates.
+/// Items are converted to/from the typed <see cref="TodoItem"/> internally (defined in DemoBoards.Shared).
 /// </summary>
 public sealed record TodoProps(
     IReadOnlyList<IReadOnlyDictionary<string, object?>>? BaseItems = null,

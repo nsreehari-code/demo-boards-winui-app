@@ -12,6 +12,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\DemoBoards.Shared\DemoBoards.Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
       <None Include="..\..\engine\GoldenHarness\js\golden-driver.js"
           Link="js\golden-driver.js"
           CopyToOutputDirectory="PreserveNewest" />

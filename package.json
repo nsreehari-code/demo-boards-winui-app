@@ -5,6 +5,7 @@
   "scripts": {
     "goldenharness": "dotnet run --project engine/GoldenHarness/GoldenHarness.csproj",
     "validatorharness": "dotnet run --project engine/ValidatorHarness/ValidatorHarness.csproj",
+    "converterharness": "dotnet run --project engine/ConverterHarness/ConverterHarness.csproj",
     "winui:guard:xaml": "node ./scripts/check-xaml-drift.mjs",
     "prewinui:build": "npm run winui:guard:xaml",
     "prewinui:start": "npm run winui:guard:xaml",

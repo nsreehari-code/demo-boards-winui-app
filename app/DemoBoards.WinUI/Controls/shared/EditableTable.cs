@@ -11,50 +11,10 @@ namespace DemoBoards_WinUI.Controls.Shared;
 /// <summary>
 /// Mirrors <c>EditableTable.jsx</c> — a self-contained editable grid. Owns its own draft rows (layered
 /// over <c>BaseRows</c>), derives columns from the spec / the row keys, and exposes inline cell
-/// editing plus add/delete-row and dirty-gated Discard / Save actions. Configuration travels as a single
-/// data <see cref="EditableTableSpec"/> record (schema properties, explicit columns, add/delete toggles,
-/// empty placeholder) — the parity equivalent of the frontend <c>spec</c> object.
+/// editing plus add/delete-row and dirty-gated Discard / Save actions. Configuration travels as the
+/// plain <c>spec</c> data object on <see cref="EditableTableProps.Spec"/> — converted internally via
+/// <see cref="EditableTableSpec.FromData"/> (defined in DemoBoards.Shared).
 /// </summary>
-/// <summary>The schema half of the table spec — the per-column <see cref="FieldSchema"/> map.</summary>
-public sealed record EditableTableSchema(
-    IReadOnlyDictionary<string, FieldSchema>? Properties = null);
-
-/// <summary>
-/// The typed table spec the component works with internally. Callers do <b>not</b> build this — they
-/// pass the plain <c>spec</c> data object on <see cref="EditableTableProps.Spec"/> and the component
-/// converts it via <see cref="FromData"/>, mirroring the frontend's plain <c>spec</c> object
-/// (<c>{ schema: { properties }, columns?, addRow?, deleteRow?, placeholder? }</c>).
-/// </summary>
-public sealed record EditableTableSpec(
-    EditableTableSchema? Schema = null,
-    IReadOnlyList<string>? Columns = null,
-    bool AddRow = true,
-    bool DeleteRow = true,
-    string Placeholder = "No data")
-{
-    /// <summary>Parses the frontend-shaped <c>spec</c> data object into a typed <see cref="EditableTableSpec"/>.</summary>
-    public static EditableTableSpec FromData(IReadOnlyDictionary<string, object?>? data)
-    {
-        IReadOnlyDictionary<string, object?> map = data ?? BoardData.Empty;
-
-        var properties = new Dictionary<string, FieldSchema>(StringComparer.Ordinal);
-        if (BoardData.Get(BoardData.AsMap(BoardData.Get(map, "schema")), "properties") is IReadOnlyDictionary<string, object?> propMap)
-        {
-            foreach (KeyValuePair<string, object?> entry in propMap)
-            {
-                properties[entry.Key] = FieldSchema.FromData(entry.Value);
-            }
-        }
-
-        return new EditableTableSpec(
-            new EditableTableSchema(properties),
-            BoardData.StrList(map, "columns"),
-            BoardData.BoolOr(map, "addRow", true),
-            BoardData.BoolOr(map, "deleteRow", true),
-            BoardData.Str(map, "placeholder") ?? "No data");
-    }
-}
-
 public sealed record EditableTableProps(
     IReadOnlyDictionary<string, object?>? Spec = null,
     IReadOnlyList<IReadOnlyDictionary<string, object?>>? BaseRows = null,

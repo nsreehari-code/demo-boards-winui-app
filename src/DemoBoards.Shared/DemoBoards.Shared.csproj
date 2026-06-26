@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Lightweight, framework-agnostic data layer for the shared board components.
+    Holds the plain-data -> typed-record converters (FromData) and the loosely
+    typed map readers (BoardData) so they can be unit-tested without a WinUI
+    host. Targets plain net10.0 (no -windows, no UI/V8 deps) so a console test
+    harness can reference it directly. Consumed by DemoBoards.RuntimeHost,
+    DemoBoards.WinUI, and the converter parity harness.
+
+    The root namespace intentionally stays DemoBoards_WinUI.Controls.Shared so
+    the existing component files reference these types without churn.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>DemoBoards_WinUI.Controls.Shared</RootNamespace>
+    <AssemblyName>DemoBoards.Shared</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+</Project>

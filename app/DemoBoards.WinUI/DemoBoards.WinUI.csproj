@@ -63,6 +63,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\DemoBoards.RuntimeHost\DemoBoards.RuntimeHost.csproj" />
+    <ProjectReference Include="..\..\src\DemoBoards.Shared\DemoBoards.Shared.csproj" />
   </ItemGroup>
 
   <!--
