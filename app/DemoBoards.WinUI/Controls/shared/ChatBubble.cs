@@ -29,7 +29,7 @@ public sealed class ChatBubble : Component<ChatBubbleProps>
     public static Element AssistantBubbleIcon() => TextBlock("\u2728").FontSize(13);
 
     /// <summary>Wraps an avatar in the muted shell used beside the bubble — mirrors <c>ChatIconShell</c>.</summary>
-    public static Element ChatIconShell(Element child) => Border(child).Set(border => border.Opacity = 0.55);
+    public static Element ChatIconShell(Element child) => Border(child).Opacity(0.55);
 
     public override Element Render()
     {
@@ -49,7 +49,7 @@ public sealed class ChatBubble : Component<ChatBubbleProps>
             }
 
             return Border(VStack(4, systemChildren.ToArray()))
-                .Set(border => border.HorizontalAlignment = HorizontalAlignment.Center);
+                .HAlign(HorizontalAlignment.Center);
         }
 
         bool isUser = Props.Variant == "user";

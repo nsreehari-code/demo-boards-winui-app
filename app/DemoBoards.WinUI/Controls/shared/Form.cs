@@ -234,12 +234,14 @@ public sealed class Form : Component<FormProps>
             control = TextBox(BoardShared.Stringify(value), text => setField(key, schema, text))
                 .AcceptsReturn(true)
                 .TextWrapping(Microsoft.UI.Xaml.TextWrapping.Wrap)
+                .AutomationName(title)
                 .Set(box => box.IsReadOnly = disabled);
         }
         else if (schema.Type is "number" or "integer")
         {
             double current = BoardShared.AsNumber(value) ?? 0d;
             control = NumberBox(current, number => setField(key, schema, number), schema.Placeholder ?? string.Empty)
+                .AutomationName(title)
                 .Set(box =>
                 {
                     box.IsEnabled = !disabled;
@@ -260,6 +262,7 @@ public sealed class Form : Component<FormProps>
         {
             control = TextBox(BoardShared.Stringify(value), text => setField(key, schema, text))
                 .PlaceholderText(schema.Placeholder ?? string.Empty)
+                .AutomationName(title)
                 .Set(box => box.IsReadOnly = disabled);
         }
 

@@ -35,13 +35,11 @@ public sealed class Actions : Component<ActionsProps>
     {
         string id = button.Id;
         string label = button.Label ?? button.Id;
-        var element = Button(label, () => Props.OnAction?.Invoke(id));
-
         bool accent = button.Style is "primary" or "success" or "accent";
-        var styled = accent ? element.AccentButton() : element.SubtleButton();
 
-        return styled
-            .AutomationName(label)
+        return (accent
+            ? Button(label, () => Props.OnAction?.Invoke(id)).AccentButton().AutomationName(label)
+            : Button(label, () => Props.OnAction?.Invoke(id)).SubtleButton().AutomationName(label))
             .Set(control => control.IsEnabled = !button.Disabled);
     }
 }

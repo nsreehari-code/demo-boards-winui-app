@@ -33,7 +33,8 @@ public sealed class PanelVertical : Component<PanelVerticalProps>
                 Icon: Props.Icon,
                 IconToggled: Props.IconToggled,
                 OnClick: () => Props.OnToggle?.Invoke(),
-                OnClickToggled: () => Props.OnToggle?.Invoke()));
+                OnClickToggled: () => Props.OnToggle?.Invoke(),
+                AriaLabel: Props.AriaLabel ?? Props.Title ?? "Toggle panel"));
 
         if (!Props.Expanded)
         {
@@ -49,7 +50,7 @@ public sealed class PanelVertical : Component<PanelVerticalProps>
             .Background(theme.CardBackground)
             .WithBorder(theme.CardBorder, 1)
             .CornerRadius(12)
-            .Set(border => border.MinWidth = 280)
+            .MinWidth(280)
             .AutomationName(Props.AriaLabel ?? Props.Title ?? "Panel");
 
         return VStack(8, panel, fab);

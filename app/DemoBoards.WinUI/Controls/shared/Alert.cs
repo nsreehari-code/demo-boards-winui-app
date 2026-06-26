@@ -23,7 +23,7 @@ public sealed class Alert : Component<AlertProps>
             .Width(10)
             .Height(10)
             .Fill(new SolidColorBrush(tone))
-            .Set(ellipse => ellipse.VerticalAlignment = VerticalAlignment.Center);
+            .VAlign(VerticalAlignment.Center);
 
         var body = new System.Collections.Generic.List<Element>
         {

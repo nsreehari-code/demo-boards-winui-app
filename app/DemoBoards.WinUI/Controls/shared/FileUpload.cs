@@ -52,7 +52,6 @@ public sealed class FileUpload : Component<FileUploadProps>
         UseEffect(() =>
         {
             Props.OnReady?.Invoke(Open);
-            return null;
         }, "file-upload-ready");
 
         if (Props.Variant == "input")

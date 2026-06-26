@@ -119,7 +119,10 @@ public sealed class MessageWithAttachmentsInput : Component<MessageWithAttachmen
             : Empty();
 
         bool autoResize = Props.AutoResize ?? Props.Multiline;
-        var input = TextBox(text, setText).PlaceholderText(Props.Placeholder).Flex(grow: 1);
+        var input = TextBox(text, setText)
+            .AutomationName(string.IsNullOrEmpty(Props.Placeholder) ? "Message" : Props.Placeholder)
+            .PlaceholderText(Props.Placeholder)
+            .Flex(grow: 1);
         var field = Props.Multiline
             ? input.AcceptsReturn(true).TextWrapping(Microsoft.UI.Xaml.TextWrapping.Wrap)
             : input;

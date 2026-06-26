@@ -75,7 +75,7 @@ public sealed class EditableTable : Component<EditableTableProps>
                             var next = BoardShared.MergeRows(rows);
                             next[capturedRow][column] = isNumber ? BoardShared.AsNumber(text) ?? 0d : text;
                             Commit(next);
-                        }).Flex(grow: 1);
+                        }).AutomationName($"{column} {capturedRow + 1}").Flex(grow: 1);
                 }));
 
                 if (allowDeleteRow)

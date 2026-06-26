@@ -86,6 +86,7 @@ public sealed class Table : Component<TableProps>
                     }
                 })
                 .SubtleButton()
+                .AutomationName(column)
                 .Flex(grow: 1);
         }).ToArray());
 

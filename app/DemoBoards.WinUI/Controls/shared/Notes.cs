@@ -30,7 +30,7 @@ public sealed class Notes : Component<NotesProps>
             .AcceptsReturn(true)
             .TextWrapping(TextWrapping.Wrap)
             .Foreground(theme.TextPrimary)
-            .Set(textBox => textBox.MinHeight = 160)
+            .MinHeight(160)
             .Flex(grow: 1);
 
         var actions = new List<Element>();

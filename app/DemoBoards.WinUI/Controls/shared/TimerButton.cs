@@ -81,7 +81,7 @@ public sealed class TimerButton : Component<TimerButtonProps>
             DispatcherQueue? queue = pending ? null : DispatcherQueue.GetForCurrentThread();
             if (queue is null)
             {
-                return null;
+                return () => { };
             }
 
             DispatcherQueueTimer timer = queue.CreateTimer();
@@ -96,13 +96,15 @@ public sealed class TimerButton : Component<TimerButtonProps>
         }, pending);
 
         // Auto-fire when the countdown elapses (frontend: effect on [remainingMs, pending, disabled]).
+        // Projected to a single scalar key so the dep compares by value instead of a freshly-boxed tuple.
+        int fireKey = (remainingMs <= 0 ? 1 : 0) | (pending ? 2 : 0) | (Props.Disabled ? 4 : 0);
         UseEffect(() =>
         {
             if (armedRef.Current && remainingMs <= 0 && !pending && !Props.Disabled)
             {
                 Fire();
             }
-        }, (remainingMs, pending, Props.Disabled));
+        }, fireKey);
 
         Element content = Props.Children != null
             ? Props.Children(new TimerButtonRenderState(remainingMs, pending))

@@ -18,7 +18,8 @@ public sealed record FloatingCircularButtonProps(
     string? Icon = null,
     string? IconToggled = null,
     Action? OnClick = null,
-    Action? OnClickToggled = null);
+    Action? OnClickToggled = null,
+    string? AriaLabel = null);
 
 public sealed class FloatingCircularButton : Component<FloatingCircularButtonProps>
 {
@@ -32,6 +33,7 @@ public sealed class FloatingCircularButton : Component<FloatingCircularButtonPro
 
         return Button(glyph, () => activeOnClick?.Invoke())
             .AccentButton()
+            .AutomationName(Props.AriaLabel ?? "Toggle")
             .Foreground(theme.TextPrimary)
             .Set(button =>
             {
