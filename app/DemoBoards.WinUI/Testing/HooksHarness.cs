@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json.Nodes;
+using DemoBoards_WinUI.Controls;
 using DemoBoards_WinUI.Hooks;
 
 namespace DemoBoards_WinUI;
@@ -188,6 +190,55 @@ internal static class HooksHarness
             && ChatMessages.ParseChatMessagesPayload(string.Empty).Count == 0
             && ChatMessages.ParseChatMessagesPayload(null).Count == 0
             && ChatMessages.ParseChatMessagesPayload("{\"status\":\"success\",\"data\":{}}").Count == 0));
+
+        // ---- UnwrapMcpToolPayload (useCardState) ---------------------------------
+        checks.Add(("UnwrapMcpToolPayload returns the inner data for a success envelope", () =>
+        {
+            JsonNode? data = HookComponent<InfiniteCanvasProps>.UnwrapMcpToolPayload(
+                "{\"status\":\"success\",\"data\":{\"value\":42}}");
+            return data is JsonObject && data["value"]?.GetValue<int>() == 42;
+        }));
+
+        checks.Add(("UnwrapMcpToolPayload throws the trimmed error text for a fail envelope", () =>
+        {
+            try
+            {
+                HookComponent<InfiniteCanvasProps>.UnwrapMcpToolPayload("{\"status\":\"fail\",\"error\":\"  boom  \"}");
+                return false;
+            }
+            catch (InvalidOperationException ex)
+            {
+                return ex.Message == "boom";
+            }
+        }));
+
+        checks.Add(("UnwrapMcpToolPayload throws a default message when fail carries no error", () =>
+        {
+            try
+            {
+                HookComponent<InfiniteCanvasProps>.UnwrapMcpToolPayload("{\"status\":\"fail\"}");
+                return false;
+            }
+            catch (InvalidOperationException ex)
+            {
+                return ex.Message == "MCP tool request failed";
+            }
+        }));
+
+        checks.Add(("UnwrapMcpToolPayload returns the payload as-is when there is no envelope", () =>
+        {
+            JsonNode? data = HookComponent<InfiniteCanvasProps>.UnwrapMcpToolPayload("{\"rows\":[1,2,3]}");
+            return data is JsonObject obj && obj["rows"] is JsonArray rows && rows.Count == 3;
+        }));
+
+        checks.Add(("UnwrapMcpToolPayload returns the root when a success envelope lacks data", () =>
+        {
+            JsonNode? data = HookComponent<InfiniteCanvasProps>.UnwrapMcpToolPayload("{\"status\":\"success\"}");
+            return data is JsonObject obj && obj["status"]?.GetValue<string>() == "success";
+        }));
+
+        checks.Add(("UnwrapMcpToolPayload returns null for invalid JSON", () =>
+            HookComponent<InfiniteCanvasProps>.UnwrapMcpToolPayload("not json") is null));
 
         var failures = 0;
         for (var i = 0; i < checks.Count; i++)
