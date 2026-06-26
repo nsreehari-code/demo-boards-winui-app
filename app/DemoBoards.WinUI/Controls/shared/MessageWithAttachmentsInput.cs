@@ -11,9 +11,6 @@ using DemoBoards_WinUI;
 
 namespace DemoBoards_WinUI.Controls.Shared;
 
-/// <summary>The payload handed to <c>OnSubmit</c> — mirrors <c>{ text, files }</c>.</summary>
-public sealed record MessageSubmitPayload(string Text, IReadOnlyList<NativeAttachmentFile> Files);
-
 /// <summary>
 /// Mirrors <c>MessageWithAttachmentsInput.jsx</c> — a text field + attachment picker + (optionally)
 /// staged-file chips behind a single submit action. It owns its own text/staged-file state. Two
@@ -24,8 +21,8 @@ public sealed record MessageSubmitPayload(string Text, IReadOnlyList<NativeAttac
 /// </summary>
 /// <remarks>DOM-only render/style slots (className, dropzone/attach/submit content, renderChip) are dropped.</remarks>
 public sealed record MessageWithAttachmentsInputProps(
-    Action<MessageSubmitPayload>? OnSubmit = null,
-    Action<IReadOnlyList<NativeAttachmentFile>>? OnAttach = null,
+    Action<IReadOnlyDictionary<string, object?>>? OnSubmit = null,
+    Action<IReadOnlyList<IReadOnlyDictionary<string, object?>>>? OnAttach = null,
     bool Staged = true,
     bool Multiple = false,
     bool Disabled = false,
@@ -69,7 +66,7 @@ public sealed class MessageWithAttachmentsInput : Component<MessageWithAttachmen
             }
             else
             {
-                Props.OnAttach?.Invoke(accepted);
+                Props.OnAttach?.Invoke(accepted.Select(file => file.ToData()).ToList());
             }
         }
 
@@ -103,7 +100,11 @@ public sealed class MessageWithAttachmentsInput : Component<MessageWithAttachmen
                 return;
             }
 
-            Props.OnSubmit?.Invoke(new MessageSubmitPayload(trimmed, files.ToList()));
+            Props.OnSubmit?.Invoke(new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["text"] = trimmed,
+                ["files"] = files.Select(file => file.ToData()).ToList(),
+            });
             setText(string.Empty);
             setFiles(Array.Empty<NativeAttachmentFile>());
         }

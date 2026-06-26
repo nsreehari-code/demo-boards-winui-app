@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Microsoft.UI.Reactor;
 using Microsoft.UI.Reactor.Core;
 using Windows.ApplicationModel.DataTransfer;
@@ -19,7 +20,7 @@ namespace DemoBoards_WinUI.Controls.Shared;
 /// </summary>
 /// <remarks>DOM-only props (<c>as</c>, <c>className</c>/<c>activeClassName</c>/<c>disabledClassName</c>) are dropped.</remarks>
 public sealed record FileUploadProps(
-    Action<IReadOnlyList<NativeAttachmentFile>>? OnFiles = null,
+    Action<IReadOnlyList<IReadOnlyDictionary<string, object?>>>? OnFiles = null,
     IReadOnlyList<string>? Accept = null,
     bool Multiple = false,
     bool Disabled = false,
@@ -44,7 +45,7 @@ public sealed class FileUpload : Component<FileUploadProps>
             IReadOnlyList<NativeAttachmentFile> picked = await NativeFilePicker.PickMultipleAttachmentsAsync(Props.Multiple, Props.Accept);
             if (picked.Count > 0)
             {
-                Props.OnFiles?.Invoke(picked);
+                Props.OnFiles?.Invoke(picked.Select(file => file.ToData()).ToList());
             }
         }
 
@@ -89,7 +90,7 @@ public sealed class FileUpload : Component<FileUploadProps>
                     IReadOnlyList<NativeAttachmentFile> files = await NativeFilePicker.ReadAttachmentsAsync(items);
                     if (files.Count > 0)
                     {
-                        Props.OnFiles?.Invoke(files);
+                        Props.OnFiles?.Invoke(files.Select(file => file.ToData()).ToList());
                     }
                 };
             });

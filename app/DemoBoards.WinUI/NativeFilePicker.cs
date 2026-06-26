@@ -15,7 +15,17 @@ public sealed record NativeAttachmentFile(
     string Name,
     string ContentType,
     byte[] Bytes,
-    long Size);
+    long Size)
+{
+    /// <summary>Projects to the plain <c>{ name, contentType, size, bytes }</c> data shape the file components emit.</summary>
+    public IReadOnlyDictionary<string, object?> ToData() => new Dictionary<string, object?>(StringComparer.Ordinal)
+    {
+        ["name"] = Name,
+        ["contentType"] = ContentType,
+        ["size"] = Size,
+        ["bytes"] = Bytes,
+    };
+}
 
 public static class NativeFilePicker
 {

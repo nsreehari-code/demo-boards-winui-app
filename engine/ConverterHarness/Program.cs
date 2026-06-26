@@ -175,6 +175,25 @@ internal static class Program
             return item is { Text: "x", Done: false };
         }));
 
+        // ---- TextFile.FromData --------------------------------------------------
+        checks.Add(("TextFile maps name/stored_name/size", () =>
+        {
+            var file = TextFile.FromData(Map(("name", "report.pdf"), ("stored_name", "abc123.pdf"), ("size", 2048)));
+            return file is { Name: "report.pdf", StoredName: "abc123.pdf" } && file.Size == 2048;
+        }));
+
+        checks.Add(("TextFile defaults missing fields to null", () =>
+        {
+            var file = TextFile.FromData(Map(("stored_name", "only.bin")));
+            return file is { Name: null, StoredName: "only.bin", Size: null };
+        }));
+
+        checks.Add(("TextFile treats non-dict input as empty", () =>
+        {
+            var file = TextFile.FromData("nope");
+            return file is { Name: null, StoredName: null, Size: null };
+        }));
+
         // ---- SelectOption.Normalize ---------------------------------------------
         checks.Add(("SelectOption normalizes a scalar", () =>
         {

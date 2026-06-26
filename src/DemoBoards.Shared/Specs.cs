@@ -161,3 +161,29 @@ public sealed record TodoItem(string Text, bool Done = false)
     public IReadOnlyDictionary<string, object?> ToData() =>
         new Dictionary<string, object?> { ["text"] = Text, ["done"] = Done };
 }
+
+/// <summary>
+/// A staged/stored file descriptor for the <c>Text</c> component's <c>file-links</c> format — the typed
+/// conversion target built internally from each plain <c>{ name, stored_name, size }</c> data object.
+/// </summary>
+public sealed record TextFile(string? Name = null, string? StoredName = null, double? Size = null)
+{
+    /// <summary>Parses a frontend-shaped file data object into a typed <see cref="TextFile"/>.</summary>
+    public static TextFile FromData(object? data)
+    {
+        if (data is TextFile ready)
+        {
+            return ready;
+        }
+
+        if (data is not IReadOnlyDictionary<string, object?> map)
+        {
+            return new TextFile();
+        }
+
+        return new TextFile(
+            BoardData.Str(map, "name"),
+            BoardData.Str(map, "stored_name"),
+            BoardData.Dbl(map, "size"));
+    }
+}

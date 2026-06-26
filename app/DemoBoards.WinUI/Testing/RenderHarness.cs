@@ -349,6 +349,38 @@ internal static class RenderHarness
                     ? (true, null)
                     : (false, $"expected SelectedIndex 1 (Value 'b'), got {combo.SelectedIndex}");
             }),
+
+        new("Text file-links renders a link button per file from plain data",
+            Component<Text, TextProps>(new TextProps(
+                Value: new object?[]
+                {
+                    D(("name", "Report"), ("stored_name", "r.pdf"), ("size", 2048)),
+                    D(("name", "Notes"), ("stored_name", "n.txt")),
+                    D(("name", "Pending")),
+                },
+                Format: "file-links",
+                ResolveFileUrl: (index, file) => $"https://files.example/{file["stored_name"]}")),
+            border =>
+            {
+                List<Button> buttons = OfType<Button>(border);
+                List<string> labels = buttons.Select(Label).ToList();
+                if (buttons.Count != 2)
+                {
+                    return (false, $"expected 2 link buttons (file without stored_name skipped), got {buttons.Count} [{string.Join("|", labels)}]");
+                }
+
+                if (!labels.Any(label => label.StartsWith("Report")) || !labels.Any(label => label.StartsWith("Notes")))
+                {
+                    return (false, $"link labels [{string.Join("|", labels)}]");
+                }
+
+                if (buttons.Any(button => !button.IsEnabled))
+                {
+                    return (false, "a link button is disabled despite a resolved href");
+                }
+
+                return (true, null);
+            }),
     };
 
     // ---- Visual-tree helpers --------------------------------------------------------------------

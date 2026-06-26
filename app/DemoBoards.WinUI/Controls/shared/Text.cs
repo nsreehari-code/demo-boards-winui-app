@@ -9,19 +9,17 @@ using DemoBoards_WinUI;
 
 namespace DemoBoards_WinUI.Controls.Shared;
 
-/// <summary>A staged/stored file descriptor for <see cref="Text"/>'s <c>file-links</c> format.</summary>
-public sealed record TextFile(string? Name = null, string? StoredName = null, double? Size = null);
-
 /// <summary>
 /// Mirrors <c>Text.jsx</c> — a text / file-link renderer. <c>Value</c> is a string for the default
-/// format, or an <see cref="IReadOnlyList{TextFile}"/> when <c>Format == "file-links"</c>.
+/// format, or a list of plain <c>{ name, stored_name, size }</c> file dictionaries when
+/// <c>Format == "file-links"</c> (converted to <see cref="TextFile"/> internally for display).
 /// </summary>
 public sealed record TextProps(
     object? Value = null,
     string Format = "default",
     string Style = "default",
     bool HideIfEmpty = false,
-    Func<int, TextFile, string?>? ResolveFileUrl = null);
+    Func<int, IReadOnlyDictionary<string, object?>, string?>? ResolveFileUrl = null);
 
 public sealed class Text : Component<TextProps>
 {
@@ -55,16 +53,18 @@ public sealed class Text : Component<TextProps>
 
     private Element RenderFileLinks(AppTheme theme)
     {
-        if (Props.Value is not IReadOnlyList<TextFile> files || files.Count == 0)
+        IReadOnlyList<object?>? entries = BoardData.ToList(Props.Value);
+        if (entries is null || entries.Count == 0)
         {
             return TextBlock("No files uploaded").FontSize(12).Opacity(0.65).Foreground(theme.TextPrimary);
         }
 
         var rows = new List<Element>();
-        for (int index = 0; index < files.Count; index++)
+        for (int index = 0; index < entries.Count; index++)
         {
-            TextFile file = files[index];
-            if (file is null || string.IsNullOrEmpty(file.StoredName))
+            IReadOnlyDictionary<string, object?> fileData = BoardData.AsMap(entries[index]);
+            TextFile file = TextFile.FromData(fileData);
+            if (string.IsNullOrEmpty(file.StoredName))
             {
                 continue;
             }
@@ -72,7 +72,7 @@ public sealed class Text : Component<TextProps>
             string name = file.Name ?? file.StoredName!;
             string size = file.Size is > 0 ? $" ({Math.Round(file.Size.Value / 1024)}KB)" : string.Empty;
             string label = $"{name}{size}";
-            string? href = Props.ResolveFileUrl?.Invoke(index, file);
+            string? href = Props.ResolveFileUrl?.Invoke(index, fileData);
 
             Element link = Button(label, () =>
                 {
@@ -97,7 +97,7 @@ public sealed class Text : Component<TextProps>
     {
         null => true,
         string s => s.Length == 0,
-        IReadOnlyList<TextFile> files => files.Count == 0,
+        System.Collections.IEnumerable e => !e.Cast<object?>().Any(),
         _ => false,
     };
 }
