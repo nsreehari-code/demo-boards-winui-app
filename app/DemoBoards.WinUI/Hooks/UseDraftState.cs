@@ -38,9 +38,10 @@ public readonly record struct DraftState<TKey, TValue>(
 
 /// <summary>
 /// A <see cref="Component{TProps}"/> base class that contributes reusable custom hooks. Extend this
-/// instead of <see cref="Component{TProps}"/> to gain <see cref="UseDraftState{TKey,TValue}"/>.
+/// instead of <see cref="Component{TProps}"/> to gain <see cref="UseDraftState{TKey,TValue}"/> and the
+/// board/chat data hooks declared in the sibling <c>HookComponent.*.cs</c> partials.
 /// </summary>
-public abstract class HookComponent<TProps> : Component<TProps>
+public abstract partial class HookComponent<TProps> : Component<TProps>
 {
     /// <summary>
     /// Controlled-base draft over <paramref name="baseValues"/>. Edits are journaled per key; setting a
