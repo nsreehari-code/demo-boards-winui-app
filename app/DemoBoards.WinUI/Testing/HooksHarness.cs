@@ -449,6 +449,89 @@ internal static class HooksHarness
             && !NodeResolver.JsTruthy(null)
             && NodeResolver.JsTruthy("x")));
 
+        // ---- CardView entries + lib helpers (cardview/index.js, chart.js, fieldConfig.js) -------
+        checks.Add(("CardView entries register with the correct meta presets", () =>
+        {
+            ComponentRegistry.RegisterEntries(CardViewEntries.All);
+            RegistryEntry? table = ComponentRegistry.ResolveEntry("table");
+            RegistryEntry? metric = ComponentRegistry.ResolveEntry("metric");
+            RegistryEntry? selection = ComponentRegistry.ResolveEntry("selection");
+            RegistryEntry? actions = ComponentRegistry.ResolveEntry("actions");
+            RegistryEntry? chart = ComponentRegistry.ResolveEntry("chart");
+            return table?.Meta is { ShowLabel: true, IsReadonly: true }
+                && metric?.Meta is { ShowLabel: false, IsReadonly: true }
+                && selection?.Meta is { ShowLabel: true, Controlled: "commit" }
+                && actions?.Meta is { ShowLabel: true, IsReadonly: false }
+                && chart?.DefaultVariant == "bar" && chart.ResolveVariant != null;
+        }));
+
+        checks.Add(("query/searchbox and markdown/markup aliases both resolve", () =>
+            ComponentRegistry.LookupEntry("query") != null
+            && ComponentRegistry.LookupEntry("searchbox") != null
+            && ComponentRegistry.LookupEntry("markdown") != null
+            && ComponentRegistry.LookupEntry("markup") != null
+            && ComponentRegistry.LookupEntry("editable-table") != null
+            && ComponentRegistry.LookupEntry("todo") != null));
+
+        checks.Add(("DetectChartType picks pie / line / bar from the first row", () =>
+        {
+            IReadOnlyList<object?> pie = new List<object?> { Map(("label", "A"), ("value", 1d)) };
+            IReadOnlyList<object?> line = new List<object?> { Map(("x", 1d), ("y", 2d)) };
+            IReadOnlyList<object?> bar = new List<object?> { Map(("name", "A"), ("count", 2d)) };
+            return RegistryChart.DetectChartType(pie) == "pie"
+                && RegistryChart.DetectChartType(line) == "line"
+                && RegistryChart.DetectChartType(bar) == "bar"
+                && RegistryChart.DetectChartType(null) == "bar";
+        }));
+
+        checks.Add(("ResolveChartVariant honours spec.chartType, else detection", () =>
+        {
+            IReadOnlyList<object?> pie = new List<object?> { Map(("label", "A"), ("value", 1d)) };
+            return RegistryChart.ResolveChartVariant(Map(("chartType", "line")), pie) == "line"
+                && RegistryChart.ResolveChartVariant(Map(), pie) == "pie";
+        }));
+
+        checks.Add(("MergeRows clones object rows and empties non-objects", () =>
+        {
+            IReadOnlyDictionary<string, object?> src = Map(("k", "v"));
+            IReadOnlyList<object?> data = new List<object?> { src, 5d };
+            IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = RegistryFieldConfig.MergeRows(data);
+            return rows.Count == 2
+                && !ReferenceEquals(rows[0], src)
+                && rows[0]["k"] as string == "v"
+                && rows[1].Count == 0
+                && RegistryFieldConfig.MergeRows("nope").Count == 0;
+        }));
+
+        checks.Add(("BuildEditorSaveValue wraps card_data, else passes through", () =>
+        {
+            var wrapped = RegistryFieldConfig.BuildEditorSaveValue("card_data", "name", "Acme") as IReadOnlyDictionary<string, object?>;
+            return wrapped != null && wrapped["name"] as string == "Acme"
+                && RegistryFieldConfig.BuildEditorSaveValue("other", "name", "Acme") as string == "Acme";
+        }));
+
+        checks.Add(("GetSingleFieldConfig returns the lone field, options and required", () =>
+        {
+            IReadOnlyDictionary<string, object?> spec = Map(("fields", Map(
+                ("properties", Map(("status", Map(
+                    ("title", "Status"),
+                    ("enum", new List<object?> { "open", "closed" }))))),
+                ("required", new List<object?> { "status" }))));
+            SingleFieldConfig? field = RegistryFieldConfig.GetSingleFieldConfig(spec, null, "open", "writeX");
+            bool single = field is { FieldKey: "status", IsRequired: true }
+                && field.Options.Count == 2 && field.CurrentValue as string == "open";
+
+            IReadOnlyDictionary<string, object?> multi = Map(("fields", Map(
+                ("properties", Map(("a", Map()), ("b", Map()))))));
+            bool none = RegistryFieldConfig.GetSingleFieldConfig(multi, null, null, null) is null;
+
+            object? cv = Map(("status", "closed"));
+            SingleFieldConfig? field2 = RegistryFieldConfig.GetSingleFieldConfig(spec, null, cv, "card_data");
+            bool unwrapped = field2?.CurrentValue as string == "closed";
+
+            return single && none && unwrapped;
+        }));
+
         var failures = 0;
         for (var i = 0; i < checks.Count; i++)
         {

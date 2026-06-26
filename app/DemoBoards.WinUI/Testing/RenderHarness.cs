@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using DemoBoards_WinUI.Controls.Registry;
 using DemoBoards_WinUI.Controls.Shared;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Reactor;
@@ -35,6 +36,7 @@ internal static class RenderHarness
 
     public static void RunAndExit()
     {
+        RegistryBootstrap.EnsureRegistered();
         try
         {
             ReactorApp.Run<RenderHarnessRoot>(
@@ -165,8 +167,7 @@ internal static class RenderHarness
 
     internal static IReadOnlyList<RenderCase> BuildCases() => new List<RenderCase>
     {
-        new("Actions renders one button per data entry with labels + disabled state",
-            Component<Actions, ActionsProps>(new ActionsProps(Buttons: new IReadOnlyDictionary<string, object?>[]
+        new("Actions renders one button per data entry with labels + disabled state",            Component<Actions, ActionsProps>(new ActionsProps(Buttons: new IReadOnlyDictionary<string, object?>[]
             {
                 D(("id", "save"), ("label", "Save"), ("style", "primary")),
                 D(("id", "cancel"), ("label", "Cancel")),
@@ -208,6 +209,53 @@ internal static class RenderHarness
                 return count == 0 ? (true, null) : (false, $"expected 0 buttons, got {count}");
             }),
 
+        new("NodeRenderer resolves a metric node (headline: no frame label) to the Metric tile",
+            Component<NodeRenderer, NodeRendererProps>(new NodeRendererProps(
+                Node: new RegistryNode("metric", Label: "Revenue", HasData: true, Data: 42d))),
+            border =>
+            {
+                List<string> texts = OfType<TextBlock>(border).Select(text => text.Text).ToList();
+                if (!texts.Contains("Revenue") || !texts.Contains("42"))
+                {
+                    return (false, $"metric texts [{string.Join("|", texts)}]");
+                }
+
+                // HEADLINE meta suppresses the engine frame label, so the title appears exactly once.
+                if (texts.Count(text => text == "Revenue") != 1)
+                {
+                    return (false, "expected the label exactly once (no duplicated engine frame label)");
+                }
+
+                return (true, null);
+            }),
+
+        new("NodeRenderer frames a labelled table node and resolves rows + columns",
+            Component<NodeRenderer, NodeRendererProps>(new NodeRendererProps(
+                Node: new RegistryNode("table", Label: "Items", HasData: true, Data: new List<object?>
+                {
+                    D(("name", "A"), ("count", 1d)),
+                    D(("name", "B"), ("count", 2d)),
+                }))),
+            border =>
+            {
+                List<string> texts = OfType<TextBlock>(border).Select(text => text.Text).ToList();
+                bool framed = texts.Contains("Items");            // READ_ONLY meta -> engine frame label
+                bool columns = texts.Contains("name") && texts.Contains("count");
+                bool cells = texts.Contains("A") && texts.Contains("B");
+                return framed && columns && cells
+                    ? (true, null)
+                    : (false, $"table texts [{string.Join("|", texts)}]");
+            }),
+
+        new("NodeRenderer hides a node whose visible-bind resolves falsy",
+            Component<NodeRenderer, NodeRendererProps>(new NodeRendererProps(
+                Node: new RegistryNode("metric", Label: "Hidden", Visible: "flags.ready", HasData: true, Data: 7d),
+                Namespaces: D(("flags", D(("ready", false)))))),
+            border =>
+            {
+                int count = OfType<TextBlock>(border).Count;
+                return count == 0 ? (true, null) : (false, $"expected nothing rendered, got {count} text block(s)");
+            }),
         new("Todo renders a row per item with text + checkbox state plus a composer",
             Component<Todo, TodoProps>(new TodoProps(BaseItems: new IReadOnlyDictionary<string, object?>[]
             {

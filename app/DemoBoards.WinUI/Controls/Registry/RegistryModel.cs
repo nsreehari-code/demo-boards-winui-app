@@ -12,6 +12,14 @@ namespace DemoBoards_WinUI.Controls.Registry;
 public sealed record NodeMeta(string? Label = null, string? Id = null);
 
 /// <summary>
+/// The injected services bag passed through the engine to leaf components — the typed C# stand-in for the
+/// frontend's loose <c>services</c> object. Currently exposes <c>fileUrlForIndex</c> (used by the text
+/// kind to resolve file-link hrefs); a host (the cardview renderer) constructs it.
+/// </summary>
+public sealed record NodeServices(
+    System.Func<int, IReadOnlyDictionary<string, object?>, string?>? FileUrlForIndex = null);
+
+/// <summary>
 /// The uniform prop contract every registered component receives — a faithful port of the props the
 /// frontend <c>NodeRenderer</c> passes to <c>entry.renderComponentFn</c>:
 /// <c>{ spec, meta, variant, data, currentValue, writeTo, onSave, status, services, children }</c>.
