@@ -18,6 +18,12 @@ public static class Program
             return;
         }
 
+        if (Array.Exists(Environment.GetCommandLineArgs(), arg => string.Equals(arg, "--hooks-harness", StringComparison.OrdinalIgnoreCase)))
+        {
+            HooksHarness.RunAndExit();
+            return;
+        }
+
         App.Current.Start();
 
         try
