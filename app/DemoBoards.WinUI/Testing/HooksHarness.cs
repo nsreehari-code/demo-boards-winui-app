@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Nodes;
+using Microsoft.UI.Reactor.Core;
 using DemoBoards_WinUI.Controls;
+using DemoBoards_WinUI.Controls.Registry;
 using DemoBoards_WinUI.Controls.Shared;
 using DemoBoards_WinUI.Hooks;
 
@@ -375,6 +377,77 @@ internal static class HooksHarness
             && RegistryThreshold.EvalThreshold(5, "==5")
             && RegistryThreshold.EvalThreshold(3, "<5")
             && !RegistryThreshold.EvalThreshold(5, "=5")));
+
+        // ---- ComponentRegistry + NodeResolver (registry.js / NodeRenderer.jsx) ---
+        Func<NodeProps, Element> stub = _ => null!;
+
+        checks.Add(("Registry lookup/resolve falls back to text", () =>
+        {
+            ComponentRegistry.RegisterEntries(new[]
+            {
+                new RegistryEntry("text", stub),
+                new RegistryEntry("metric", stub, Meta: new RegistryMeta(ShowLabel: false)),
+            });
+            return ComponentRegistry.LookupEntry("metric")?.Kind == "metric"
+                && ComponentRegistry.LookupEntry("nope") is null
+                && ComponentRegistry.ResolveEntry("metric")?.Kind == "metric"
+                && ComponentRegistry.ResolveEntry("nope")?.Kind == "text";
+        }));
+
+        checks.Add(("Resolve hides a node when its visible-bind is falsy", () =>
+        {
+            ComponentRegistry.RegisterEntries(new[] { new RegistryEntry("text", stub) });
+            var node = new RegistryNode("text", Visible: "flags.ready");
+            return !NodeResolver.Resolve(node, Map(("flags", Map(("ready", false)))) ).Visible
+                && NodeResolver.Resolve(node, Map(("flags", Map(("ready", true)))) ).Visible
+                && NodeResolver.Resolve(new RegistryNode("text"), null).Visible;
+        }));
+
+        checks.Add(("Resolve applies a resolveKind redirect", () =>
+        {
+            ComponentRegistry.RegisterEntries(new[]
+            {
+                new RegistryEntry("chartish", stub, ResolveKind: (_, _) => "metric"),
+                new RegistryEntry("metric", stub),
+            });
+            NodeResolution res = NodeResolver.Resolve(new RegistryNode("chartish"), null);
+            return res.EffectiveKind == "metric" && res.Entry?.Kind == "metric";
+        }));
+
+        checks.Add(("Resolve picks variant via node, then resolveVariant, then default", () =>
+        {
+            ComponentRegistry.RegisterEntries(new[]
+            {
+                new RegistryEntry("chart", stub, DefaultVariant: "bar",
+                    ResolveVariant: (_, data) => data is string s && s.Length > 0 ? "line" : null),
+            });
+            return NodeResolver.Resolve(new RegistryNode("chart", HasData: true, Data: ""), null).Variant == "bar"
+                && NodeResolver.Resolve(new RegistryNode("chart", HasData: true, Data: "x"), null).Variant == "line"
+                && NodeResolver.Resolve(new RegistryNode("chart", Variant: "pie", HasData: true, Data: "x"), null).Variant == "pie";
+        }));
+
+        checks.Add(("Resolve coerces data when falling back to the text kind", () =>
+        {
+            ComponentRegistry.RegisterEntries(new[] { new RegistryEntry("text", stub) });
+            NodeResolution res = NodeResolver.Resolve(new RegistryNode("totally-unknown", HasData: true, Data: 42d), null);
+            return res.Entry?.Kind == "text" && res.IsFallback && res.Data as string == "42";
+        }));
+
+        checks.Add(("Resolve reads currentValue from the writeTo bind", () =>
+        {
+            ComponentRegistry.RegisterEntries(new[] { new RegistryEntry("text", stub) });
+            NodeResolution res = NodeResolver.Resolve(
+                new RegistryNode("text", WriteTo: "card.name"),
+                Map(("card", Map(("name", "Acme")))));
+            return res.CurrentValue as string == "Acme";
+        }));
+
+        checks.Add(("JsTruthy: empty array truthy; '' / 0 / null falsy", () =>
+            NodeResolver.JsTruthy(new List<object?>())
+            && !NodeResolver.JsTruthy("")
+            && !NodeResolver.JsTruthy(0d)
+            && !NodeResolver.JsTruthy(null)
+            && NodeResolver.JsTruthy("x")));
 
         var failures = 0;
         for (var i = 0; i < checks.Count; i++)
