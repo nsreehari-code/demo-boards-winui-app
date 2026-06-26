@@ -381,6 +381,85 @@ internal static class RenderHarness
 
                 return (true, null);
             }),
+
+        new("MessageList renders a bubble per message with an expand toggle and resolved system attachment",
+            Component<MessageList, MessageListProps>(new MessageListProps(
+                Messages: new IReadOnlyDictionary<string, object?>[]
+                {
+                    D(("role", "user"), ("text", "Hi"), ("turn", "t1")),
+                    D(("role", "assistant"), ("text", new string('x', 320)), ("turn", "t1")),
+                    D(("role", "system"), ("text", "file uploaded: Report #0"), ("turn", "t1")),
+                },
+                FilesUploaded: new IReadOnlyDictionary<string, object?>[]
+                {
+                    D(("name", "Report"), ("stored_name", "r.pdf")),
+                },
+                ResolveFileUrl: (index, file) => $"https://files.example/{file["stored_name"]}")),
+            border =>
+            {
+                List<string> buttonNames = OfType<Button>(border).Select(Label).ToList();
+                if (!buttonNames.Contains("Expand message"))
+                {
+                    return (false, $"long assistant message should expose an expand toggle [{string.Join("|", buttonNames)}]");
+                }
+
+                if (!buttonNames.Contains("Report"))
+                {
+                    return (false, $"system attachment chip (resolved url) missing [{string.Join("|", buttonNames)}]");
+                }
+
+                return (true, null);
+            }),
+
+        new("AgentWorkingBubble renders the working indicator plus an activity chip per live stream",
+            Component<AgentWorkingBubble, AgentWorkingBubbleProps>(new AgentWorkingBubbleProps(
+                AgentOutput: "thinking\nlast output line",
+                AgentTools: "calling a tool")),
+            border =>
+            {
+                List<string> texts = OfType<TextBlock>(border).Select(text => text.Text).ToList();
+                if (!texts.Any(text => text.Contains("AI working")))
+                {
+                    return (false, $"working label missing [{string.Join("|", texts)}]");
+                }
+
+                int chips = OfType<Button>(border).Count;
+                if (chips < 2)
+                {
+                    return (false, $"expected 2 activity chips (output + tools), got {chips}");
+                }
+
+                return (true, null);
+            }),
+
+        new("ChatPane renders the conversation plus a composer that hides while a mini turn processes",
+            Component<ChatPane, ChatPaneProps>(new ChatPaneProps(
+                LiveMessages: new IReadOnlyDictionary<string, object?>[]
+                {
+                    D(("role", "user"), ("text", "Hello"), ("turn", "t1")),
+                },
+                OnSubmit: _ => { },
+                Placeholder: "Send a message")),
+            border =>
+            {
+                if (!OfType<TextBox>(border).Any())
+                {
+                    return (false, "composer text box missing");
+                }
+
+                List<string> buttonNames = OfType<Button>(border).Select(Label).ToList();
+                if (!buttonNames.Contains("Send"))
+                {
+                    return (false, $"composer send button missing [{string.Join("|", buttonNames)}]");
+                }
+
+                if (!buttonNames.Contains("Attach files"))
+                {
+                    return (false, $"composer attach button missing [{string.Join("|", buttonNames)}]");
+                }
+
+                return (true, null);
+            }),
     };
 
     // ---- Visual-tree helpers --------------------------------------------------------------------
