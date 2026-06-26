@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Nodes;
 using DemoBoards_WinUI.Controls;
+using DemoBoards_WinUI.Controls.Shared;
 using DemoBoards_WinUI.Hooks;
 
 namespace DemoBoards_WinUI;
@@ -301,6 +302,79 @@ internal static class HooksHarness
             HookComponent<InfiniteCanvasProps>.ParseObjectOrNull("[1,2]") is null
             && HookComponent<InfiniteCanvasProps>.ParseObjectOrNull("  ") is null
             && HookComponent<InfiniteCanvasProps>.ParseObjectOrNull("{\"a\":1}") is JsonObject));
+
+        // ---- RegistryPath (path.js) ---------------------------------------------
+        checks.Add(("PathParts splits dotted + bracket indices", () =>
+        {
+            IReadOnlyList<string> parts = RegistryPath.PathParts("a.b[0].c");
+            return parts.Count == 4 && parts[0] == "a" && parts[1] == "b" && parts[2] == "0" && parts[3] == "c";
+        }));
+
+        checks.Add(("PathParts is empty for null/empty", () =>
+            RegistryPath.PathParts(null).Count == 0 && RegistryPath.PathParts(string.Empty).Count == 0));
+
+        checks.Add(("DeepGet walks nested objects and array indices", () =>
+        {
+            var source = Map(("a", Map(("b", new List<object?> { Map(("n", 7)) }))));
+            return Equals(RegistryPath.DeepGet(source, "a.b[0].n"), 7)
+                && RegistryPath.DeepGet(source, "a.missing") is null;
+        }));
+
+        checks.Add(("DeepSet returns a clone without mutating the original", () =>
+        {
+            var source = Map(("x", 1));
+            object? result = RegistryPath.DeepSet(source, "y.z", 2);
+            return source.Count == 1
+                && result is IReadOnlyDictionary<string, object?> map
+                && Equals(map["x"], 1)
+                && Equals(RegistryPath.DeepGet(map, "y.z"), 2);
+        }));
+
+        // ---- RegistryBind (bind.js) ---------------------------------------------
+        checks.Add(("ResolveBind reads a namespaced path", () =>
+        {
+            var ns = Map(("card", Map(("meta", Map(("title", "Hi"))))));
+            return (RegistryBind.ResolveBind(ns, "card.meta.title") as string) == "Hi";
+        }));
+
+        checks.Add(("ResolveBind returns the whole namespace for a single segment", () =>
+        {
+            var ns = Map(("boardId", "b1"));
+            return (RegistryBind.ResolveBind(ns, "boardId") as string) == "b1";
+        }));
+
+        checks.Add(("ResolveBind is null for missing root / empty bind", () =>
+            RegistryBind.ResolveBind(Map(("card", 1)), "nope.x") is null
+            && RegistryBind.ResolveBind(Map(("card", 1)), string.Empty) is null));
+
+        // ---- RegistryCoerce (coerce.js) -----------------------------------------
+        checks.Add(("DeepEqual is structural and order-sensitive", () =>
+            RegistryCoerce.DeepEqual(Map(("a", 1)), Map(("a", 1)))
+            && !RegistryCoerce.DeepEqual(Map(("a", 1)), Map(("a", 2)))
+            && !RegistryCoerce.DeepEqual(Map(("a", 1), ("b", 2)), Map(("b", 2), ("a", 1)))));
+
+        checks.Add(("CoerceUnknownData passes strings, empties null, pretty-prints objects", () =>
+            RegistryCoerce.CoerceUnknownData("hi") == "hi"
+            && RegistryCoerce.CoerceUnknownData(null) == string.Empty
+            && RegistryCoerce.CoerceUnknownData(Map(("a", 1))) == "{\n  \"a\": 1\n}"));
+
+        checks.Add(("Stringify compact matches JSON.stringify", () =>
+            RegistryCoerce.Stringify(new List<object?> { 1, "x", true }, 0) == "[1,\"x\",true]"));
+
+        // ---- RegistryThreshold (threshold.js) -----------------------------------
+        checks.Add(("ParseThreshold reads operator + value", () =>
+        {
+            ThresholdExpr? t = RegistryThreshold.ParseThreshold(">= 5");
+            return t is not null && t.Op == ">=" && t.Value == 5
+                && RegistryThreshold.ParseThreshold("nope") is null;
+        }));
+
+        checks.Add(("EvalThreshold compares per operator", () =>
+            RegistryThreshold.EvalThreshold(6, ">=5")
+            && !RegistryThreshold.EvalThreshold(4, ">=5")
+            && RegistryThreshold.EvalThreshold(5, "==5")
+            && RegistryThreshold.EvalThreshold(3, "<5")
+            && !RegistryThreshold.EvalThreshold(5, "=5")));
 
         var failures = 0;
         for (var i = 0; i < checks.Count; i++)
