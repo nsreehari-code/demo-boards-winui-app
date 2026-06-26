@@ -10,9 +10,10 @@ namespace DemoBoards_WinUI;
 /// <summary>
 /// Pure-logic parity harness (run via <c>--hooks-harness</c>) for the hook support code that has no UI
 /// surface: the <see cref="ChatMessages"/> helpers ported from <c>chatMessages.js</c> — live/history
-/// accumulation, turn-id utilities, the scalar effect signature, and the MCP payload parse. Unlike the
-/// RenderHarness it needs no window or board store; it just runs deterministic assertions and prints
-/// <c>[i/N] PASS/FAIL</c> lines plus a final banner, mirroring the other harnesses.
+/// accumulation, turn-id utilities, the scalar effect signature, and the MCP payload parse — plus the
+/// runtime-card / managed-config payload helpers (UnwrapRuntimeCardPayload, ParseObjectOrEmpty/Null).
+/// Unlike the RenderHarness it needs no window or board store; it just runs deterministic assertions and
+/// prints <c>[i/N] PASS/FAIL</c> lines plus a final banner, mirroring the other harnesses.
 /// </summary>
 internal static class HooksHarness
 {
@@ -239,6 +240,67 @@ internal static class HooksHarness
 
         checks.Add(("UnwrapMcpToolPayload returns null for invalid JSON", () =>
             HookComponent<InfiniteCanvasProps>.UnwrapMcpToolPayload("not json") is null));
+
+        // ---- UnwrapRuntimeCardPayload (useRuntimeCards) --------------------------
+        checks.Add(("UnwrapRuntimeCardPayload returns the data node for a success envelope", () =>
+        {
+            JsonNode? data = HookComponent<InfiniteCanvasProps>.UnwrapRuntimeCardPayload(
+                JsonNode.Parse("{\"status\":\"success\",\"data\":{\"id\":\"c1\"}}"), "upsertRuntimeCard");
+            return data is JsonObject obj && obj["id"]?.GetValue<string>() == "c1";
+        }));
+
+        checks.Add(("UnwrapRuntimeCardPayload returns null when success carries no data", () =>
+            HookComponent<InfiniteCanvasProps>.UnwrapRuntimeCardPayload(
+                JsonNode.Parse("{\"status\":\"success\"}"), "upsertRuntimeCard") is null));
+
+        checks.Add(("UnwrapRuntimeCardPayload throws the trimmed error for a fail envelope", () =>
+        {
+            try
+            {
+                HookComponent<InfiniteCanvasProps>.UnwrapRuntimeCardPayload(
+                    JsonNode.Parse("{\"status\":\"fail\",\"error\":\"  nope  \"}"), "upsertRuntimeCard");
+                return false;
+            }
+            catch (InvalidOperationException ex)
+            {
+                return ex.Message == "nope";
+            }
+        }));
+
+        checks.Add(("UnwrapRuntimeCardPayload throws a label-default when fail carries no error", () =>
+        {
+            try
+            {
+                HookComponent<InfiniteCanvasProps>.UnwrapRuntimeCardPayload(
+                    JsonNode.Parse("{\"status\":\"fail\"}"), "removeRuntimeCard");
+                return false;
+            }
+            catch (InvalidOperationException ex)
+            {
+                return ex.Message == "removeRuntimeCard failed";
+            }
+        }));
+
+        checks.Add(("UnwrapRuntimeCardPayload returns the payload when there is no status", () =>
+        {
+            JsonNode? data = HookComponent<InfiniteCanvasProps>.UnwrapRuntimeCardPayload(
+                JsonNode.Parse("{\"rows\":[1,2]}"), "listRuntimeCards");
+            return data is JsonObject obj && obj["rows"] is JsonArray rows && rows.Count == 2;
+        }));
+
+        // ---- ParseObjectOrEmpty / ParseObjectOrNull (managed config) ------------
+        checks.Add(("ParseObjectOrEmpty parses a JSON object", () =>
+            HookComponent<InfiniteCanvasProps>.ParseObjectOrEmpty("{\"a\":1}")["a"]?.GetValue<int>() == 1));
+
+        checks.Add(("ParseObjectOrEmpty returns an empty object for null/invalid/non-object", () =>
+            HookComponent<InfiniteCanvasProps>.ParseObjectOrEmpty(null).Count == 0
+            && HookComponent<InfiniteCanvasProps>.ParseObjectOrEmpty("nope").Count == 0
+            && HookComponent<InfiniteCanvasProps>.ParseObjectOrEmpty("[1,2]").Count == 0));
+
+        checks.Add(("ParseObjectOrNull returns null for non-object payloads", () =>
+            HookComponent<InfiniteCanvasProps>.ParseObjectOrNull("[1,2]") is null
+            && HookComponent<InfiniteCanvasProps>.ParseObjectOrNull("  ") is null
+            && HookComponent<InfiniteCanvasProps>.ParseObjectOrNull("{\"a\":1}") is JsonObject));
 
         var failures = 0;
         for (var i = 0; i < checks.Count; i++)

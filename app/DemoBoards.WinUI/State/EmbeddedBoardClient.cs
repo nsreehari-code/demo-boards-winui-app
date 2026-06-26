@@ -273,6 +273,97 @@ public sealed class EmbeddedBoardClient
         return ParseManagedBoardEntry(board) ?? throw new InvalidOperationException("Created board payload was invalid.");
     }
 
+    /// <summary>
+    /// Generic manage-boards passthrough (WinUI analog of the frontend <c>postManageBoards</c> helper).
+    /// Posts the subcommand to the in-process manage-boards endpoint, throws on a non-success envelope,
+    /// and returns the unwrapped <c>data</c> node (or null when absent).
+    /// </summary>
+    public async Task<JsonNode?> ManageBoardsAsync(string subcommand, object? args = null)
+    {
+        string normalizedSubcommand = NormalizeRequired(subcommand, "Manage boards subcommand is required.");
+        string? payload = await PostManageBoardsAsync(normalizedSubcommand, args ?? new { }).ConfigureAwait(false);
+        using JsonDocument document = ParseRequiredJson(payload, $"{normalizedSubcommand} returned no payload.");
+        JsonElement root = document.RootElement;
+        EnsureSuccessPayload(root, $"Manage boards failed: {normalizedSubcommand}");
+        JsonElement data = TryGetNestedProperty(root, "data");
+        return data.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null
+            ? null
+            : JsonNode.Parse(data.GetRawText());
+    }
+
+    /// <summary>Port of <c>listRuntimeCards</c>: returns the runtime cards array (empty when absent).</summary>
+    public async Task<JsonArray> ListRuntimeCardsAsync()
+    {
+        string body = await PostMcpControlplaneWithResultAsync("list-runtime-cards", new { }).ConfigureAwait(false);
+        JsonNode? payload = SafeParseNode(body);
+        JsonNode? data = (payload as JsonObject)?["data"];
+        if (data is JsonArray array)
+        {
+            return (JsonArray)array.DeepClone();
+        }
+
+        if (data is JsonObject dataObject && dataObject["cards"] is JsonArray cards)
+        {
+            return (JsonArray)cards.DeepClone();
+        }
+
+        return new JsonArray();
+    }
+
+    /// <summary>Port of <c>upsertRuntimeCard</c>: returns the raw controlplane payload (caller unwraps).</summary>
+    public async Task<JsonNode?> UpsertRuntimeCardAsync(JsonNode candidateCardContent)
+    {
+        ArgumentNullException.ThrowIfNull(candidateCardContent);
+        string cardId = string.Empty;
+        if (candidateCardContent is JsonObject candidateObject
+            && candidateObject.TryGetPropertyValue("id", out JsonNode? idNode)
+            && idNode is JsonValue idValue
+            && idValue.TryGetValue(out string? idString))
+        {
+            cardId = idString.Trim();
+        }
+
+        if (cardId.Length == 0)
+        {
+            throw new InvalidOperationException("upsertRuntimeCard requires candidateCardContent.id");
+        }
+
+        string body = await PostMcpControlplaneWithResultAsync("manage.upsert-card", new
+        {
+            card_id = cardId,
+            candidate_card_content = candidateCardContent.DeepClone()
+        }).ConfigureAwait(false);
+        return SafeParseNode(body);
+    }
+
+    /// <summary>Port of <c>removeRuntimeCard</c>: returns the raw controlplane payload (caller unwraps).</summary>
+    public async Task<JsonNode?> RemoveRuntimeCardAsync(string cardId)
+    {
+        string normalizedCardId = NormalizeRequired(cardId, "removeRuntimeCard requires cardId");
+        string body = await PostMcpControlplaneWithResultAsync("manage.remove-card", new
+        {
+            card_id = normalizedCardId
+        }).ConfigureAwait(false);
+        return SafeParseNode(body);
+    }
+
+    private static JsonNode? SafeParseNode(string? rawJson)
+    {
+        if (string.IsNullOrWhiteSpace(rawJson))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonNode.Parse(rawJson);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     public async Task<WinUiHostTemplateCatalog> DescribeHostConfigAsync()
     {
         string? payload = await PostManageBoardsAsync("describe-host-config", BuildHostConfigArgs()).ConfigureAwait(false);
@@ -437,6 +528,19 @@ public sealed class EmbeddedBoardClient
     private Task PostMcpControlplaneAsync(string tool, object args)
     {
         return PostJsonAsync("mcp-controlplane", new { tool, args });
+    }
+
+    private Task<string> PostMcpControlplaneWithResultAsync(string tool, object args)
+    {
+        return PostJsonWithResultAsync("mcp-controlplane", new { tool, args });
+    }
+
+    private async Task<string> PostJsonWithResultAsync(string relativePath, object payload)
+    {
+        string json = JsonSerializer.Serialize(payload);
+        using var response = await runtimeHttpClient.PostAsync(relativePath, new StringContent(json, Encoding.UTF8, "application/json")).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadAsStringAsync().ConfigureAwait(false);
     }
 
     private async Task PostJsonAsync(string relativePath, object payload)
