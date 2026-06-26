@@ -70,7 +70,7 @@ public abstract partial class HookComponent<TProps> : Component<TProps>
                     Dictionary<TKey, TValue>? pruned = null;
                     foreach (KeyValuePair<TKey, TValue> entry in journal)
                     {
-                        if (baseValues.TryGetValue(entry.Key, out TValue baseValue)
+                        if (baseValues.TryGetValue(entry.Key, out TValue? baseValue)
                             && comparer.Equals(entry.Value, baseValue))
                         {
                             pruned ??= new Dictionary<TKey, TValue>(journal);
@@ -118,7 +118,7 @@ public abstract partial class HookComponent<TProps> : Component<TProps>
         {
             updateJournal(current =>
             {
-                bool matchesBase = baseValues.TryGetValue(key, out TValue baseValue)
+                bool matchesBase = baseValues.TryGetValue(key, out TValue? baseValue)
                     && comparer.Equals(value, baseValue);
 
                 if (matchesBase)
@@ -133,7 +133,7 @@ public abstract partial class HookComponent<TProps> : Component<TProps>
                     return trimmed;
                 }
 
-                if (current.TryGetValue(key, out TValue existing) && comparer.Equals(existing, value))
+                if (current.TryGetValue(key, out TValue? existing) && comparer.Equals(existing, value))
                 {
                     return current;
                 }

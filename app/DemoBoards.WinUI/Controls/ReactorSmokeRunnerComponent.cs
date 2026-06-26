@@ -115,7 +115,7 @@ public sealed class ReactorSmokeRunnerComponent : Component
                     textBox.IsEnabled = suiteStatus != "running";
                 }),
             HintText("Leave empty to run all frontend smoke cases, or type a comma-separated subset such as MB1, T3u, T8F."),
-            VStack(6, RunnableSmokeCases.Select(entry => BuildRunnableCaseToggle(entry, selectedRunnableCaseIds.Contains(entry.Id), suiteStatus == "running", setRunTestsText, selectedRunnableCaseIds)).ToArray()),
+            VStack(6, RunnableSmokeCases.Select(entry => BuildRunnableCaseToggle(entry, selectedRunnableCaseIds.Contains(entry.Id), suiteStatus == "running", setRunTestsText, selectedRunnableCaseIds).WithKey(entry.Id)).ToArray()),
             TextBlock(selection.RequestedIds.Count > 0
                     ? $"Selected order: {string.Join(", ", selection.SelectedCases.Select(entry => entry.Id))}"
                     : "Selected order: all frontend smoke cases.")

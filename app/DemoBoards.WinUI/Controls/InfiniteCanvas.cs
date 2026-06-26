@@ -1520,7 +1520,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
             .Width(40)
             .Height(40)
             .CornerRadius(0)
-            .Set(button => button.Margin = new Thickness(0));
+            .Margin(0, 0, 0, 0);
     }
 
     private static void ZoomBy(ScrollViewer? scrollViewer, double factor, InfiniteCanvasOptions options)
