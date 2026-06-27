@@ -749,6 +749,31 @@ internal static class HooksHarness
             return Math.Abs(layout["w"].W - 440) < 0.0001   // "  wide  " trimmed -> wide -> 440
                 && Math.Abs(layout["u"].W - 360) < 0.0001;  // "WIDE" is a case-sensitive miss -> default 360
         }));
+
+        checks.Add(("BoardRenderer.BuildPaneNodes emits gandalf/truthset/centre with the centre layout kind", () =>
+        {
+            Func<BoardCardState, bool>[] empty = Array.Empty<Func<BoardCardState, bool>>();
+            RendererRule[] rules = Array.Empty<RendererRule>();
+            IReadOnlyList<RegistryNode> panes = BoardRenderer.BuildPaneNodes("board-1", empty, empty, empty, "flowing-cards", rules);
+            if (panes.Count != 3 || !panes.All(node => node.Kind == "pane"))
+            {
+                return false;
+            }
+
+            string PaneKind(int index) => panes[index].Spec?["paneKind"] as string ?? string.Empty;
+            bool order = PaneKind(0) == "gandalf" && PaneKind(1) == "truthset" && PaneKind(2) == "centre";
+            bool centreLayout = panes[2].Spec?["layoutStrategy"] as string == "flowing-cards";
+            bool centreExcludes = panes[2].Spec!.ContainsKey("excludeFilters") && !panes[2].Spec!.ContainsKey("includeFilters");
+            bool railIncludes = panes[0].Spec!.ContainsKey("includeFilters") && !panes[0].Spec!.ContainsKey("excludeFilters");
+            return order && centreLayout && centreExcludes && railIncludes;
+        }));
+
+        checks.Add(("PaneRenderer.PaneIsHidden hides empty rails but never the centre", () =>
+            PaneRenderer.PaneIsHidden("gandalf", 0)
+            && PaneRenderer.PaneIsHidden("truthset", 0)
+            && !PaneRenderer.PaneIsHidden("gandalf", 2)
+            && !PaneRenderer.PaneIsHidden("centre", 0)));
+
         var failures = 0;
         for (var i = 0; i < checks.Count; i++)
         {

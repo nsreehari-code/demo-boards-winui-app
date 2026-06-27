@@ -1,9 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
-using DemoBoards.RuntimeHost;
+using DemoBoards_WinUI.Controls.Registry;
 using DemoBoards_WinUI.State;
 using Microsoft.UI.Reactor;
 using Microsoft.UI.Reactor.Core;
@@ -14,16 +13,6 @@ using Microsoft.UI.Xaml.Media;
 using static Microsoft.UI.Reactor.Factories;
 
 namespace DemoBoards_WinUI.Controls;
-
-public sealed record ReactorMainBoardProps(
-    BoardInfoState BoardInfo,
-    BoardSummaryState Summary,
-    IReadOnlyList<BoardCard> CentreCards,
-    IReadOnlyList<BoardCard> GandalfCards,
-    IReadOnlyList<BoardCard> TruthsetCards,
-    BoardCanvasLayoutState LayoutState,
-    IReadOnlyDictionary<string, string> DataObjects,
-    IReadOnlyList<RendererRule>? RendererRules);
 
 public sealed class ReactorMainShellComponent : Component
 {
@@ -70,25 +59,6 @@ public sealed class ReactorMainShellComponent : Component
             () => App.Current.ApplyThemePack(BoardTheme.ResolveThemePackIdFromUiJson(boardStore.State.ManagedBoardConfig?.RawUiJson)),
             boardStore.State.ManagedBoardConfig?.RawUiJson ?? string.Empty);
 
-        BoardCard[] allCards = boardStore.GetBoardCardDefinitionsAndData().Values
-            .OrderBy(card => card.Id, StringComparer.Ordinal)
-            .ToArray();
-        string? uiConfigJson = boardStore.State.ManagedBoardConfig?.RawUiJson;
-        var gandalfFilters = CardPresentationConfig.ResolvePaneFilters("gandalf", uiConfigJson);
-        var truthsetFilters = CardPresentationConfig.ResolvePaneFilters("truthset", uiConfigJson);
-        var rendererRules = CardPresentationConfig.CompileRendererRules(uiConfigJson);
-        HashSet<string> gandalfIds = allCards
-            .Where(card => gandalfFilters.Any(filter => filter(card)))
-            .Select(card => card.Id)
-            .ToHashSet(StringComparer.Ordinal);
-        HashSet<string> truthsetIds = allCards
-            .Where(card => truthsetFilters.Any(filter => filter(card)))
-            .Select(card => card.Id)
-            .ToHashSet(StringComparer.Ordinal);
-        BoardCard[] centreCards = allCards.Where(card => !gandalfIds.Contains(card.Id) && !truthsetIds.Contains(card.Id)).ToArray();
-        BoardCard[] gandalfCards = allCards.Where(card => gandalfIds.Contains(card.Id)).ToArray();
-        BoardCard[] truthsetCards = allCards.Where(card => truthsetIds.Contains(card.Id)).ToArray();
-
         var sections = new List<Element>
         {
             BuildTopBar(boardStore, refreshingBoard, setRefreshingBoard, configOpen, setConfigOpen),
@@ -99,17 +69,12 @@ public sealed class ReactorMainShellComponent : Component
             sections.Add(BuildStartupBanner(startupMessage));
         }
 
+        // Board surface: the fully reactive board-tier host. BoardRenderer reads the managed config
+        // itself (panes / filters / centre layout / renderer rules) and resolves the board into a node
+        // tree through NodeRenderer — no imperative card-splitting in the shell.
         sections.Add(
-            Component<ReactorMainBoardComponent, ReactorMainBoardProps>(
-                new ReactorMainBoardProps(
-                    boardStore.GetBoardInfo(),
-                    boardStore.State.Summary,
-                    centreCards,
-                    gandalfCards,
-                    truthsetCards,
-                    boardStore.GetCanvasLayout(),
-                    boardStore.State.DataObjectsByToken,
-                    rendererRules))
+            Component<BoardRenderer, BoardRendererProps>(
+                new BoardRendererProps(boardStore.GetBoardInfo().BoardId))
             .Flex(grow: 1));
 
         Element? overlay = null;
@@ -269,30 +234,5 @@ public sealed class ReactorMainShellComponent : Component
         return Application.Current.Resources.TryGetValue(resourceKey, out object resource)
             ? resource as Brush ?? new SolidColorBrush(Windows.UI.Color.FromArgb(0, 0, 0, 0))
             : new SolidColorBrush(Windows.UI.Color.FromArgb(0, 0, 0, 0));
-    }
-}
-
-public sealed class ReactorMainBoardComponent : Component<ReactorMainBoardProps>
-{
-    public override Element Render()
-    {
-        return Component<ReactorCentrePaneComponent, ReactorMainBoardProps>(Props)
-            .Flex(grow: 1);
-    }
-}
-
-public sealed class ReactorCentrePaneComponent : Component<ReactorMainBoardProps>
-{
-    public override Element Render()
-    {
-        return Component<ReactorInfiniteCanvasComponent, ReactorInfiniteCanvasProps>(
-                new ReactorInfiniteCanvasProps(
-                    Props.BoardInfo,
-                    Props.Summary,
-                    Props.CentreCards,
-                    Props.LayoutState,
-                    Props.DataObjects,
-                    Props.RendererRules))
-            .Flex(grow: 1);
     }
 }

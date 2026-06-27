@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using DemoBoards_WinUI.Assets;
+using DemoBoards_WinUI.Controls.Shared;
 using DemoBoards_WinUI.Hooks;
 using Microsoft.UI;
 using Microsoft.UI.Reactor;
@@ -1514,7 +1515,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
     {
         // Borderless, transparent square button so the buttons merge into the container group with no
         // visible gaps; hover/press still highlights the individual button.
-        return Button(Image(iconSource).Width(18).Height(18).AccessibilityHidden(), onClick)
+        return Button(Component<SvgIcon, SvgIconProps>(new SvgIconProps(iconSource)), onClick)
             .SubtleButton()
             .AutomationName(automationName)
             .Width(40)

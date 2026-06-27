@@ -27,6 +27,8 @@ public sealed class PanelVertical : Component<PanelVerticalProps>
     {
         AppTheme theme = UseContext(AppThemeContext.Current);
 
+        // Mirrors PanelVertical.jsx: `title` is the FAB tooltip only — it never renders as a
+        // visible panel header. The expanded panel shows `children` verbatim.
         Element fab = Component<FloatingCircularButton, FloatingCircularButtonProps>(
             new FloatingCircularButtonProps(
                 Toggled: Props.Expanded,
@@ -34,18 +36,14 @@ public sealed class PanelVertical : Component<PanelVerticalProps>
                 IconToggled: Props.IconToggled,
                 OnClick: () => Props.OnToggle?.Invoke(),
                 OnClickToggled: () => Props.OnToggle?.Invoke(),
-                AriaLabel: Props.AriaLabel ?? Props.Title ?? "Toggle panel"));
+                AriaLabel: Props.Title ?? Props.AriaLabel ?? "Toggle panel"));
 
         if (!Props.Expanded)
         {
             return fab;
         }
 
-        Element panel = Border(VStack(8,
-                Props.Title != null
-                    ? (Element)TextBlock(Props.Title).Bold().Foreground(theme.TextPrimary)
-                    : Empty(),
-                ScrollViewer(Props.Children ?? Empty()).Flex(grow: 1)))
+        Element panel = Border(ScrollViewer(Props.Children ?? Empty()).Flex(grow: 1))
             .Padding(12)
             .Background(theme.CardBackground)
             .WithBorder(theme.CardBorder, 1)
