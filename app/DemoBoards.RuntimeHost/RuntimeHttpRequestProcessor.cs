@@ -10,11 +10,11 @@ namespace DemoBoards.RuntimeHost;
 internal sealed class RuntimeHttpRequestProcessor
 {
     private readonly Func<string, string, string?, IReadOnlyDictionary<string, string>?, Task<(int StatusCode, string Body, IReadOnlyDictionary<string, string> Headers)>> proxyRuntimeApiAsync;
-    private readonly Func<string, Task<BoardSnapshot>> addCardAsync;
+    private readonly Func<string, Task> addCardAsync;
 
     public RuntimeHttpRequestProcessor(
         Func<string, string, string?, IReadOnlyDictionary<string, string>?, Task<(int StatusCode, string Body, IReadOnlyDictionary<string, string> Headers)>> proxyRuntimeApiAsync,
-        Func<string, Task<BoardSnapshot>> addCardAsync)
+        Func<string, Task> addCardAsync)
     {
         this.proxyRuntimeApiAsync = proxyRuntimeApiAsync;
         this.addCardAsync = addCardAsync;
@@ -74,8 +74,8 @@ internal sealed class RuntimeHttpRequestProcessor
                     return;
                 }
 
-                BoardSnapshot snapshot = await addCardAsync(body).ConfigureAwait(false);
-                string response = "{\"status\":\"accepted\",\"surface\":\"agentface\",\"cardCount\":" + snapshot.CardCount + "}";
+                await addCardAsync(body).ConfigureAwait(false);
+                string response = "{\"status\":\"accepted\",\"surface\":\"agentface\"}";
                 await WriteJsonAsync(context.Response, 200, response).ConfigureAwait(false);
                 return;
             }

@@ -29,7 +29,7 @@ public sealed record BoardState(
     string SseClientId,
     BoardInfoState BoardInfo,
     IReadOnlyDictionary<string, BoardCard> CardContents,
-    IReadOnlyDictionary<string, BoardCard> CardRuntimes,
+    IReadOnlyDictionary<string, BoardCardRuntimeSlice> CardRuntimes,
     BoardSummaryState BoardStatus,
     IReadOnlyDictionary<string, string> DataObjects,
     IReadOnlyList<string> RefreshableCardIds,
@@ -51,7 +51,7 @@ public abstract partial class HookComponent<TProps>
         BoardSummaryState boardStatus = store.State.Summary;
         IReadOnlyDictionary<string, string> dataObjects = store.State.DataObjectsByToken;
         IReadOnlyDictionary<string, BoardCard> cardContents = store.GetBoardCardDefinitionsAndData();
-        IReadOnlyDictionary<string, BoardCard> cardRuntimes = store.GetBoardCardRuntimes();
+        IReadOnlyDictionary<string, BoardCardRuntimeSlice> cardRuntimes = store.GetBoardCardRuntimes();
         IReadOnlyList<string> cardIds = store.GetBoardCardIds();
 
         var refreshable = new List<string>();

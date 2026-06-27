@@ -8,7 +8,7 @@
 //     Opens a per-board EventSource (openBoardSse), fires a one-shot HTTP bootstrap
 //     fetch (fetchBoardOneShotPayload), and applies every incoming SSE frame through
 //     the platform-free board-sse-state reducer (applyBoardSseFrame). The resulting
-//     BoardSnapshot lives in a module-level boardStores Map.
+//     reducer snapshot lives in a module-level boardStores Map.
 //
 //  2. Reactive slice selectors
 //     Exports one useSyncExternalStore hook per data slice. React guarantees each
@@ -40,9 +40,9 @@
 //
 //  1. Transport + accumulation
 //     DemoBoardsRuntimeService owns the embedded runtime. On every board change it
-//     calls BoardStore.Dispatch(ReplacePublishedStateAction), which applies the new
-//     BoardSnapshot via BuildState and raises BoardStore.StateChanged. This is the
-//     in-process equivalent of the SSE stream + applyBoardSseFrame accumulation.
+//     publishes BoardCanonicalStateChanged; BoardStore applies the canonical reducer
+//     slices and raises BoardStore.StateChanged. This is the in-process equivalent of
+//     the SSE stream + applyBoardSseFrame accumulation.
 //
 //  2. Reactive slice selectors → UseBoardStoreSubscription + named selector methods
 //     in HookComponent.Store.cs (partial of HookComponent<TProps>):

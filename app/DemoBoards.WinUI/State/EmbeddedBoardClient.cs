@@ -31,17 +31,17 @@ public sealed class EmbeddedBoardClient
         };
     }
 
-    public Task<BoardSnapshot> InitBoardAsync()
+    public Task InitBoardAsync()
     {
         return runtimeService.RefreshAsync();
     }
 
-    public Task<BoardSnapshot> RefreshBoardAsync()
+    public Task RefreshBoardAsync()
     {
         return runtimeService.RefreshAsync();
     }
 
-    public Task<BoardSnapshot> AddCardAsync(string cardJson)
+    public Task AddCardAsync(string cardJson)
     {
         return runtimeService.AddCardAsync(cardJson);
     }

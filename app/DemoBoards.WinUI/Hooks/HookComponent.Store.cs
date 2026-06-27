@@ -83,7 +83,7 @@ public abstract partial class HookComponent<TProps>
     }
 
     /// <summary>Port of <c>useCardRuntimeState</c>: a single card's runtime slice, or null.</summary>
-    protected BoardCard? UseCardRuntimeState(string cardId)
+    protected BoardCardRuntimeSlice? UseCardRuntimeState(string cardId)
     {
         BoardStore store = UseBoardStoreSubscription(includeUiState: false);
         return string.IsNullOrEmpty(cardId) ? null : store.GetCardRuntimeState(cardId);

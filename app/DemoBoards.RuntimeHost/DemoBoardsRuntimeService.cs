@@ -20,7 +20,6 @@ public sealed class DemoBoardsRuntimeService : IAsyncDisposable
     private readonly HostBoardNotifier boardNotifier;
     private readonly RuntimeJsHost jsHost;
     private readonly BoardSseStateReducerHost boardSseStateReducerHost;
-    private readonly RuntimeSnapshotPublisher snapshotPublisher = new();
     private readonly RuntimeHttpRequestProcessor requestProcessor;
     private HostInvocationBridge invocationBridge;
     private HttpListener httpListener;
@@ -30,18 +29,9 @@ public sealed class DemoBoardsRuntimeService : IAsyncDisposable
     private int boardChangeNotifications;
     private bool started;
     private BoardSseCanonicalEnvelope canonicalEnvelope = BoardSseCanonicalEnvelope.Empty;
+    private string? lastPublishedPayloadJson;
     private readonly object notificationReductionGate = new();
     private Task notificationReductionTail = Task.CompletedTask;
-
-    /// <summary>
-    /// Raised whenever the published board snapshot changes (UI subscribes and
-    /// re-renders). Fires for both shell-initiated and agentface-initiated edits.
-    /// </summary>
-    public event EventHandler<BoardSnapshot>? BoardSnapshotChanged
-    {
-        add => snapshotPublisher.SnapshotChanged += value;
-        remove => snapshotPublisher.SnapshotChanged -= value;
-    }
 
     public event EventHandler<BoardSseCanonicalEnvelope>? BoardCanonicalStateChanged;
 
@@ -71,27 +61,12 @@ public sealed class DemoBoardsRuntimeService : IAsyncDisposable
             paths.RootDir,
             paths.HostStorageDir,
             invocationBridge.GetLastInvocationJson(),
-                snapshotPublisher.LastBoardSnapshotJson);
-    }
-
-    public BoardSnapshot GetBoardSnapshot()
-    {
-        return snapshotPublisher.ParseSnapshot();
+                lastPublishedPayloadJson);
     }
 
     public BoardSseCanonicalEnvelope GetBoardCanonicalState()
     {
         return canonicalEnvelope;
-    }
-
-    public IReadOnlyDictionary<string, BoardWatchpartyState> GetCardWatchparties()
-    {
-        return snapshotPublisher.ParseWatchparties();
-    }
-
-    public IReadOnlyDictionary<string, BoardWatchpartyState> GetCardWatchparties(string agentOutputChannel, string agentToolsChannel)
-    {
-        return snapshotPublisher.ParseWatchparties(agentOutputChannel, agentToolsChannel);
     }
 
     public int BoardChangeNotificationCount => boardChangeNotifications;
@@ -100,26 +75,24 @@ public sealed class DemoBoardsRuntimeService : IAsyncDisposable
     /// Re-reads the published snapshot from the long-lived runtime and notifies
     /// subscribers. Does not mutate the board.
     /// </summary>
-    public async Task<BoardSnapshot> RefreshAsync()
+    public async Task RefreshAsync()
     {
         string payload = await jsHost.InvokeJsAsync("winuiBuildSnapshot").ConfigureAwait(false);
         string reducedPayload = await boardSseStateReducerHost.ReplacePublishedPayloadAsync(payload).ConfigureAwait(false);
-        BoardSnapshot snapshot = snapshotPublisher.Publish(this, reducedPayload);
+        lastPublishedPayloadJson = reducedPayload;
         await PublishCanonicalEnvelopeAsync().ConfigureAwait(false);
-        return snapshot;
     }
 
     /// <summary>
     /// Adds a card to the live board and re-publishes the snapshot. The card JSON
     /// must match the runtime card shape ({ id, card_data, view }).
     /// </summary>
-    public async Task<BoardSnapshot> AddCardAsync(string cardJson)
+    public async Task AddCardAsync(string cardJson)
     {
         string payload = await jsHost.InvokeJsAsync("winuiAddCard", cardJson).ConfigureAwait(false);
         string reducedPayload = await boardSseStateReducerHost.ReplacePublishedPayloadAsync(payload).ConfigureAwait(false);
-        BoardSnapshot snapshot = snapshotPublisher.Publish(this, reducedPayload);
+        lastPublishedPayloadJson = reducedPayload;
         await PublishCanonicalEnvelopeAsync().ConfigureAwait(false);
-        return snapshot;
     }
 
     public async Task<(int StatusCode, string Body, IReadOnlyDictionary<string, string> Headers)> ProxyRuntimeApiAsync(string method, string path, string? bodyJson = null, IReadOnlyDictionary<string, string>? requestHeaders = null)
@@ -323,7 +296,7 @@ public sealed class DemoBoardsRuntimeService : IAsyncDisposable
             + "]";
         string payload = await jsHost.InvokeJsAsync("initWinuiRuntime", "winui-board", cardsJson).ConfigureAwait(false);
         string reducedPayload = await boardSseStateReducerHost.InitializeFromPublishedPayloadAsync(payload).ConfigureAwait(false);
-        snapshotPublisher.SetSnapshotJson(reducedPayload);
+        lastPublishedPayloadJson = reducedPayload;
         await PublishCanonicalEnvelopeAsync().ConfigureAwait(false);
     }
 
@@ -342,7 +315,7 @@ public sealed class DemoBoardsRuntimeService : IAsyncDisposable
     private async Task ApplyNotificationsAndPublishAsync(string notificationsJson)
     {
         string reducedPayload = await boardSseStateReducerHost.ApplyNotificationsAsync(notificationsJson).ConfigureAwait(false);
-        snapshotPublisher.Publish(this, reducedPayload);
+        lastPublishedPayloadJson = reducedPayload;
         await PublishCanonicalEnvelopeAsync().ConfigureAwait(false);
     }
 

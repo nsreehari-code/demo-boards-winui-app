@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using DemoBoards.RuntimeHost;
 using DemoBoards_WinUI.Config;
 
@@ -87,7 +89,6 @@ public sealed class BoardStore : IDisposable
     private readonly DemoBoardsRuntimeService runtimeService;
     private readonly WinUiBoardServerConstants boardServerConstants;
     private BoardStoreState state;
-    private BoardSnapshot snapshot;
     private BoardUiState uiState = BoardUiState.Empty;
 
     public BoardStore(DemoBoardsRuntimeService runtimeService, WinUiBoardServerConstants boardServerConstants)
@@ -95,19 +96,15 @@ public sealed class BoardStore : IDisposable
         this.runtimeService = runtimeService;
         this.boardServerConstants = boardServerConstants;
 
-        BoardSnapshot initialSnapshot = runtimeService.GetBoardSnapshot();
-        state = BuildState(initialSnapshot, runtimeService.GetCardWatchparties(boardServerConstants.AgentOutputChannel, boardServerConstants.AgentToolsChannel));
+        state = EmptyState();
         state = ApplyCanonicalSlices(state, runtimeService.GetBoardCanonicalState());
-        snapshot = BuildSnapshot(state);
 
         runtimeService.BoardCanonicalStateChanged += HandleCanonicalStateChanged;
     }
 
-    public event EventHandler<BoardSnapshot>? SnapshotChanged;
     public event EventHandler<BoardStoreChangedEventArgs>? StateChanged;
     public event EventHandler<BoardUiState>? UiStateChanged;
 
-    public BoardSnapshot Snapshot => snapshot;
     public BoardStoreState State => state;
     public BoardUiState UiState => uiState;
 
@@ -128,9 +125,9 @@ public sealed class BoardStore : IDisposable
             .ToDictionary(card => card!.Id, card => card!, StringComparer.Ordinal);
     }
 
-    public IReadOnlyDictionary<string, BoardCard> GetBoardCardRuntimes()
+    public IReadOnlyDictionary<string, BoardCardRuntimeSlice> GetBoardCardRuntimes()
     {
-        return GetBoardCardDefinitionsAndData();
+        return state.CardRuntimesById;
     }
 
     public IReadOnlyDictionary<string, string> GetRequiredDataObjects(BoardCard card)
@@ -155,9 +152,11 @@ public sealed class BoardStore : IDisposable
         return BuildBoardCard(cardId);
     }
 
-    public BoardCard? GetCardRuntimeState(string cardId)
+    public BoardCardRuntimeSlice? GetCardRuntimeState(string cardId)
     {
-        return BuildBoardCard(cardId);
+        return state.CardRuntimesById.TryGetValue(cardId, out BoardCardRuntimeSlice? runtime)
+            ? runtime
+            : null;
     }
 
     public BoardWatchpartyState GetCardWatchparty(string cardId)
@@ -287,9 +286,7 @@ public sealed class BoardStore : IDisposable
         }
 
         state = nextState;
-        snapshot = BuildSnapshot(nextState);
         StateChanged?.Invoke(this, DescribeChange(previousState, nextState));
-        SnapshotChanged?.Invoke(this, snapshot);
     }
 
     private static BoardStoreChangedEventArgs DescribeChange(BoardStoreState previousState, BoardStoreState nextState)
@@ -345,7 +342,6 @@ public sealed class BoardStore : IDisposable
     {
         return action switch
         {
-            ReplacePublishedStateAction replace => BuildState(replace.Snapshot, replace.Watchparties),
             ReplaceCanonicalSlicesAction replaceCanonical => ApplyCanonicalSlices(currentState, replaceCanonical.CanonicalEnvelope),
             SetManagedBoardConfigAction setManagedConfig => Equals(currentState.ManagedBoardConfig, setManagedConfig.Config)
                 ? currentState
@@ -443,65 +439,19 @@ public sealed class BoardStore : IDisposable
         };
     }
 
-    private static BoardStoreState BuildState(BoardSnapshot snapshot, IReadOnlyDictionary<string, BoardWatchpartyState> watchparties)
+    private static BoardStoreState EmptyState()
     {
-        var definitions = new Dictionary<string, BoardCardDefinitionState>(StringComparer.Ordinal);
-        var runtimes = new Dictionary<string, BoardCardRuntimeSlice>(StringComparer.Ordinal);
-        var chats = new Dictionary<string, BoardCardChatViewState>(StringComparer.Ordinal);
-
-        foreach (BoardCard card in snapshot.Cards)
-        {
-            definitions[card.Id] = new BoardCardDefinitionState(
-                card.Id,
-                card.Title,
-                card.MetaValues,
-                card.Fields,
-                card.Requires,
-                card.Provides,
-                card.ViewKinds,
-                card.ViewElements,
-                card.SourceDefinitions,
-                card.RawDefinitionJson);
-            runtimes[card.Id] = new BoardCardRuntimeSlice(
-                card.Status,
-                card.ComputedValues,
-                card.RawRuntimeJson,
-                card.SchemaVersion);
-            chats[card.Id] = new BoardCardChatViewState(
-                card.ChatMessages,
-                card.ChatReceiving,
-                card.ChatProcessing);
-        }
-
         return new BoardStoreState(
-            snapshot.BoardId,
-            new BoardSummaryState(snapshot.CardCount, snapshot.Pending, snapshot.InProgress, snapshot.Failed, snapshot.Completed),
-            new Dictionary<string, string>(snapshot.DataObjectsByToken, StringComparer.Ordinal),
-            definitions,
-            runtimes,
-            chats,
-            new Dictionary<string, BoardWatchpartyState>(watchparties, StringComparer.Ordinal),
+            "unknown-board",
+            new BoardSummaryState(0, 0, 0, 0, 0),
+            new Dictionary<string, string>(StringComparer.Ordinal),
+            new Dictionary<string, BoardCardDefinitionState>(StringComparer.Ordinal),
+            new Dictionary<string, BoardCardRuntimeSlice>(StringComparer.Ordinal),
+            new Dictionary<string, BoardCardChatViewState>(StringComparer.Ordinal),
+            new Dictionary<string, BoardWatchpartyState>(StringComparer.Ordinal),
             new Dictionary<string, IReadOnlyList<BoardCardField>>(StringComparer.Ordinal),
             null,
             BoardCanvasLayoutState.Empty);
-    }
-
-    private static BoardSnapshot BuildSnapshot(BoardStoreState state)
-    {
-        return new BoardSnapshot(
-            state.BoardId,
-            state.Summary.CardCount,
-            state.Summary.Pending,
-            state.Summary.InProgress,
-            state.Summary.Failed,
-            state.Summary.Completed,
-            state.DataObjectsByToken,
-            state.CardDefinitionsAndData.Keys
-                .OrderBy(id => id, StringComparer.Ordinal)
-                .Select(id => BuildBoardCard(state, id))
-                .Where(card => card is not null)
-                .Select(card => card!)
-                .ToArray());
     }
 
     private BoardStoreState ApplyCanonicalSlices(BoardStoreState currentState, BoardSseCanonicalEnvelope canonicalEnvelope)
@@ -765,9 +715,19 @@ public sealed class BoardStore : IDisposable
 
     private IReadOnlyDictionary<string, BoardWatchpartyState> ParseCanonicalWatchparties(string watchpartiesJson)
     {
-        string normalized = string.IsNullOrWhiteSpace(watchpartiesJson) ? "{}" : watchpartiesJson;
-        string payload = "{\"cardWatchParties\":" + normalized + "}";
-        return BoardSnapshot.ParseWatchparties(payload, boardServerConstants.AgentOutputChannel, boardServerConstants.AgentToolsChannel);
+        var watchparties = new Dictionary<string, BoardWatchpartyState>(StringComparer.Ordinal);
+        Dictionary<string, JsonElement> map = ParseObjectMap(watchpartiesJson);
+        foreach ((string cardId, JsonElement cardWatchparty) in map)
+        {
+            if (cardWatchparty.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            watchparties[cardId] = ParseWatchparty(cardWatchparty, boardServerConstants.AgentOutputChannel, boardServerConstants.AgentToolsChannel);
+        }
+
+        return watchparties;
     }
 
     private static Dictionary<string, JsonElement> ParseObjectMap(string json)
@@ -1243,17 +1203,92 @@ public sealed class BoardStore : IDisposable
 
     private static BoardWatchpartyState ParseWatchpartyDelta(string cardId, string channel, JsonElement payload)
     {
-        string payloadJson = payload.ValueKind is JsonValueKind.Undefined
-            ? "null"
-            : payload.GetRawText();
-        string cardIdJson = JsonSerializer.Serialize(cardId);
-        string channelJson = JsonSerializer.Serialize(channel);
-        string watchpartyJson = "{\"cardWatchParties\":{" + cardIdJson + ":{" + channelJson + ":[{\"payload\":" + payloadJson + "}]}}}";
-
+        JsonElement payloadElement = payload.ValueKind is JsonValueKind.Undefined
+            ? JsonSerializer.Deserialize<JsonElement>("null")
+            : JsonSerializer.Deserialize<JsonElement>(payload.GetRawText());
+        JsonElement events = JsonSerializer.SerializeToElement(new[] { new Dictionary<string, JsonElement>(StringComparer.Ordinal) { ["payload"] = payloadElement } });
         WinUiBoardServerConstants constants = App.Current.HostConfig.Frontend.BoardServerConstants;
-        return BoardSnapshot.ParseWatchparties(watchpartyJson, constants.AgentOutputChannel, constants.AgentToolsChannel).TryGetValue(cardId, out BoardWatchpartyState? watchparty)
-            ? watchparty
-            : EmptyWatchparty();
+
+        string agentOutput = string.Empty;
+        string agentTools = string.Empty;
+        IReadOnlyList<BoardWatchpartyToolPayload> toolPayloads = Array.Empty<BoardWatchpartyToolPayload>();
+
+        if (string.Equals(channel, constants.AgentOutputChannel, StringComparison.Ordinal))
+        {
+            agentOutput = ParseWatchpartyOutput(events);
+        }
+
+        if (string.Equals(channel, constants.AgentToolsChannel, StringComparison.Ordinal))
+        {
+            (agentTools, toolPayloads) = ParseWatchpartyTools(events);
+        }
+
+        return new BoardWatchpartyState(agentOutput, agentTools, toolPayloads);
+    }
+
+    private static BoardWatchpartyState ParseWatchparty(JsonElement cardWatchparty, string agentOutputChannel, string agentToolsChannel)
+    {
+        JsonElement agentOutputEvents = TryGetArray(cardWatchparty, agentOutputChannel);
+        JsonElement agentToolsEvents = TryGetArray(cardWatchparty, agentToolsChannel);
+        string agentOutput = ParseWatchpartyOutput(agentOutputEvents);
+        (string agentTools, IReadOnlyList<BoardWatchpartyToolPayload> toolPayloads) = ParseWatchpartyTools(agentToolsEvents);
+        return new BoardWatchpartyState(agentOutput, agentTools, toolPayloads);
+    }
+
+    private static string ParseWatchpartyOutput(JsonElement agentOutputEvents)
+    {
+        string agentOutput = string.Empty;
+        if (agentOutputEvents.ValueKind != JsonValueKind.Array)
+        {
+            return agentOutput;
+        }
+
+        foreach (JsonElement entry in agentOutputEvents.EnumerateArray())
+        {
+            string? nextText = GetNestedString(entry, "payload", "text");
+            if (!string.IsNullOrWhiteSpace(nextText))
+            {
+                agentOutput = nextText;
+            }
+        }
+
+        return agentOutput;
+    }
+
+    private static (string AgentTools, IReadOnlyList<BoardWatchpartyToolPayload> ToolPayloads) ParseWatchpartyTools(JsonElement agentToolsEvents)
+    {
+        var toolPayloads = new List<BoardWatchpartyToolPayload>();
+        var toolLines = new List<string>();
+        if (agentToolsEvents.ValueKind != JsonValueKind.Array)
+        {
+            return (string.Empty, toolPayloads);
+        }
+
+        foreach (JsonElement entry in agentToolsEvents.EnumerateArray())
+        {
+            JsonElement payload = TryGetObject(entry, "payload");
+            IReadOnlyList<BoardWatchpartyToolPayload> parsedPayloads = ParseWatchpartyToolPayloads(payload);
+            foreach (BoardWatchpartyToolPayload parsedPayload in parsedPayloads)
+            {
+                toolPayloads.Add(parsedPayload);
+                string formatted = FormatWatchpartyToolPayload(parsedPayload);
+                if (!string.IsNullOrWhiteSpace(formatted))
+                {
+                    toolLines.Add(formatted);
+                }
+            }
+
+            if (parsedPayloads.Count == 0)
+            {
+                string fallback = GetNestedString(entry, "payload", "text")?.Trim() ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(fallback))
+                {
+                    toolLines.Add(fallback);
+                }
+            }
+        }
+
+        return (string.Join("\n", toolLines), toolPayloads);
     }
 
     private static IReadOnlyList<BoardWatchpartyToolPayload> AppendWatchpartyToolPayloads(
@@ -1292,6 +1327,251 @@ public sealed class BoardStore : IDisposable
         return current.Contains(delta, StringComparison.Ordinal)
             ? current
             : current + "\n" + delta;
+    }
+
+    private static IReadOnlyList<BoardWatchpartyToolPayload> ParseWatchpartyToolPayloads(JsonElement value)
+    {
+        if (value.ValueKind == JsonValueKind.String)
+        {
+            return ParseWatchpartyToolPayloads(value.GetString());
+        }
+
+        if (value.ValueKind == JsonValueKind.Array)
+        {
+            var results = new List<BoardWatchpartyToolPayload>();
+            foreach (JsonElement entry in value.EnumerateArray())
+            {
+                results.AddRange(ParseWatchpartyToolPayloads(entry));
+            }
+
+            return results;
+        }
+
+        if (value.ValueKind != JsonValueKind.Object)
+        {
+            return Array.Empty<BoardWatchpartyToolPayload>();
+        }
+
+        if (!value.TryGetProperty("tool", out _)
+            && GetString(value, "text") is string textValue)
+        {
+            return ParseWatchpartyToolPayloads(textValue);
+        }
+
+        BoardWatchpartyToolPayload? payload = BuildWatchpartyToolPayload(
+            GetString(value, "tool"),
+            GetString(value, "card_id") ?? GetString(value, "cardId"),
+            GetString(value, "turn_id") ?? GetString(value, "turnId") ?? GetString(value, "turn"),
+            TryGetInt(value, "file_idx") ?? TryGetInt(value, "fileIdx"),
+            GetString(value, "action") ?? GetString(value, "action_enum") ?? GetString(value, "action_string"));
+
+        return payload is null ? Array.Empty<BoardWatchpartyToolPayload>() : new[] { payload };
+    }
+
+    private static IReadOnlyList<BoardWatchpartyToolPayload> ParseWatchpartyToolPayloads(string? value)
+    {
+        string normalized = value?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return Array.Empty<BoardWatchpartyToolPayload>();
+        }
+
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(normalized);
+            return ParseWatchpartyToolPayloads(document.RootElement);
+        }
+        catch
+        {
+            var parsed = new List<BoardWatchpartyToolPayload>();
+            foreach (string line in normalized.Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                BoardWatchpartyToolPayload? legacy = ParseLegacyWatchpartyToolLine(line);
+                if (legacy is not null)
+                {
+                    parsed.Add(legacy);
+                }
+            }
+
+            return parsed;
+        }
+    }
+
+    private static BoardWatchpartyToolPayload? ParseLegacyWatchpartyToolLine(string? value)
+    {
+        string line = value?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(line))
+        {
+            return null;
+        }
+
+        Match match = Regex.Match(line, "^(Invoking|Completed|Failed)\\s+'([^']+)'(?:\\s+(.*))?$", RegexOptions.IgnoreCase);
+        if (!match.Success)
+        {
+            return null;
+        }
+
+        string rawAction = match.Groups[1].Value;
+        string rawToolName = match.Groups[2].Value;
+        string rawDetails = match.Groups[3].Success ? match.Groups[3].Value : string.Empty;
+
+        string normalizedAction = NormalizeWatchpartyToolAction(rawAction);
+        string normalizedToolName = NormalizeLegacyToolName(rawToolName);
+        if (string.IsNullOrWhiteSpace(normalizedAction) || string.IsNullOrWhiteSpace(normalizedToolName))
+        {
+            return null;
+        }
+
+        string cardId = Regex.Match(rawDetails, "\\bfor\\s+([A-Za-z0-9._-]+)", RegexOptions.IgnoreCase).Groups[1].Value;
+        Match fileMatch = Regex.Match(rawDetails, "\\bfile(?:\\s+no\\.)?\\s+(\\d+)\\b", RegexOptions.IgnoreCase);
+        int? fileIndex = fileMatch.Success && int.TryParse(fileMatch.Groups[1].Value, out int parsedFileIndex)
+            ? parsedFileIndex
+            : null;
+
+        return BuildWatchpartyToolPayload(normalizedToolName, cardId, string.Empty, fileIndex, normalizedAction);
+    }
+
+    private static BoardWatchpartyToolPayload? BuildWatchpartyToolPayload(string? tool, string? cardId, string? turnId, int? fileIndex, string? action)
+    {
+        string normalizedTool = NormalizePayloadToolName(tool);
+        string normalizedAction = NormalizeWatchpartyToolAction(action);
+        if (string.IsNullOrWhiteSpace(normalizedTool) || string.IsNullOrWhiteSpace(normalizedAction))
+        {
+            return null;
+        }
+
+        return new BoardWatchpartyToolPayload(
+            normalizedTool,
+            normalizedAction,
+            NormalizeString(cardId),
+            NormalizeString(turnId),
+            fileIndex);
+    }
+
+    private static string FormatWatchpartyToolPayload(BoardWatchpartyToolPayload payload)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(payload.CardId))
+        {
+            parts.Add($"for {payload.CardId}");
+        }
+
+        if (payload.FileIndex is int fileIndex)
+        {
+            parts.Add($"file no. {fileIndex}");
+        }
+
+        string details = JoinPhrases(parts);
+        return $"{HumanizeAction(payload.Action)} '{HumanizeToolName(payload.Tool)}'{details}";
+    }
+
+    private static string HumanizeToolName(string? tool)
+    {
+        string normalized = NormalizeString(tool);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return "Unknown MCP Tool";
+        }
+
+        return TitleCase(Regex.Replace(normalized, "^liveboards\\.", string.Empty, RegexOptions.IgnoreCase));
+    }
+
+    private static string HumanizeAction(string? action)
+    {
+        return NormalizeWatchpartyToolAction(action) switch
+        {
+            "invoking" => "Invoking",
+            "completed" => "Completed",
+            "failed" => "Failed",
+            _ => TitleCase(action)
+        };
+    }
+
+    private static string JoinPhrases(IReadOnlyList<string> parts)
+    {
+        if (parts.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        if (parts.Count == 1)
+        {
+            return $" {parts[0]}";
+        }
+
+        if (parts.Count == 2)
+        {
+            return $" {parts[0]} and {parts[1]}";
+        }
+
+        return $" {string.Join(", ", parts, 0, parts.Count - 1)} and {parts[^1]}";
+    }
+
+    private static string TitleCase(string? text)
+    {
+        string normalized = NormalizeString(text);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return "Unknown MCP Tool";
+        }
+
+        string[] words = Regex.Split(normalized, "[._\\-\\s]+", RegexOptions.None);
+        var builder = new StringBuilder();
+        foreach (string word in words)
+        {
+            if (string.IsNullOrWhiteSpace(word))
+            {
+                continue;
+            }
+
+            if (builder.Length > 0)
+            {
+                builder.Append(' ');
+            }
+
+            builder.Append(char.ToUpperInvariant(word[0]));
+            if (word.Length > 1)
+            {
+                builder.Append(word.AsSpan(1));
+            }
+        }
+
+        return builder.Length == 0 ? "Unknown MCP Tool" : builder.ToString();
+    }
+
+    private static string NormalizePayloadToolName(string? value)
+    {
+        string normalized = NormalizeString(value);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return string.Empty;
+        }
+
+        return normalized.Contains('.', StringComparison.Ordinal)
+            ? normalized
+            : NormalizeLegacyToolName(normalized);
+    }
+
+    private static string NormalizeLegacyToolName(string? value)
+    {
+        string normalized = Regex.Replace(NormalizeString(value).ToLowerInvariant(), "[^a-z0-9]+", "-").Trim('-');
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return string.Empty;
+        }
+
+        return normalized.Contains('.', StringComparison.Ordinal) ? normalized : $"liveboards.{normalized}";
+    }
+
+    private static string NormalizeWatchpartyToolAction(string? value)
+    {
+        string normalized = NormalizeString(value).ToLowerInvariant();
+        return normalized is "invoking" or "completed" or "failed" ? normalized : string.Empty;
+    }
+
+    private static string NormalizeString(string? value)
+    {
+        return value?.Trim() ?? string.Empty;
     }
 
     private static string RenderValue(JsonElement value)
@@ -1336,6 +1616,34 @@ public sealed class BoardStore : IDisposable
             && value.ValueKind == JsonValueKind.String)
         {
             return value.GetString();
+        }
+
+        return null;
+    }
+
+    private static string? GetNestedString(JsonElement parent, string property, string nestedProperty)
+    {
+        JsonElement nested = TryGetObject(parent, property);
+        return GetString(nested, nestedProperty);
+    }
+
+    private static int? TryGetInt(JsonElement parent, string property)
+    {
+        if (parent.ValueKind != JsonValueKind.Object
+            || !parent.TryGetProperty(property, out JsonElement value))
+        {
+            return null;
+        }
+
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out int result))
+        {
+            return result;
+        }
+
+        if (value.ValueKind == JsonValueKind.String
+            && int.TryParse(value.GetString(), out result))
+        {
+            return result;
         }
 
         return null;
@@ -1456,10 +1764,6 @@ public sealed class BoardStore : IDisposable
     }
 
     private interface IBoardStoreAction;
-
-    private sealed record ReplacePublishedStateAction(
-        BoardSnapshot Snapshot,
-        IReadOnlyDictionary<string, BoardWatchpartyState> Watchparties) : IBoardStoreAction;
 
     private sealed record ReplaceCanonicalSlicesAction(BoardSseCanonicalEnvelope CanonicalEnvelope) : IBoardStoreAction;
 
