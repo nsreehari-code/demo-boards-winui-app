@@ -39,6 +39,11 @@ public abstract partial class HookComponent<TProps>
         var (config, setConfig) = UseState<ManagedBoardConfig?>(null);
         var (loading, setLoading) = UseState(true);
 
+        // Stable-reference preservation matching the frontend's resolveNextManagedBoardConfig:
+        // avoid a setConfig call (and the re-render it triggers) when the server returns the same
+        // raw JSON strings as the previous load.
+        var previousRawRef = UseRef<ManagedBoardConfigState?>(null);
+
         UseEffect(() =>
         {
             if (string.IsNullOrWhiteSpace(boardId))
@@ -60,7 +65,20 @@ public abstract partial class HookComponent<TProps>
                         return;
                     }
 
-                    setConfig(BuildManagedBoardConfig(state));
+                    // Only update config state when content actually changed.
+                    ManagedBoardConfigState? prev = previousRawRef.Current;
+                    bool changed = prev is null
+                        || state?.RawUiJson != prev.RawUiJson
+                        || state?.RawMetadataJson != prev.RawMetadataJson
+                        || state?.RawLayoutJson != prev.RawLayoutJson
+                        || state?.RawBoardJson != prev.RawBoardJson;
+
+                    if (changed)
+                    {
+                        previousRawRef.Current = state;
+                        setConfig(BuildManagedBoardConfig(state));
+                    }
+
                     setLoading(false);
                 }
                 catch

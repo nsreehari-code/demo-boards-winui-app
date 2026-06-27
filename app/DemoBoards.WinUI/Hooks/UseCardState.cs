@@ -89,6 +89,64 @@ public abstract partial class HookComponent<TProps>
             CardActions: cardActions);
     }
 
+    /// <summary>
+    /// Port of <c>useCardStateFilesData</c>: the <c>card_data.files</c> array for the card, or an empty
+    /// list when the card is not found or has no files. Used by chat panes and message lists to show
+    /// attachment chips alongside system messages.
+    /// </summary>
+    protected IReadOnlyList<IReadOnlyDictionary<string, object?>> UseCardStateFilesData(string boardId, string cardId)
+    {
+        BoardCard? card = UseCardDefinitionAndData(cardId);
+        if (card is null || string.IsNullOrWhiteSpace(card.RawDefinitionJson))
+        {
+            return Array.Empty<IReadOnlyDictionary<string, object?>>();
+        }
+
+        try
+        {
+            using JsonDocument doc = JsonDocument.Parse(card.RawDefinitionJson);
+            if (!doc.RootElement.TryGetProperty("card_data", out JsonElement cardData)
+                || !cardData.TryGetProperty("files", out JsonElement files)
+                || files.ValueKind != JsonValueKind.Array)
+            {
+                return Array.Empty<IReadOnlyDictionary<string, object?>>();
+            }
+
+            var result = new List<IReadOnlyDictionary<string, object?>>(files.GetArrayLength());
+            foreach (JsonElement file in files.EnumerateArray())
+            {
+                if (file.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                var fileMap = new Dictionary<string, object?>(StringComparer.Ordinal);
+                foreach (JsonProperty prop in file.EnumerateObject())
+                {
+                    fileMap[prop.Name] = prop.Value.ValueKind switch
+                    {
+                        JsonValueKind.String => (object?)prop.Value.GetString(),
+                        JsonValueKind.True => (object?)true,
+                        JsonValueKind.False => (object?)false,
+                        JsonValueKind.Number => prop.Value.TryGetInt64(out long l)
+                            ? (object?)l
+                            : prop.Value.GetDouble(),
+                        JsonValueKind.Null => null,
+                        _ => (object?)prop.Value.GetRawText(),
+                    };
+                }
+
+                result.Add(fileMap);
+            }
+
+            return result;
+        }
+        catch
+        {
+            return Array.Empty<IReadOnlyDictionary<string, object?>>();
+        }
+    }
+
     private static CardActions BuildCardActions(
         EmbeddedBoardClient client,
         string cardId,

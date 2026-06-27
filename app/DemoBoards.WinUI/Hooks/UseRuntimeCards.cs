@@ -29,13 +29,17 @@ public abstract partial class HookComponent<TProps>
     protected RuntimeCards UseRuntimeCards(string boardId)
     {
         EmbeddedBoardClient client = App.Current.BoardClient;
-        var actions = new RuntimeCardActions(
-            ListRuntimeCards: async () => await client.ListRuntimeCardsAsync().ConfigureAwait(false),
-            UpsertRuntimeCard: async candidate =>
-                UnwrapRuntimeCardPayload(await client.UpsertRuntimeCardAsync(candidate).ConfigureAwait(false), "upsertRuntimeCard"),
-            RemoveRuntimeCard: async cardId =>
-                UnwrapRuntimeCardPayload(await client.RemoveRuntimeCardAsync(cardId).ConfigureAwait(false), "removeRuntimeCard"));
-        return new RuntimeCards(actions);
+
+        // useMemo parity: the frontend memoises runtimeCardActions on boardId so the callbacks
+        // are stable across renders that don't change the board.
+        return UseMemo<RuntimeCards>(
+            () => new RuntimeCards(new RuntimeCardActions(
+                ListRuntimeCards: async () => await client.ListRuntimeCardsAsync().ConfigureAwait(false),
+                UpsertRuntimeCard: async candidate =>
+                    UnwrapRuntimeCardPayload(await client.UpsertRuntimeCardAsync(candidate).ConfigureAwait(false), "upsertRuntimeCard"),
+                RemoveRuntimeCard: async cardId =>
+                    UnwrapRuntimeCardPayload(await client.RemoveRuntimeCardAsync(cardId).ConfigureAwait(false), "removeRuntimeCard"))),
+            boardId);
     }
 
     /// <summary>Port of <c>useRuntimeCards</c>'s <c>unwrapPayload</c>: success → data, fail → throw, else → payload.</summary>
