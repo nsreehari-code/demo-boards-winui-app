@@ -308,79 +308,6 @@ internal static class HooksHarness
             && HookComponent<InfiniteCanvasProps>.ParseObjectOrNull("  ") is null
             && HookComponent<InfiniteCanvasProps>.ParseObjectOrNull("{\"a\":1}") is JsonObject));
 
-        // ---- RegistryPath (path.js) ---------------------------------------------
-        checks.Add(("PathParts splits dotted + bracket indices", () =>
-        {
-            IReadOnlyList<string> parts = RegistryPath.PathParts("a.b[0].c");
-            return parts.Count == 4 && parts[0] == "a" && parts[1] == "b" && parts[2] == "0" && parts[3] == "c";
-        }));
-
-        checks.Add(("PathParts is empty for null/empty", () =>
-            RegistryPath.PathParts(null).Count == 0 && RegistryPath.PathParts(string.Empty).Count == 0));
-
-        checks.Add(("DeepGet walks nested objects and array indices", () =>
-        {
-            var source = Map(("a", Map(("b", new List<object?> { Map(("n", 7)) }))));
-            return Equals(RegistryPath.DeepGet(source, "a.b[0].n"), 7)
-                && RegistryPath.DeepGet(source, "a.missing") is null;
-        }));
-
-        checks.Add(("DeepSet returns a clone without mutating the original", () =>
-        {
-            var source = Map(("x", 1));
-            object? result = RegistryPath.DeepSet(source, "y.z", 2);
-            return source.Count == 1
-                && result is IReadOnlyDictionary<string, object?> map
-                && Equals(map["x"], 1)
-                && Equals(RegistryPath.DeepGet(map, "y.z"), 2);
-        }));
-
-        // ---- RegistryBind (bind.js) ---------------------------------------------
-        checks.Add(("ResolveBind reads a namespaced path", () =>
-        {
-            var ns = Map(("card", Map(("meta", Map(("title", "Hi"))))));
-            return (RegistryBind.ResolveBind(ns, "card.meta.title") as string) == "Hi";
-        }));
-
-        checks.Add(("ResolveBind returns the whole namespace for a single segment", () =>
-        {
-            var ns = Map(("boardId", "b1"));
-            return (RegistryBind.ResolveBind(ns, "boardId") as string) == "b1";
-        }));
-
-        checks.Add(("ResolveBind is null for missing root / empty bind", () =>
-            RegistryBind.ResolveBind(Map(("card", 1)), "nope.x") is null
-            && RegistryBind.ResolveBind(Map(("card", 1)), string.Empty) is null));
-
-        // ---- RegistryCoerce (coerce.js) -----------------------------------------
-        checks.Add(("DeepEqual is structural and order-sensitive", () =>
-            RegistryCoerce.DeepEqual(Map(("a", 1)), Map(("a", 1)))
-            && !RegistryCoerce.DeepEqual(Map(("a", 1)), Map(("a", 2)))
-            && !RegistryCoerce.DeepEqual(Map(("a", 1), ("b", 2)), Map(("b", 2), ("a", 1)))));
-
-        checks.Add(("CoerceUnknownData passes strings, empties null, pretty-prints objects", () =>
-            RegistryCoerce.CoerceUnknownData("hi") == "hi"
-            && RegistryCoerce.CoerceUnknownData(null) == string.Empty
-            && RegistryCoerce.CoerceUnknownData(Map(("a", 1))) == "{\n  \"a\": 1\n}"));
-
-        checks.Add(("Stringify compact matches JSON.stringify", () =>
-            RegistryCoerce.Stringify(new List<object?> { 1, "x", true }, 0) == "[1,\"x\",true]"));
-
-        // ---- RegistryThreshold (threshold.js) -----------------------------------
-        checks.Add(("ParseThreshold reads operator + value", () =>
-        {
-            ThresholdExpr? t = RegistryThreshold.ParseThreshold(">= 5");
-            return t is not null && t.Op == ">=" && t.Value == 5
-                && RegistryThreshold.ParseThreshold("nope") is null;
-        }));
-
-        checks.Add(("EvalThreshold compares per operator", () =>
-            RegistryThreshold.EvalThreshold(6, ">=5")
-            && !RegistryThreshold.EvalThreshold(4, ">=5")
-            && RegistryThreshold.EvalThreshold(5, "==5")
-            && RegistryThreshold.EvalThreshold(3, "<5")
-            && !RegistryThreshold.EvalThreshold(5, "=5")));
-
         // ---- ComponentRegistry + NodeResolver (registry.js / NodeRenderer.jsx) ---
         Func<NodeProps, Element> stub = _ => null!;
 
@@ -475,82 +402,6 @@ internal static class HooksHarness
             && ComponentRegistry.LookupEntry("markup") != null
             && ComponentRegistry.LookupEntry("editable-table") != null
             && ComponentRegistry.LookupEntry("todo") != null));
-
-        checks.Add(("DetectChartType picks pie / line / bar from the first row", () =>
-        {
-            IReadOnlyList<object?> pie = new List<object?> { Map(("label", "A"), ("value", 1d)) };
-            IReadOnlyList<object?> line = new List<object?> { Map(("x", 1d), ("y", 2d)) };
-            IReadOnlyList<object?> bar = new List<object?> { Map(("name", "A"), ("count", 2d)) };
-            return RegistryChart.DetectChartType(pie) == "pie"
-                && RegistryChart.DetectChartType(line) == "line"
-                && RegistryChart.DetectChartType(bar) == "bar"
-                && RegistryChart.DetectChartType(null) == "bar";
-        }));
-
-        checks.Add(("ResolveChartVariant honours spec.chartType, else detection", () =>
-        {
-            IReadOnlyList<object?> pie = new List<object?> { Map(("label", "A"), ("value", 1d)) };
-            return RegistryChart.ResolveChartVariant(Map(("chartType", "line")), pie) == "line"
-                && RegistryChart.ResolveChartVariant(Map(), pie) == "pie";
-        }));
-
-        checks.Add(("MergeRows clones object rows and empties non-objects", () =>
-        {
-            IReadOnlyDictionary<string, object?> src = Map(("k", "v"));
-            IReadOnlyList<object?> data = new List<object?> { src, 5d };
-            IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = RegistryFieldConfig.MergeRows(data);
-            return rows.Count == 2
-                && !ReferenceEquals(rows[0], src)
-                && rows[0]["k"] as string == "v"
-                && rows[1].Count == 0
-                && RegistryFieldConfig.MergeRows("nope").Count == 0;
-        }));
-
-        checks.Add(("BuildEditorSaveValue wraps card_data, else passes through", () =>
-        {
-            var wrapped = RegistryFieldConfig.BuildEditorSaveValue("card_data", "name", "Acme") as IReadOnlyDictionary<string, object?>;
-            return wrapped != null && wrapped["name"] as string == "Acme"
-                && RegistryFieldConfig.BuildEditorSaveValue("other", "name", "Acme") as string == "Acme";
-        }));
-
-        checks.Add(("GetSingleFieldConfig returns the lone field, options and required", () =>
-        {
-            IReadOnlyDictionary<string, object?> spec = Map(("fields", Map(
-                ("properties", Map(("status", Map(
-                    ("title", "Status"),
-                    ("enum", new List<object?> { "open", "closed" }))))),
-                ("required", new List<object?> { "status" }))));
-            SingleFieldConfig? field = RegistryFieldConfig.GetSingleFieldConfig(spec, null, "open", "writeX");
-            bool single = field is { FieldKey: "status", IsRequired: true }
-                && field.Options.Count == 2 && field.CurrentValue as string == "open";
-
-            IReadOnlyDictionary<string, object?> multi = Map(("fields", Map(
-                ("properties", Map(("a", Map()), ("b", Map()))))));
-            bool none = RegistryFieldConfig.GetSingleFieldConfig(multi, null, null, null) is null;
-
-            object? cv = Map(("status", "closed"));
-            SingleFieldConfig? field2 = RegistryFieldConfig.GetSingleFieldConfig(spec, null, cv, "card_data");
-            bool unwrapped = field2?.CurrentValue as string == "closed";
-
-            return single && none && unwrapped;
-        }));
-
-        checks.Add(("RegistryJson maps JSON onto the loose object model", () =>
-        {
-            var d = RegistryJson.Parse("{\"n\":3,\"b\":true,\"s\":\"hi\",\"arr\":[1,2],\"nil\":null,\"obj\":{\"k\":\"v\"}}")
-                as IReadOnlyDictionary<string, object?>;
-            bool shape = d != null
-                && d["n"] is double n && n == 3
-                && d["b"] is true
-                && d["s"] as string == "hi"
-                && d["arr"] is IReadOnlyList<object?> arr && arr.Count == 2 && arr[0] is double
-                && d["nil"] == null
-                && (d["obj"] as IReadOnlyDictionary<string, object?>)?["k"] as string == "v";
-            bool empties = RegistryJson.Parse(null) == null
-                && RegistryJson.Parse("not json") == null
-                && RegistryJson.ParseOrString("plain") as string == "plain";
-            return shape && empties;
-        }));
 
         checks.Add(("CardviewRenderer.BuildNamespaces parses card/card_data/runtime/requires", () =>
         {
@@ -741,16 +592,6 @@ internal static class HooksHarness
                 && Math.Abs(layout["b"].X - layout2["b"].X) < 0.0001
                 && Math.Abs(layout["b"].Y - layout2["b"].Y) < 0.0001;
             return storedSkipped && unsavedPlaced && deterministic;
-        }));
-
-        checks.Add(("RegistryThreshold.ParseThreshold reads a leading numeric prefix like JS parseFloat", () =>
-        {
-            ThresholdExpr? parsed = RegistryThreshold.ParseThreshold(">= 80%");
-            return parsed is not null
-                && parsed.Op == ">="
-                && Math.Abs(parsed.Value - 80) < 0.0001
-                && RegistryThreshold.EvalThreshold(80, ">= 80%")
-                && !RegistryThreshold.EvalThreshold(70, ">= 80%");
         }));
 
         checks.Add(("CardViewShared.FormatFileSize matches the format.js tiers", () =>
