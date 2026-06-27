@@ -2,16 +2,18 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { resolveDotnet } from '../scripts/resolve-dotnet.mjs';
+
 import { describe, expect, test } from 'vitest';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
-const converterHarnessProject = path.join('engine', 'ConverterHarness', 'ConverterHarness.csproj');
+const converterHarnessProject = path.join('app', 'engines', 'ConverterHarness', 'ConverterHarness.csproj');
 
 function runConverterHarness() {
   return new Promise((resolve, reject) => {
-    const child = spawn('dotnet', ['run', '--project', converterHarnessProject], {
+    const child = spawn(resolveDotnet(), ['run', '--project', converterHarnessProject], {
       cwd: repoRoot,
       stdio: ['ignore', 'pipe', 'pipe'],
     });

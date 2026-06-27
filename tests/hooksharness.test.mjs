@@ -2,6 +2,8 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { resolveDotnet } from '../scripts/resolve-dotnet.mjs';
+
 import { describe, expect, test } from 'vitest';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -11,7 +13,7 @@ const winuiProject = path.join('app', 'DemoBoards.WinUI', 'DemoBoards.WinUI.cspr
 
 function runHooksHarness() {
   return new Promise((resolve, reject) => {
-    const child = spawn('dotnet', ['run', '--project', winuiProject, '--', '--hooks-harness'], {
+    const child = spawn(resolveDotnet(), ['run', '--project', winuiProject, '--', '--hooks-harness'], {
       cwd: repoRoot,
       stdio: ['ignore', 'pipe', 'pipe'],
     });

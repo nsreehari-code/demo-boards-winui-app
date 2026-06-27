@@ -20,17 +20,17 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\DemoBoards.RuntimeHost\DemoBoards.RuntimeHost.csproj" />
+    <ProjectReference Include="..\..\DemoBoards.RuntimeHost\DemoBoards.RuntimeHost.csproj" />
   </ItemGroup>
 
   <!--
     JsonataSync loads js/compute-jsonata.js from AppContext.BaseDirectory, so the
     very same vendored bundle the app/frontend use is copied into the output. This
     is what makes the parity assertion meaningful (identical JSONata engine).
-    Path is relative to ai-tool-evolver/ (three levels up from this project).
+    Path is relative to ai-tool-evolver/ (four levels up from this project).
   -->
   <ItemGroup>
-    <None Include="..\..\..\yaml-flow\browser\compute-jsonata.js"
+    <None Include="..\..\..\..\yaml-flow\browser\compute-jsonata.js"
           Link="js\compute-jsonata.js"
           CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

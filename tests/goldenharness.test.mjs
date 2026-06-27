@@ -2,16 +2,18 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { resolveDotnet } from '../scripts/resolve-dotnet.mjs';
+
 import { describe, expect, test } from 'vitest';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
-const goldenHarnessProject = path.join('engine', 'GoldenHarness', 'GoldenHarness.csproj');
+const goldenHarnessProject = path.join('app', 'engines', 'GoldenHarness', 'GoldenHarness.csproj');
 
 function runGoldenHarness() {
   return new Promise((resolve, reject) => {
-    const child = spawn('dotnet', ['run', '--project', goldenHarnessProject], {
+    const child = spawn(resolveDotnet(), ['run', '--project', goldenHarnessProject], {
       cwd: repoRoot,
       stdio: ['ignore', 'pipe', 'pipe'],
     });

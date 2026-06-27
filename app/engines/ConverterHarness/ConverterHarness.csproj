@@ -17,7 +17,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\DemoBoards.Shared\DemoBoards.Shared.csproj" />
+    <ProjectReference Include="..\..\DemoBoards.Shared\DemoBoards.Shared.csproj" />
   </ItemGroup>
 
 </Project>

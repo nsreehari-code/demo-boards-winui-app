@@ -2,16 +2,18 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { resolveDotnet } from '../scripts/resolve-dotnet.mjs';
+
 import { describe, expect, test } from 'vitest';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
-const validatorHarnessProject = path.join('engine', 'ValidatorHarness', 'ValidatorHarness.csproj');
+const validatorHarnessProject = path.join('app', 'engines', 'ValidatorHarness', 'ValidatorHarness.csproj');
 
 function runValidatorHarness() {
   return new Promise((resolve, reject) => {
-    const child = spawn('dotnet', ['run', '--project', validatorHarnessProject], {
+    const child = spawn(resolveDotnet(), ['run', '--project', validatorHarnessProject], {
       cwd: repoRoot,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
