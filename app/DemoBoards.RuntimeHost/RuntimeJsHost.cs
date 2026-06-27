@@ -114,6 +114,8 @@ if (typeof atob === 'undefined') {
 
         string baseDir = AppContext.BaseDirectory;
         string jsDir = Path.Combine(baseDir, "js");
+        engine.Execute("board-sse-state.js", File.ReadAllText(Path.Combine(jsDir, "board-sse-state.js")));
+        engine.Execute("board-sse-reducer-host.js", File.ReadAllText(Path.Combine(jsDir, "board-sse-reducer-host.js")));
         engine.Execute("compute-jsonata.js", File.ReadAllText(Path.Combine(jsDir, "compute-jsonata.js")));
         engine.Execute("golden-driver.js", File.ReadAllText(Path.Combine(jsDir, "golden-driver.js")));
         engine.Execute("controlface-embedded-shared.js", File.ReadAllText(Path.Combine(jsDir, "controlface-embedded-shared.js")));

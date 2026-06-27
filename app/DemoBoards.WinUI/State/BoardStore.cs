@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text.Json;
 using DemoBoards.RuntimeHost;
@@ -79,6 +80,10 @@ public sealed record BoardStoreChangedEventArgs(
 /// </summary>
 public sealed class BoardStore : IDisposable
 {
+    private static readonly bool CanonicalSliceDebugLoggingEnabled =
+        string.Equals(Environment.GetEnvironmentVariable("DEMOBOARDS_LOG_CANONICAL_SLICE_CHANGES"), "1", StringComparison.Ordinal)
+        || string.Equals(Environment.GetEnvironmentVariable("DEMOBOARDS_LOG_CANONICAL_SLICE_CHANGES"), "true", StringComparison.OrdinalIgnoreCase);
+
     private readonly DemoBoardsRuntimeService runtimeService;
     private readonly WinUiBoardServerConstants boardServerConstants;
     private BoardStoreState state;
@@ -92,10 +97,10 @@ public sealed class BoardStore : IDisposable
 
         BoardSnapshot initialSnapshot = runtimeService.GetBoardSnapshot();
         state = BuildState(initialSnapshot, runtimeService.GetCardWatchparties(boardServerConstants.AgentOutputChannel, boardServerConstants.AgentToolsChannel));
+        state = ApplyCanonicalSlices(state, runtimeService.GetBoardCanonicalState());
         snapshot = BuildSnapshot(state);
 
-        runtimeService.BoardSnapshotChanged += HandleSnapshotChanged;
-        runtimeService.RuntimeNotificationsReceived += HandleRuntimeNotificationsReceived;
+        runtimeService.BoardCanonicalStateChanged += HandleCanonicalStateChanged;
     }
 
     public event EventHandler<BoardSnapshot>? SnapshotChanged;
@@ -267,14 +272,9 @@ public sealed class BoardStore : IDisposable
         Dispatch(new SetCanvasViewportAction(x, y, zoom));
     }
 
-    private void HandleSnapshotChanged(object? sender, BoardSnapshot nextSnapshot)
+    private void HandleCanonicalStateChanged(object? sender, BoardSseCanonicalEnvelope canonicalEnvelope)
     {
-        Dispatch(new ReplacePublishedStateAction(nextSnapshot, runtimeService.GetCardWatchparties(boardServerConstants.AgentOutputChannel, boardServerConstants.AgentToolsChannel)));
-    }
-
-    private void HandleRuntimeNotificationsReceived(object? sender, string notificationsJson)
-    {
-        Dispatch(new ApplyRuntimeNotificationsAction(notificationsJson));
+        Dispatch(new ReplaceCanonicalSlicesAction(canonicalEnvelope));
     }
 
     private void Dispatch(IBoardStoreAction action)
@@ -346,7 +346,7 @@ public sealed class BoardStore : IDisposable
         return action switch
         {
             ReplacePublishedStateAction replace => BuildState(replace.Snapshot, replace.Watchparties),
-            ApplyRuntimeNotificationsAction apply => ApplyRuntimeNotifications(currentState, apply.NotificationsJson),
+            ReplaceCanonicalSlicesAction replaceCanonical => ApplyCanonicalSlices(currentState, replaceCanonical.CanonicalEnvelope),
             SetManagedBoardConfigAction setManagedConfig => Equals(currentState.ManagedBoardConfig, setManagedConfig.Config)
                 ? currentState
                 : currentState with
@@ -504,295 +504,299 @@ public sealed class BoardStore : IDisposable
                 .ToArray());
     }
 
-    private static BoardStoreState ApplyRuntimeNotifications(BoardStoreState currentState, string notificationsJson)
+    private BoardStoreState ApplyCanonicalSlices(BoardStoreState currentState, BoardSseCanonicalEnvelope canonicalEnvelope)
     {
-        if (string.IsNullOrWhiteSpace(notificationsJson))
+        if (canonicalEnvelope is null)
         {
             return currentState;
         }
 
-        using JsonDocument document = JsonDocument.Parse(notificationsJson);
-        JsonElement notifications = document.RootElement;
-        if (notifications.ValueKind != JsonValueKind.Array)
+        string nextBoardId = string.IsNullOrWhiteSpace(canonicalEnvelope.BoardId)
+            ? currentState.BoardId
+            : canonicalEnvelope.BoardId;
+        BoardSummaryState nextSummary = canonicalEnvelope.SummaryChanged
+            ? ParseCanonicalSummary(canonicalEnvelope.SummaryJson, currentState.Summary)
+            : currentState.Summary;
+        IReadOnlyDictionary<string, string> nextDataObjects = canonicalEnvelope.DataObjectsChanged
+            ? ParseDataObjects(canonicalEnvelope.DataObjectsByTokenJson)
+            : currentState.DataObjectsByToken;
+        IReadOnlyDictionary<string, BoardCardDefinitionState> nextDefinitions = canonicalEnvelope.DefinitionsChanged
+            ? ParseCanonicalDefinitions(canonicalEnvelope.CardDefinitionsAndDataJson)
+            : currentState.CardDefinitionsAndData;
+
+        bool shouldRefreshRuntimes = canonicalEnvelope.DefinitionsChanged
+            || canonicalEnvelope.RuntimesChanged
+            || canonicalEnvelope.ComputedValuesChanged;
+        IReadOnlyDictionary<string, BoardCardRuntimeSlice> nextRuntimes = shouldRefreshRuntimes
+            ? ParseCanonicalRuntimes(
+                canonicalEnvelope.CardRuntimesByIdJson,
+                canonicalEnvelope.BoardCardComputedValuesJson,
+                nextDefinitions)
+            : currentState.CardRuntimesById;
+        IReadOnlyDictionary<string, BoardCardChatViewState> nextChats = canonicalEnvelope.ChatsChanged
+            ? ParseCanonicalChats(canonicalEnvelope.CardChatViewsJson)
+            : currentState.CardChatViews;
+        IReadOnlyDictionary<string, BoardWatchpartyState> nextWatchparties = canonicalEnvelope.WatchpartiesChanged
+            ? ParseCanonicalWatchparties(canonicalEnvelope.CardWatchPartiesJson)
+            : currentState.CardWatchParties;
+
+        bool unchanged = string.Equals(nextBoardId, currentState.BoardId, StringComparison.Ordinal)
+            && Equals(nextSummary, currentState.Summary)
+            && ReferenceEquals(nextDataObjects, currentState.DataObjectsByToken)
+            && ReferenceEquals(nextDefinitions, currentState.CardDefinitionsAndData)
+            && ReferenceEquals(nextRuntimes, currentState.CardRuntimesById)
+            && ReferenceEquals(nextChats, currentState.CardChatViews)
+            && ReferenceEquals(nextWatchparties, currentState.CardWatchParties);
+
+        if (unchanged)
         {
+            LogCanonicalSliceChanges(canonicalEnvelope, applied: false);
             return currentState;
         }
 
-        string boardId = currentState.BoardId;
-        BoardSummaryState summary = currentState.Summary;
-        var dataObjects = new Dictionary<string, string>(currentState.DataObjectsByToken, StringComparer.Ordinal);
-        var definitions = new Dictionary<string, BoardCardDefinitionState>(currentState.CardDefinitionsAndData, StringComparer.Ordinal);
-        var runtimes = new Dictionary<string, BoardCardRuntimeSlice>(currentState.CardRuntimesById, StringComparer.Ordinal);
-        var chats = new Dictionary<string, BoardCardChatViewState>(currentState.CardChatViews, StringComparer.Ordinal);
-        var watchparties = new Dictionary<string, BoardWatchpartyState>(currentState.CardWatchParties, StringComparer.Ordinal);
-        var pendingComputedValues = new Dictionary<string, IReadOnlyList<BoardCardField>>(currentState.PendingComputedValues, StringComparer.Ordinal);
-        bool changed = false;
-
-        foreach (JsonElement notification in notifications.EnumerateArray())
+        LogCanonicalSliceChanges(canonicalEnvelope, applied: true);
+        return currentState with
         {
-            string kind = GetString(notification, "kind") ?? string.Empty;
-            switch (kind)
+            BoardId = nextBoardId,
+            Summary = nextSummary,
+            DataObjectsByToken = nextDataObjects,
+            CardDefinitionsAndData = nextDefinitions,
+            CardRuntimesById = nextRuntimes,
+            CardChatViews = nextChats,
+            CardWatchParties = nextWatchparties,
+            PendingComputedValues = new Dictionary<string, IReadOnlyList<BoardCardField>>(StringComparer.Ordinal),
+        };
+    }
+
+    [Conditional("DEBUG")]
+    private static void LogCanonicalSliceChanges(BoardSseCanonicalEnvelope canonicalEnvelope, bool applied)
+    {
+        if (!CanonicalSliceDebugLoggingEnabled)
+        {
+            return;
+        }
+
+        Debug.WriteLine(
+            "[BoardStore] canonical slices "
+            + "summary=" + canonicalEnvelope.SummaryChanged
+            + " dataObjects=" + canonicalEnvelope.DataObjectsChanged
+            + " definitions=" + canonicalEnvelope.DefinitionsChanged
+            + " runtimes=" + canonicalEnvelope.RuntimesChanged
+            + " computedValues=" + canonicalEnvelope.ComputedValuesChanged
+            + " chats=" + canonicalEnvelope.ChatsChanged
+            + " watchparties=" + canonicalEnvelope.WatchpartiesChanged
+            + " applied=" + applied);
+    }
+
+    private static BoardSummaryState ParseCanonicalSummary(string summaryJson, BoardSummaryState fallback)
+    {
+        if (string.IsNullOrWhiteSpace(summaryJson))
+        {
+            return fallback;
+        }
+
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(summaryJson);
+            JsonElement summary = document.RootElement;
+            if (summary.ValueKind != JsonValueKind.Object)
             {
-                case "card_chats":
+                return fallback;
+            }
+
+            return new BoardSummaryState(
+                GetInt(summary, "card_count", fallback.CardCount),
+                GetInt(summary, "pending", fallback.Pending),
+                GetInt(summary, "in_progress", fallback.InProgress),
+                GetInt(summary, "failed", fallback.Failed),
+                GetInt(summary, "completed", fallback.Completed));
+        }
+        catch
+        {
+            return fallback;
+        }
+    }
+
+    private static IReadOnlyDictionary<string, string> ParseDataObjects(string dataObjectsJson)
+    {
+        if (string.IsNullOrWhiteSpace(dataObjectsJson))
+        {
+            return new Dictionary<string, string>(StringComparer.Ordinal);
+        }
+
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(dataObjectsJson);
+            JsonElement root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return new Dictionary<string, string>(StringComparer.Ordinal);
+            }
+
+            return ParseStringDictionary(root);
+        }
+        catch
+        {
+            return new Dictionary<string, string>(StringComparer.Ordinal);
+        }
+    }
+
+    private static IReadOnlyDictionary<string, BoardCardDefinitionState> ParseCanonicalDefinitions(string definitionsJson)
+    {
+        var definitions = new Dictionary<string, BoardCardDefinitionState>(StringComparer.Ordinal);
+        if (string.IsNullOrWhiteSpace(definitionsJson))
+        {
+            return definitions;
+        }
+
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(definitionsJson);
+            JsonElement root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return definitions;
+            }
+
+            foreach (JsonProperty property in root.EnumerateObject())
+            {
+                JsonElement entry = property.Value;
+                if (entry.ValueKind != JsonValueKind.Object)
                 {
-                    string? cardId = GetString(notification, "cardId");
-                    if (string.IsNullOrWhiteSpace(cardId))
-                    {
-                        break;
-                    }
-
-                    BoardCardChatViewState currentChat = chats.TryGetValue(cardId, out BoardCardChatViewState? chatView)
-                        ? chatView
-                        : EmptyChatSlice();
-                    BoardCardChatViewState nextChat = new(
-                        ParseNotificationMessages(TryGetArray(notification, "messages")),
-                        GetBool(notification, "receiving", currentChat.Receiving),
-                        GetBool(notification, "processing", currentChat.Processing));
-                    if (!ChatStatesEqual(currentChat, nextChat))
-                    {
-                        chats[cardId] = nextChat;
-                        changed = true;
-                    }
-
-                    break;
+                    continue;
                 }
 
-                case "chat_messages":
+                JsonElement cardContent = TryGetObject(entry, "cardContent");
+                if (cardContent.ValueKind != JsonValueKind.Object)
                 {
-                    string? cardId = GetString(notification, "cardId");
-                    if (string.IsNullOrWhiteSpace(cardId))
-                    {
-                        break;
-                    }
-
-                    BoardCardChatViewState currentChat = chats.TryGetValue(cardId, out BoardCardChatViewState? chatView)
-                        ? chatView
-                        : EmptyChatSlice();
-                    BoardCardChatViewState nextChat = currentChat with
-                    {
-                        Messages = ParseNotificationMessages(TryGetArray(notification, "messages")),
-                    };
-                    if (!ChatStatesEqual(currentChat, nextChat))
-                    {
-                        chats[cardId] = nextChat;
-                        changed = true;
-                    }
-
-                    break;
+                    continue;
                 }
 
-                case "chat_processing":
-                {
-                    string? cardId = GetString(notification, "cardId");
-                    if (string.IsNullOrWhiteSpace(cardId))
-                    {
-                        break;
-                    }
+                JsonElement cardData = TryGetObject(entry, "cardData");
+                JsonElement mergedDefinition = MergeDefinitionWithCardData(cardContent, cardData);
+                definitions[property.Name] = ParseDefinition(mergedDefinition, property.Name);
+            }
 
-                    BoardCardChatViewState currentChat = chats.TryGetValue(cardId, out BoardCardChatViewState? chatView)
-                        ? chatView
-                        : EmptyChatSlice();
-                    BoardCardChatViewState nextChat = currentChat with
-                    {
-                        Processing = GetBool(notification, "active", currentChat.Processing),
-                    };
-                    if (!ChatStatesEqual(currentChat, nextChat))
-                    {
-                        chats[cardId] = nextChat;
-                        changed = true;
-                    }
+            return definitions;
+        }
+        catch
+        {
+            return definitions;
+        }
+    }
 
-                    break;
-                }
+    private static JsonElement MergeDefinitionWithCardData(JsonElement cardContent, JsonElement cardData)
+    {
+        using JsonDocument contentDocument = JsonDocument.Parse(cardContent.GetRawText());
+        var rootObject = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(contentDocument.RootElement.GetRawText())
+            ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        Dictionary<string, JsonElement> nextCardData = rootObject.TryGetValue("card_data", out JsonElement existingCardData)
+            && existingCardData.ValueKind == JsonValueKind.Object
+            ? JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(existingCardData.GetRawText()) ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+            : new Dictionary<string, JsonElement>(StringComparer.Ordinal);
 
-                case "card_watchparty":
-                {
-                    string? cardId = GetString(notification, "cardId");
-                    string? channel = GetString(notification, "channel");
-                    if (string.IsNullOrWhiteSpace(cardId) || string.IsNullOrWhiteSpace(channel))
-                    {
-                        break;
-                    }
-
-                    BoardWatchpartyState currentWatchparty = watchparties.TryGetValue(cardId, out BoardWatchpartyState? state)
-                        ? state
-                        : EmptyWatchparty();
-                    BoardWatchpartyState nextWatchparty = ApplyWatchpartyNotification(
-                        currentWatchparty,
-                        cardId,
-                        channel,
-                        notification.TryGetProperty("payload", out JsonElement payloadElement) ? payloadElement : default,
-                        GetBool(notification, "clear", false),
-                        GetBool(notification, "replace", false));
-                    if (!WatchpartyStatesEqual(currentWatchparty, nextWatchparty))
-                    {
-                        watchparties[cardId] = nextWatchparty;
-                        changed = true;
-                    }
-
-                    break;
-                }
-
-                case "computed_values":
-                {
-                    string? cardId = GetString(notification, "cardId");
-                    if (string.IsNullOrWhiteSpace(cardId))
-                    {
-                        break;
-                    }
-
-                    IReadOnlyList<BoardCardField> values = ParseFields(TryGetObject(notification, "values"));
-                    if (runtimes.TryGetValue(cardId, out BoardCardRuntimeSlice? runtime))
-                    {
-                        if (!FieldListsEqual(runtime.ComputedValues, values))
-                        {
-                            runtimes[cardId] = runtime with { ComputedValues = values };
-                            pendingComputedValues.Remove(cardId);
-                            changed = true;
-                        }
-                    }
-                    else if (!pendingComputedValues.TryGetValue(cardId, out IReadOnlyList<BoardCardField>? pending)
-                        || !FieldListsEqual(pending, values))
-                    {
-                        pendingComputedValues[cardId] = values;
-                        changed = true;
-                    }
-
-                    break;
-                }
-
-                case "data_object":
-                {
-                    string? key = GetString(notification, "key");
-                    if (string.IsNullOrWhiteSpace(key))
-                    {
-                        break;
-                    }
-
-                    string payload = RenderValue(notification.TryGetProperty("payload", out JsonElement payloadElement)
-                        ? payloadElement
-                        : default);
-                    if (!dataObjects.TryGetValue(key, out string? previous) || !string.Equals(previous, payload, StringComparison.Ordinal))
-                    {
-                        dataObjects[key] = payload;
-                        changed = true;
-                    }
-
-                    break;
-                }
-
-                case "status":
-                {
-                    JsonElement status = TryGetObject(notification, "status");
-                    BoardSummaryState nextSummary = ParseSummary(status, summary);
-                    if (!Equals(nextSummary, summary))
-                    {
-                        summary = nextSummary;
-                        changed = true;
-                    }
-
-                    JsonElement cards = TryGetArray(status, "cards");
-                    if (cards.ValueKind == JsonValueKind.Array)
-                    {
-                        foreach (JsonElement statusCard in cards.EnumerateArray())
-                        {
-                            string? cardId = GetString(statusCard, "name");
-                            if (string.IsNullOrWhiteSpace(cardId) || !runtimes.TryGetValue(cardId, out BoardCardRuntimeSlice? runtime))
-                            {
-                                continue;
-                            }
-
-                            string nextStatus = GetString(statusCard, "status") ?? runtime.Status;
-                            string nextRawRuntimeJson = runtime.RawRuntimeJson;
-                            if (statusCard.TryGetProperty("runtime", out JsonElement runtimeElement)
-                                && runtimeElement.ValueKind == JsonValueKind.Object)
-                            {
-                                nextRawRuntimeJson = runtimeElement.GetRawText();
-                            }
-
-                            if (!string.Equals(runtime.Status, nextStatus, StringComparison.Ordinal)
-                                || !string.Equals(runtime.RawRuntimeJson, nextRawRuntimeJson, StringComparison.Ordinal))
-                            {
-                                runtimes[cardId] = runtime with
-                                {
-                                    Status = nextStatus,
-                                    RawRuntimeJson = nextRawRuntimeJson,
-                                };
-                                changed = true;
-                            }
-                        }
-                    }
-
-                    break;
-                }
-
-                case "card_refreshed":
-                {
-                    string? cardId = GetString(notification, "cardId");
-                    JsonElement cardElement = TryGetObject(notification, "card");
-                    if (string.IsNullOrWhiteSpace(cardId) || cardElement.ValueKind != JsonValueKind.Object)
-                    {
-                        break;
-                    }
-
-                    BoardCardDefinitionState definition = ParseDefinition(cardElement, cardId);
-                    definitions[cardId] = definition;
-                    if (!runtimes.ContainsKey(cardId))
-                    {
-                        runtimes[cardId] = EmptyRuntimeSlice();
-                    }
-                    if (!chats.ContainsKey(cardId))
-                    {
-                        chats[cardId] = EmptyChatSlice();
-                    }
-                    if (pendingComputedValues.TryGetValue(cardId, out IReadOnlyList<BoardCardField>? pendingValues))
-                    {
-                        BoardCardRuntimeSlice runtime = runtimes[cardId];
-                        runtimes[cardId] = runtime with { ComputedValues = pendingValues };
-                        pendingComputedValues.Remove(cardId);
-                    }
-
-                    summary = summary with { CardCount = definitions.Count };
-                    changed = true;
-                    break;
-                }
-
-                case "card_removed":
-                {
-                    string? cardId = GetString(notification, "cardId");
-                    if (string.IsNullOrWhiteSpace(cardId) || !definitions.ContainsKey(cardId))
-                    {
-                        break;
-                    }
-
-                    definitions.Remove(cardId);
-                    runtimes.Remove(cardId);
-                    chats.Remove(cardId);
-                    watchparties.Remove(cardId);
-                    pendingComputedValues.Remove(cardId);
-                    summary = summary with { CardCount = definitions.Count };
-                    changed = true;
-                    break;
-                }
+        if (cardData.ValueKind == JsonValueKind.Object)
+        {
+            foreach (JsonProperty property in cardData.EnumerateObject())
+            {
+                nextCardData[property.Name] = property.Value;
             }
         }
 
-        if (!changed)
+        rootObject["card_data"] = JsonSerializer.Deserialize<JsonElement>(JsonSerializer.Serialize(nextCardData));
+        return JsonSerializer.Deserialize<JsonElement>(JsonSerializer.Serialize(rootObject));
+    }
+
+    private static IReadOnlyDictionary<string, BoardCardRuntimeSlice> ParseCanonicalRuntimes(
+        string runtimesJson,
+        string computedValuesJson,
+        IReadOnlyDictionary<string, BoardCardDefinitionState> definitions)
+    {
+        var runtimes = new Dictionary<string, BoardCardRuntimeSlice>(StringComparer.Ordinal);
+        Dictionary<string, JsonElement> runtimeMap = ParseObjectMap(runtimesJson);
+        Dictionary<string, JsonElement> computedMap = ParseObjectMap(computedValuesJson);
+
+        HashSet<string> cardIds = new(definitions.Keys, StringComparer.Ordinal);
+        cardIds.UnionWith(runtimeMap.Keys);
+        cardIds.UnionWith(computedMap.Keys);
+
+        foreach (string cardId in cardIds)
         {
-            return currentState;
+            JsonElement runtimeElement = runtimeMap.TryGetValue(cardId, out JsonElement runtimeValue)
+                ? runtimeValue
+                : default;
+            JsonElement computedElement = computedMap.TryGetValue(cardId, out JsonElement computedValue)
+                ? computedValue
+                : default;
+
+            string status = GetString(runtimeElement, "status") ?? "fresh";
+            JsonElement runtime = TryGetObject(runtimeElement, "runtime");
+            if (runtime.ValueKind != JsonValueKind.Object)
+            {
+                runtime = JsonSerializer.Deserialize<JsonElement>("{}");
+            }
+
+            string schemaVersion = GetString(runtimeElement, "schema_version") ?? string.Empty;
+            runtimes[cardId] = new BoardCardRuntimeSlice(
+                status,
+                ParseFields(computedElement),
+                runtime.GetRawText(),
+                schemaVersion);
         }
 
-        return new BoardStoreState(
-            boardId,
-            summary,
-            dataObjects,
-            definitions,
-            runtimes,
-            chats,
-            watchparties,
-            pendingComputedValues,
-            currentState.ManagedBoardConfig,
-            currentState.CanvasLayout);
+        return runtimes;
+    }
+
+    private static IReadOnlyDictionary<string, BoardCardChatViewState> ParseCanonicalChats(string chatsJson)
+    {
+        var chats = new Dictionary<string, BoardCardChatViewState>(StringComparer.Ordinal);
+        Dictionary<string, JsonElement> chatMap = ParseObjectMap(chatsJson);
+        foreach ((string cardId, JsonElement chatValue) in chatMap)
+        {
+            JsonElement chatState = TryGetObject(chatValue, "chatState");
+            chats[cardId] = new BoardCardChatViewState(
+                ParseNotificationMessages(TryGetArray(chatState, "messages")),
+                GetBool(chatState, "receiving", false),
+                GetBool(chatState, "processing", false));
+        }
+
+        return chats;
+    }
+
+    private IReadOnlyDictionary<string, BoardWatchpartyState> ParseCanonicalWatchparties(string watchpartiesJson)
+    {
+        string normalized = string.IsNullOrWhiteSpace(watchpartiesJson) ? "{}" : watchpartiesJson;
+        string payload = "{\"cardWatchParties\":" + normalized + "}";
+        return BoardSnapshot.ParseWatchparties(payload, boardServerConstants.AgentOutputChannel, boardServerConstants.AgentToolsChannel);
+    }
+
+    private static Dictionary<string, JsonElement> ParseObjectMap(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        }
+
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+            }
+
+            var result = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+            foreach (JsonProperty property in document.RootElement.EnumerateObject())
+            {
+                result[property.Name] = JsonSerializer.Deserialize<JsonElement>(property.Value.GetRawText());
+            }
+
+            return result;
+        }
+        catch
+        {
+            return new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        }
     }
 
     private static BoardCanvasLayoutState ParseCanvasLayout(string? rawLayoutJson)
@@ -1448,8 +1452,7 @@ public sealed class BoardStore : IDisposable
 
     public void Dispose()
     {
-        runtimeService.BoardSnapshotChanged -= HandleSnapshotChanged;
-        runtimeService.RuntimeNotificationsReceived -= HandleRuntimeNotificationsReceived;
+        runtimeService.BoardCanonicalStateChanged -= HandleCanonicalStateChanged;
     }
 
     private interface IBoardStoreAction;
@@ -1458,7 +1461,7 @@ public sealed class BoardStore : IDisposable
         BoardSnapshot Snapshot,
         IReadOnlyDictionary<string, BoardWatchpartyState> Watchparties) : IBoardStoreAction;
 
-    private sealed record ApplyRuntimeNotificationsAction(string NotificationsJson) : IBoardStoreAction;
+    private sealed record ReplaceCanonicalSlicesAction(BoardSseCanonicalEnvelope CanonicalEnvelope) : IBoardStoreAction;
 
     private sealed record SetManagedBoardConfigAction(ManagedBoardConfigState? Config) : IBoardStoreAction;
 

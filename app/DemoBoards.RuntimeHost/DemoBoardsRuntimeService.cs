@@ -19,6 +19,7 @@ public sealed class DemoBoardsRuntimeService : IAsyncDisposable
     private readonly HostControlfaceBridge controlfaceBridge;
     private readonly HostBoardNotifier boardNotifier;
     private readonly RuntimeJsHost jsHost;
+    private readonly BoardSseStateReducerHost boardSseStateReducerHost;
     private readonly RuntimeSnapshotPublisher snapshotPublisher = new();
     private readonly RuntimeHttpRequestProcessor requestProcessor;
     private CopilotFoundryInvocationBridge invocationBridge;
@@ -28,6 +29,9 @@ public sealed class DemoBoardsRuntimeService : IAsyncDisposable
     private string agentfacePrefix;
     private int boardChangeNotifications;
     private bool started;
+    private BoardSseCanonicalEnvelope canonicalEnvelope = BoardSseCanonicalEnvelope.Empty;
+    private readonly object notificationReductionGate = new();
+    private Task notificationReductionTail = Task.CompletedTask;
 
     /// <summary>
     /// Raised whenever the published board snapshot changes (UI subscribes and
@@ -39,7 +43,7 @@ public sealed class DemoBoardsRuntimeService : IAsyncDisposable
         remove => snapshotPublisher.SnapshotChanged -= value;
     }
 
-    public event EventHandler<string>? RuntimeNotificationsReceived;
+    public event EventHandler<BoardSseCanonicalEnvelope>? BoardCanonicalStateChanged;
 
     public DemoBoardsRuntimeService(RuntimePaths? paths = null)
     {
@@ -54,6 +58,7 @@ public sealed class DemoBoardsRuntimeService : IAsyncDisposable
         agentfacePrefix = BuildAgentfacePrefix(PreferredAgentfacePort);
         invocationBridge = CreateInvocationBridge(agentfacePrefix);
         jsHost = new RuntimeJsHost(storageBridge, controlfaceBridge, invocationBridge, boardNotifier);
+        boardSseStateReducerHost = new BoardSseStateReducerHost(jsHost);
         httpListener = CreateHttpListener(agentfacePrefix);
         requestProcessor = new RuntimeHttpRequestProcessor(ProxyRuntimeApiAsync, AddCardAsync);
     }
@@ -72,6 +77,11 @@ public sealed class DemoBoardsRuntimeService : IAsyncDisposable
     public BoardSnapshot GetBoardSnapshot()
     {
         return snapshotPublisher.ParseSnapshot();
+    }
+
+    public BoardSseCanonicalEnvelope GetBoardCanonicalState()
+    {
+        return canonicalEnvelope;
     }
 
     public IReadOnlyDictionary<string, BoardWatchpartyState> GetCardWatchparties()
@@ -93,7 +103,10 @@ public sealed class DemoBoardsRuntimeService : IAsyncDisposable
     public async Task<BoardSnapshot> RefreshAsync()
     {
         string payload = await jsHost.InvokeJsAsync("winuiBuildSnapshot").ConfigureAwait(false);
-        return snapshotPublisher.Publish(this, payload);
+        string reducedPayload = await boardSseStateReducerHost.ReplacePublishedPayloadAsync(payload).ConfigureAwait(false);
+        BoardSnapshot snapshot = snapshotPublisher.Publish(this, reducedPayload);
+        await PublishCanonicalEnvelopeAsync().ConfigureAwait(false);
+        return snapshot;
     }
 
     /// <summary>
@@ -103,7 +116,10 @@ public sealed class DemoBoardsRuntimeService : IAsyncDisposable
     public async Task<BoardSnapshot> AddCardAsync(string cardJson)
     {
         string payload = await jsHost.InvokeJsAsync("winuiAddCard", cardJson).ConfigureAwait(false);
-        return snapshotPublisher.Publish(this, payload);
+        string reducedPayload = await boardSseStateReducerHost.ReplacePublishedPayloadAsync(payload).ConfigureAwait(false);
+        BoardSnapshot snapshot = snapshotPublisher.Publish(this, reducedPayload);
+        await PublishCanonicalEnvelopeAsync().ConfigureAwait(false);
+        return snapshot;
     }
 
     public async Task<(int StatusCode, string Body, IReadOnlyDictionary<string, string> Headers)> ProxyRuntimeApiAsync(string method, string path, string? bodyJson = null, IReadOnlyDictionary<string, string>? requestHeaders = null)
@@ -146,7 +162,17 @@ public sealed class DemoBoardsRuntimeService : IAsyncDisposable
 
     private void HandleBoardNotificationsReceived(string notificationsJson)
     {
-        RuntimeNotificationsReceived?.Invoke(this, notificationsJson);
+        string normalizedNotifications = notificationsJson ?? "[]";
+        lock (notificationReductionGate)
+        {
+            notificationReductionTail = notificationReductionTail
+                .ContinueWith(
+                    _ => ApplyNotificationsAndPublishAsync(normalizedNotifications),
+                    CancellationToken.None,
+                    TaskContinuationOptions.None,
+                    TaskScheduler.Default)
+                .Unwrap();
+        }
     }
 
     public async Task StartAsync(CancellationToken cancellationToken = default)
@@ -296,7 +322,28 @@ public sealed class DemoBoardsRuntimeService : IAsyncDisposable
             + "{\"id\":\"gandalf-ingest-card\",\"card_data\":{\"title\":\"Gandalf Ingest\",\"mode\":\"ingest\",\"owner\":\"board-manager\",\"requires\":[\"source.report\"],\"provides\":[{\"bindTo\":\"report.summary\"}]},\"source_defs\":[{\"bindTo\":\"source.report\",\"url\":\"https://example.invalid/report.json\",\"kind\":\"http\",\"timeout\":30000}],\"view\":{\"elements\":[{\"kind\":\"ingest\"},{\"kind\":\"markdown\"}]}}"
             + "]";
         string payload = await jsHost.InvokeJsAsync("initWinuiRuntime", "winui-board", cardsJson).ConfigureAwait(false);
-        snapshotPublisher.SetSnapshotJson(payload);
+        string reducedPayload = await boardSseStateReducerHost.InitializeFromPublishedPayloadAsync(payload).ConfigureAwait(false);
+        snapshotPublisher.SetSnapshotJson(reducedPayload);
+        await PublishCanonicalEnvelopeAsync().ConfigureAwait(false);
+    }
+
+    private void PublishCanonicalEnvelope()
+    {
+        canonicalEnvelope = BoardSseCanonicalEnvelope.Parse(boardSseStateReducerHost.GetCanonicalEnvelopeAsync().GetAwaiter().GetResult());
+        BoardCanonicalStateChanged?.Invoke(this, canonicalEnvelope);
+    }
+
+    private async Task PublishCanonicalEnvelopeAsync()
+    {
+        canonicalEnvelope = BoardSseCanonicalEnvelope.Parse(await boardSseStateReducerHost.GetCanonicalEnvelopeAsync().ConfigureAwait(false));
+        BoardCanonicalStateChanged?.Invoke(this, canonicalEnvelope);
+    }
+
+    private async Task ApplyNotificationsAndPublishAsync(string notificationsJson)
+    {
+        string reducedPayload = await boardSseStateReducerHost.ApplyNotificationsAsync(notificationsJson).ConfigureAwait(false);
+        snapshotPublisher.Publish(this, reducedPayload);
+        await PublishCanonicalEnvelopeAsync().ConfigureAwait(false);
     }
 
     private async Task ListenLoopAsync(CancellationToken cancellationToken)
