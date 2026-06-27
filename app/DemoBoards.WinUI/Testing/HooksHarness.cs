@@ -3,10 +3,12 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Nodes;
 using Microsoft.UI.Reactor.Core;
+using DemoBoards.RuntimeHost;
 using DemoBoards_WinUI.Controls;
 using DemoBoards_WinUI.Controls.Registry;
 using DemoBoards_WinUI.Controls.Shared;
 using DemoBoards_WinUI.Hooks;
+using DemoBoards_WinUI.State;
 
 namespace DemoBoards_WinUI;
 
@@ -659,7 +661,62 @@ internal static class HooksHarness
             CardChrome.PathStateDefs["suspended"].ToneStatus == "blocked"
             && CardChrome.PathStateDefs["dead_ended"].Stamp == "Ruled out"
             && CardChrome.PathStateDefs["wiped"].ToneStatus == "secondary"));
+        checks.Add(("InfiniteCanvasPane.UniqueTokens dedups, drops empties, preserves order", () =>
+            InfiniteCanvasPane.UniqueTokens(new[] { "a", "", "b", "a", "c" }).SequenceEqual(new[] { "a", "b", "c" })
+            && InfiniteCanvasPane.UniqueTokens(null).Count == 0));
 
+        checks.Add(("InfiniteCanvasPane.GetStatusTone maps known statuses and falls back to fresh", () =>
+            InfiniteCanvasPane.GetStatusTone("running") == "board-tone--running"
+            && InfiniteCanvasPane.GetStatusTone("completed") == "board-tone--completed"
+            && InfiniteCanvasPane.GetStatusTone("failed") == "board-tone--failed"
+            && InfiniteCanvasPane.GetStatusTone("blocked") == "board-tone--blocked"
+            && InfiniteCanvasPane.GetStatusTone("anything") == "board-tone--fresh"
+            && InfiniteCanvasPane.GetStatusTone(null) == "board-tone--fresh"));
+
+        checks.Add(("InfiniteCanvasPane.BuildGraph links providers to consumers and marks active tokens", () =>
+        {
+            var cards = new Dictionary<string, BoardCard>(StringComparer.Ordinal)
+            {
+                ["a"] = MakeBoardCard("a", "completed", Array.Empty<string>(), new[] { "tok" }),
+                ["b"] = MakeBoardCard("b", "running", new[] { "tok" }, Array.Empty<string>()),
+            };
+            var dataObjects = new Dictionary<string, string>(StringComparer.Ordinal) { ["tok"] = "value" };
+            var graph = InfiniteCanvasPane.BuildGraph(new[] { "a", "b" }, cards, dataObjects);
+
+            bool edge = graph.Edges.Count == 1
+                && graph.Edges[0].Id == "a::b::tok"
+                && graph.Edges[0].Source == "a"
+                && graph.Edges[0].Target == "b"
+                && graph.Edges[0].Animated;
+            bool adjacency = graph.Incoming["b"].Contains("a") && graph.Outgoing["a"].Contains("b");
+            bool active = graph.Cards["a"].ProvidesActive.SequenceEqual(new[] { "tok" });
+            bool noSelfEdge = !graph.Edges.Any(e => e.Source == e.Target);
+            return edge && adjacency && active && noSelfEdge;
+        }));
+
+        checks.Add(("InfiniteCanvasPane.BuildDeterministicCanvasLayout seeds unsaved cards and skips stored", () =>
+        {
+            var cards = new Dictionary<string, BoardCard>(StringComparer.Ordinal)
+            {
+                ["a"] = MakeBoardCard("a", "completed", Array.Empty<string>(), new[] { "tok" }),
+                ["b"] = MakeBoardCard("b", "fresh", new[] { "tok" }, Array.Empty<string>()),
+            };
+            var graph = InfiniteCanvasPane.BuildGraph(new[] { "a", "b" }, cards, new Dictionary<string, string>(StringComparer.Ordinal));
+            var storedPositions = new Dictionary<string, BoardCanvasPointState>(StringComparer.Ordinal) { ["a"] = new BoardCanvasPointState(10, 20) };
+            var storedWidths = new Dictionary<string, double>(StringComparer.Ordinal);
+
+            var layout = InfiniteCanvasPane.BuildDeterministicCanvasLayout(
+                new[] { "a", "b" }, cards, graph.Incoming, graph.Outgoing, storedPositions, storedWidths);
+            var layout2 = InfiniteCanvasPane.BuildDeterministicCanvasLayout(
+                new[] { "a", "b" }, cards, graph.Incoming, graph.Outgoing, storedPositions, storedWidths);
+
+            bool storedSkipped = !layout.ContainsKey("a");
+            bool unsavedPlaced = layout.ContainsKey("b");
+            bool deterministic = unsavedPlaced && layout2.ContainsKey("b")
+                && Math.Abs(layout["b"].X - layout2["b"].X) < 0.0001
+                && Math.Abs(layout["b"].Y - layout2["b"].Y) < 0.0001;
+            return storedSkipped && unsavedPlaced && deterministic;
+        }));
         var failures = 0;
         for (var i = 0; i < checks.Count; i++)
         {
@@ -696,4 +753,26 @@ internal static class HooksHarness
 
     private static IReadOnlyDictionary<string, object?> Map(params (string Key, object? Value)[] entries) =>
         entries.ToDictionary(entry => entry.Key, entry => entry.Value);
+
+    private static BoardCard MakeBoardCard(string id, string status, string[] requires, string[] provides, string? title = null) =>
+        new BoardCard(
+            id,
+            title ?? id,
+            status,
+            title is null
+                ? new Dictionary<string, string>(StringComparer.Ordinal)
+                : new Dictionary<string, string>(StringComparer.Ordinal) { ["title"] = title },
+            Array.Empty<BoardCardField>(),
+            Array.Empty<BoardCardField>(),
+            requires,
+            provides,
+            Array.Empty<string>(),
+            Array.Empty<BoardRenderElement>(),
+            Array.Empty<BoardSourceDefinition>(),
+            Array.Empty<BoardChatMessage>(),
+            false,
+            false,
+            "{}",
+            "{}",
+            "1");
 }
