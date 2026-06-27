@@ -9,7 +9,7 @@ using DemoBoards_WinUI.Controls.Shared;
 namespace DemoBoards_WinUI.Controls.Registry;
 
 // Tier-1 cardview adapters — faithful ports of components/registry/cardview/*Kind.jsx. Each is a thin
-// Component<NodeProps> that maps the uniform engine contract onto an existing Controls/shared/* presenter,
+// Component<NodeProps> that maps the uniform engine contract onto an existing Shared presenter component,
 // preserving the frontend prop names/shapes/defaults exactly. DOM-only props (className/style/idPrefix,
 // the <form> submit wrappers) are dropped; the save contract is onSave(value, info{ kind, writeTo, ... }).
 
