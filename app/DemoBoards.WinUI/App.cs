@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using DemoBoards.RuntimeHost;
 using DemoBoards_WinUI.Config;
+using DemoBoards_WinUI.Lib;
 using DemoBoards_WinUI.State;
 using Microsoft.UI.Xaml;
 
@@ -45,7 +46,7 @@ public sealed class App : IAsyncDisposable
         try
         {
             appConfig = WinUiAppConfigLoader.Load(AppContext.BaseDirectory);
-            Controls.BoardCanvasLayoutEngine.ConfigureDefaults(appConfig.Frontend.CanvasLayout);
+            BoardCanvasLayoutEngine.ConfigureDefaults(appConfig.Frontend.CanvasLayout);
             LogStartup($"App config loaded. Templates config path: {appConfig.Backend.TemplatesConfigPath}");
             runtimeService = new DemoBoardsRuntimeService();
             LogStartup("Runtime service created.");

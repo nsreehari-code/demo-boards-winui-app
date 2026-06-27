@@ -90,6 +90,6 @@ internal sealed class DemoBoardsRoot : Component
                 .Set(scrollViewer => scrollViewer.VerticalScrollBarVisibility = ScrollBarVisibility.Auto);
         }
 
-        return Microsoft.UI.Reactor.Factories.Component<Controls.ReactorMainShellComponent>();
+        return Microsoft.UI.Reactor.Factories.Component<Controls.AppRoot>();
     }
 }

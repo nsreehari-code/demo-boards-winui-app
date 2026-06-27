@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text.Json;
 using DemoBoards_WinUI.Controls.Shared;
 
-namespace DemoBoards_WinUI.Hooks;
+namespace DemoBoards_WinUI.Lib;
 
 // =====================================================================================
 //  ChatMessages — Reactor port of demo-boards-frontend/src/lib/chatMessages.js

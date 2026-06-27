@@ -8,7 +8,7 @@ using DemoBoards_WinUI.Assets;
 using DemoBoards_WinUI.Controls.Shared;
 using DemoBoards_WinUI.Hooks;
 
-namespace DemoBoards_WinUI.Controls.Registry;
+namespace DemoBoards_WinUI.Controls.Shared;
 
 /// <summary>
 /// Small presentational helpers shared by the carousel rails (<see cref="GandalfPane"/> /

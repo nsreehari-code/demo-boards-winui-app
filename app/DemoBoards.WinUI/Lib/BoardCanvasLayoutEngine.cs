@@ -6,7 +6,7 @@ using DemoBoards.RuntimeHost;
 using DemoBoards_WinUI.Config;
 using DemoBoards_WinUI.State;
 
-namespace DemoBoards_WinUI.Controls;
+namespace DemoBoards_WinUI.Lib;
 
 public sealed record BoardCanvasPlacement(double X, double Y, double Width, double Height);
 

@@ -10,31 +10,30 @@ const repoRoot = path.resolve(__dirname, '..');
 const appRoot = path.join(repoRoot, 'app', 'DemoBoards.WinUI');
 const csprojPath = path.join(appRoot, 'DemoBoards.WinUI.csproj');
 const programPath = path.join(appRoot, 'Program.cs');
-const controlsRoot = path.join(appRoot, 'Controls');
-const mainShellPath = path.join(controlsRoot, 'ReactorMainShellComponent.cs');
+const componentsRoot = path.join(appRoot, 'Components');
+const mainShellPath = path.join(componentsRoot, 'AppRoot.cs');
 const allowedXamlResidue = new Set(['App.xaml']);
 const disallowedBindingPattern = /x:Bind|\{Binding\b/;
 const requiredReactorSeams = [
-  'ReactorMainShellComponent',
+  'AppRoot',
   'BoardRenderer',
   'PaneRenderer',
   'CentrePane',
   'GandalfPane',
   'TruthsetExplorePane',
-  'ReactorGlobalModalComponent',
+  'GlobalModal',
   'ReactorAppConfigModalComponent',
-  'ReactorChallengeConfirmModalComponent',
+  'ChallengeConfirmModal',
   'ReactorSmokeRunnerComponent',
-  'ReactorShellBridge',
 ];
 const requiredComponentScaffolds = [
-  'Controls/shared/ChatPane.cs',
-  'Controls/shared/GlobalModal.cs',
-  'Controls/shared/ChallengeConfirmModal.cs',
-  'Controls/Registry/ComponentRegistry.cs',
-  'Controls/Registry/NodeRenderer.cs',
-  'Controls/Registry/NodeResolver.cs',
-  'Controls/Registry/pane/sub/InfiniteCanvasPane.cs',
+  'Components/Shared/Chat/ChatPane.cs',
+  'Components/Shared/GlobalModal.cs',
+  'Components/Shared/ChallengeConfirmModal.cs',
+  'Components/Registry/ComponentRegistry.cs',
+  'Components/Registry/Engine/NodeRenderer.cs',
+  'Components/Registry/Engine/NodeResolver.cs',
+  'Components/Registry/Pane/Sub/InfiniteCanvasPane.cs',
 ];
 
 function walkFiles(rootDir, visitor) {
@@ -76,15 +75,15 @@ describe('ReactorArchitecture', () => {
     const csprojText = fs.readFileSync(csprojPath, 'utf8');
     const programText = fs.readFileSync(programPath, 'utf8');
     const mainShellText = fs.readFileSync(mainShellPath, 'utf8');
-    const controlSourceFiles = collectFiles(controlsRoot, fullPath => fullPath.endsWith('.cs'));
+    const controlSourceFiles = collectFiles(componentsRoot, fullPath => fullPath.endsWith('.cs'));
 
     expect(csprojText).toContain('PackageReference Include="Microsoft.UI.Reactor"');
     expect(programText).toContain('ReactorApp.Run<DemoBoardsRoot>(');
-    expect(programText).toContain('Component<Controls.ReactorMainShellComponent>()');
+    expect(programText).toContain('Component<Controls.AppRoot>();');
     expect(mainShellText).toContain('Component<BoardRenderer, BoardRendererProps>(');
-    expect(mainShellText).toContain('Component<ReactorGlobalModalComponent, ReactorGlobalModalProps>(');
+    expect(mainShellText).toContain('Component<GlobalModal, GlobalModalProps>(');
     expect(mainShellText).toContain('Component<ReactorSmokeRunnerComponent>()');
-    expect(mainShellText).toContain('ReactorShellBridge.SmokeRunnerRequested += onSmokeRequested;');
+    expect(mainShellText).toContain('Action onRunTests = () =>');
 
     const missingSeams = requiredReactorSeams.filter(seamName => {
       const declarationPattern = new RegExp(`\\b${seamName}\\b`);

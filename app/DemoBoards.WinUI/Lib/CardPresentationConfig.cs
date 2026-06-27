@@ -4,7 +4,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using DemoBoards.RuntimeHost;
 
-namespace DemoBoards_WinUI.Controls;
+namespace DemoBoards_WinUI.Lib;
 
 public sealed record PaneRule(string Pane, string? When);
 

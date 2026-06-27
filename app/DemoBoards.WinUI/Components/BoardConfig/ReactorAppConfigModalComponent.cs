@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using DemoBoards_WinUI.Config;
+using DemoBoards_WinUI.Controls.Shared;
 using DemoBoards_WinUI.Hooks;
 using DemoBoards_WinUI.State;
 using Microsoft.UI;
@@ -17,7 +18,7 @@ using static Microsoft.UI.Reactor.Factories;
 
 namespace DemoBoards_WinUI.Controls;
 
-public sealed record ReactorAppConfigModalProps(string BoardId, ManagedBoardConfigState? Config, Action CloseAction);
+public sealed record ReactorAppConfigModalProps(string BoardId, ManagedBoardConfigState? Config, Action CloseAction, Action? OnRunTests = null);
 
 public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppConfigModalProps>
 {
@@ -169,7 +170,7 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
                             setShowAddBoardForm(!showAddBoardForm);
                             setAddBoardStatus(StatusMessage.Empty);
                         }).AutomationName(showAddBoardForm ? "Hide new board form" : "Open new board form").SubtleButton(),
-                        Button("Run tests", ReactorShellBridge.RequestSmokeRunner).AutomationName("Run smoke tests").SubtleButton()))));
+                        Button("Run tests", Props.OnRunTests ?? (() => { })).AutomationName("Run smoke tests").SubtleButton()))));
 
         sections.Add(
             SectionCard(
@@ -257,8 +258,8 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
                     TextBlock("Board Import / Export").FontSize(18).Bold(),
                     HintText("Move runtime dumps in and out, or refresh the workspace bootstrap state."),
                     confirmRuntimeImport
-                        ? (Element)Component<ReactorChallengeConfirmModalComponent, ReactorChallengeConfirmModalProps>(
-                            new ReactorChallengeConfirmModalProps(
+                        ? (Element)Component<ChallengeConfirmModal, ChallengeConfirmModalProps>(
+                            new ChallengeConfirmModalProps(
                                 "This will overwrite the current runtime card state from a local dump file. Cards not present in the file will be removed.",
                                 () =>
                                 {

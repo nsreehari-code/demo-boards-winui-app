@@ -4,20 +4,22 @@ using Microsoft.UI.Reactor;
 using Microsoft.UI.Reactor.Core;
 using static Microsoft.UI.Reactor.Factories;
 using DemoBoards_WinUI;
+using DemoBoards_WinUI.Assets;
 using DemoBoards_WinUI.Controls.Shared;
 using DemoBoards_WinUI.Hooks;
+using DemoBoards_WinUI.Lib;
 using DemoBoards_WinUI.State;
 
 namespace DemoBoards_WinUI.Controls.Registry;
 
 /// <summary>
-/// Right truthset-explore rail (port of <c>registry/pane/TruthsetExplorePane.jsx</c>). The mirror of
-/// <see cref="GandalfPane"/>: a right-anchored <see cref="PanelVertical"/> carousel over the board's
-/// truthset cards, with a phase pill in the nav and a "No Truthset cards found." empty state when the
-/// active card is absent. Pane state comes from <see cref="HookComponent{TProps}.UsePaneState"/>; presence
-/// is decided upstream by <see cref="PaneRenderer"/>.
+/// Left ingest rail (port of <c>registry/pane/GandalfPane.jsx</c>). A <see cref="PanelVertical"/> carousel
+/// over the board's ingest cards: a header (eyebrow + card count), a prev/next nav over the matched cards,
+/// and the active card rendered <c>bare</c>. Pane state (matched ids, carousel index, rail open) comes from
+/// <see cref="HookComponent{TProps}.UsePaneState"/>; presence (hide-when-empty) is decided upstream by
+/// <see cref="PaneRenderer"/>, so this component never gates itself.
 /// </summary>
-public sealed class TruthsetExplorePane : HookComponent<NodeProps>
+public sealed class GandalfPane : HookComponent<NodeProps>
 {
     public override Element Render()
     {
@@ -40,30 +42,19 @@ public sealed class TruthsetExplorePane : HookComponent<NodeProps>
             ? Component<CardRenderer, CardRendererProps>(
                     new CardRendererProps(boardId, pane.ActiveCardId, rendererRules, Chrome: "bare"))
                 .Flex(grow: 1)
-            : EmptyState(theme);
+            : Empty().Flex(grow: 1);
 
         return Component<PanelVertical, PanelVerticalProps>(new PanelVerticalProps(
-            FabPosition: "top-right",
+            FabPosition: "top-left",
             Expanded: pane.Expanded,
             OnToggle: pane.ToggleExpanded,
-            AriaLabel: "Truthset Explore pane",
-            Title: pane.Expanded ? "Hide Truthset Explore pane" : "Show Truthset Explore pane",
-            Icon: "bi-chevron-left",
-            IconToggled: "bi-chevron-right",
+            AriaLabel: "Ingest pane",
+            Title: pane.Expanded ? "Hide ingest pane" : "Show ingest pane",
+            Icon: "bi-chevron-right",
+            IconToggled: "bi-chevron-left",
             Children: VStack(12,
-                PaneRailUi.Header(theme, "Truthset Explore", pane.CardIds.Count),
-                PaneRailUi.Nav(theme, pane.Cards, pane.Idx, pane.GoPrev, pane.GoNext, includePhasePill: true),
+                PaneRailUi.Header(theme, "Board Manager", pane.CardIds.Count),
+                PaneRailUi.Nav(theme, pane.Cards, pane.Idx, pane.GoPrev, pane.GoNext),
                 body)));
     }
-
-    /// <summary>Port of <c>TruthsetExploreEmptyState</c> — shown when no truthset card is active.</summary>
-    private static Element EmptyState(AppTheme theme) =>
-        Border(TextBlock("No Truthset cards found.")
-                .FontSize(12)
-                .Opacity(0.6)
-                .Foreground(theme.TextPrimary)
-                .HAlign(Microsoft.UI.Xaml.HorizontalAlignment.Center))
-            .Padding(16)
-            .VAlign(Microsoft.UI.Xaml.VerticalAlignment.Center)
-            .Flex(grow: 1);
 }

@@ -6,7 +6,9 @@ using Microsoft.UI.Reactor.Core;
 using static Microsoft.UI.Reactor.Factories;
 using DemoBoards.RuntimeHost;
 using DemoBoards_WinUI.Controls;
+using DemoBoards_WinUI.Controls.Shared;
 using DemoBoards_WinUI.Hooks;
+using DemoBoards_WinUI.Lib;
 using DemoBoards_WinUI.State;
 
 namespace DemoBoards_WinUI.Controls.Registry;

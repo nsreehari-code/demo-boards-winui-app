@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using DemoBoards.RuntimeHost;
 using DemoBoards_WinUI.Controls.Registry;
+using DemoBoards_WinUI.Controls.Shared;
+using DemoBoards_WinUI.Lib;
 using DemoBoards_WinUI.State;
 using Microsoft.UI.Reactor;
 using Microsoft.UI.Reactor.Core;

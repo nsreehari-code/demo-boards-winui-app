@@ -14,7 +14,7 @@ using Microsoft.UI.Xaml.Media;
 using Windows.Foundation;
 using static Microsoft.UI.Reactor.Factories;
 
-namespace DemoBoards_WinUI.Controls;
+namespace DemoBoards_WinUI.Controls.Shared;
 
 // =====================================================================================
 //  InfiniteCanvas — an independent, declarative pan/zoom surface for arbitrary Reactor

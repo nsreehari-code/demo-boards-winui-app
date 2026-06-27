@@ -8,8 +8,12 @@ using static Microsoft.UI.Reactor.Factories;
 using DemoBoards.RuntimeHost;
 using DemoBoards_WinUI.Config;
 using DemoBoards_WinUI.Controls;
+using DemoBoards_WinUI.Controls.Shared;
 using DemoBoards_WinUI.Hooks;
+using DemoBoards_WinUI.Lib;
 using DemoBoards_WinUI.State;
+using Microsoft.UI;
+using Windows.UI;
 
 namespace DemoBoards_WinUI.Controls.Registry;
 
@@ -272,9 +276,9 @@ public sealed class InfiniteCanvasPane : HookComponent<InfiniteCanvasPaneProps>
             .Padding(8, 2, 8, 2)
             .MinWidth(0)
             .Background(selected || (provide && active)
-                ? ReactorMainShellComponent.ResolveBrush("AccentFillColorDefaultBrush")
-                : ReactorMainShellComponent.ResolveBrush("ControlFillColorDefaultBrush"))
-            .WithBorder(ReactorMainShellComponent.ResolveBrush("CardStrokeColorDefaultBrush"), 1)
+                ? BoardTheme.ResolveBrush("AccentFillColorDefaultBrush", Colors.Transparent)
+                : BoardTheme.ResolveBrush("ControlFillColorDefaultBrush", Colors.Transparent))
+            .WithBorder(BoardTheme.ResolveBrush("CardStrokeColorDefaultBrush", Colors.Transparent), 1)
             .Set(button => button.FontSize = 10);
 
     private static string? ReadString(JsonElement element, string name) =>

@@ -13,7 +13,7 @@ namespace DemoBoards_WinUI.Controls.Shared;
 /// Mirrors <c>ChallengeConfirmModal.jsx</c> — a confirmation overlay that requires solving a small
 /// arithmetic challenge before the destructive action proceeds.
 /// </summary>
-public sealed record ChallengeConfirmModalProps(string Message, Action OnConfirm, Action OnCancel);
+public sealed record ChallengeConfirmModalProps(string Message, Action OnConfirm, Action OnCancel, bool Pending = false);
 
 public sealed class ChallengeConfirmModal : Component<ChallengeConfirmModalProps>
 {
@@ -40,8 +40,8 @@ public sealed class ChallengeConfirmModal : Component<ChallengeConfirmModalProps
                 errorLine,
                 HStack(8,
                     Button("Cancel", Props.OnCancel).SubtleButton().AutomationName("Cancel confirmation"),
-                    Button("Confirm", Props.OnConfirm).AccentButton().AutomationName("Confirm destructive action")
-                        .Set(button => button.IsEnabled = isCorrect))))
+                    Button(Props.Pending ? "Working..." : "Confirm", Props.OnConfirm).AccentButton().AutomationName("Confirm destructive action")
+                        .Set(button => button.IsEnabled = isCorrect && !Props.Pending))))
             .Padding(14)
             .Background(theme.CardBackground)
             .WithBorder(theme.CardBorder, 1)

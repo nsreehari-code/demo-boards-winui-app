@@ -3,8 +3,9 @@ using System.Collections.Generic;
 using Microsoft.UI.Reactor;
 using Microsoft.UI.Reactor.Core;
 using static Microsoft.UI.Reactor.Factories;
-using DemoBoards_WinUI.Hooks;
 using DemoBoards_WinUI.Controls;
+using DemoBoards_WinUI.Hooks;
+using DemoBoards_WinUI.Lib;
 
 namespace DemoBoards_WinUI.Controls.Registry;
 

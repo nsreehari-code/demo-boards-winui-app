@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Text.Json;
 using System.Threading.Tasks;
 using DemoBoards_WinUI.Controls.Registry;
+using DemoBoards_WinUI.Controls.Shared;
 using DemoBoards_WinUI.Hooks;
 using DemoBoards_WinUI.State;
 using Microsoft.UI.Reactor;
@@ -15,9 +16,9 @@ using static Microsoft.UI.Reactor.Factories;
 
 namespace DemoBoards_WinUI.Controls;
 
-public sealed record MainShellProps();
+public sealed record AppRootProps();
 
-public sealed class ReactorMainShellComponent : HookComponent<MainShellProps>
+public sealed class AppRoot : HookComponent<AppRootProps>
 {
     public override Element Render()
     {
@@ -30,23 +31,11 @@ public sealed class ReactorMainShellComponent : HookComponent<MainShellProps>
         var (configOpen, setConfigOpen) = UseState(false);
         var (smokeVisible, setSmokeVisible) = UseState(false);
 
-        UseEffect(() =>
+        Action onRunTests = () =>
         {
-            Action onSmokeRequested = () =>
-            {
-                setConfigOpen(false);
-                setSmokeVisible(true);
-            };
-
-            // UseBoardStoreSubscription handles BoardStore.StateChanged + UiStateChanged subscriptions
-            // We only need to subscribe to the smoke runner event here
-            ReactorShellBridge.SmokeRunnerRequested += onSmokeRequested;
-
-            return () =>
-            {
-                ReactorShellBridge.SmokeRunnerRequested -= onSmokeRequested;
-            };
-        });
+            setConfigOpen(false);
+            setSmokeVisible(true);
+        };
 
         UseEffect(() =>
         {
@@ -79,21 +68,22 @@ public sealed class ReactorMainShellComponent : HookComponent<MainShellProps>
 
         if (configOpen)
         {
-            overlay = Component<ReactorGlobalModalComponent, ReactorGlobalModalProps>(
-                new ReactorGlobalModalProps(
+            overlay = Component<GlobalModal, GlobalModalProps>(
+                new GlobalModalProps(
                     "Board Settings",
                     () => setConfigOpen(false),
                     Component<ReactorAppConfigModalComponent, ReactorAppConfigModalProps>(
                         new ReactorAppConfigModalProps(
                             boardStore.GetBoardInfo().BoardId,
                             boardStore.State.ManagedBoardConfig,
-                            () => setConfigOpen(false)))));
+                            () => setConfigOpen(false),
+                            onRunTests))));
         }
 
         else if (smokeVisible)
         {
-            overlay = Component<ReactorGlobalModalComponent, ReactorGlobalModalProps>(
-                new ReactorGlobalModalProps(
+            overlay = Component<GlobalModal, GlobalModalProps>(
+                new GlobalModalProps(
                     "Smoke Runner",
                     () => setSmokeVisible(false),
                     Component<ReactorSmokeRunnerComponent>()));
@@ -227,7 +217,7 @@ public sealed class ReactorMainShellComponent : HookComponent<MainShellProps>
         }
     }
 
-    internal static Brush ResolveBrush(string resourceKey)
+    private static Brush ResolveBrush(string resourceKey)
     {
         return Application.Current.Resources.TryGetValue(resourceKey, out object resource)
             ? resource as Brush ?? new SolidColorBrush(Windows.UI.Color.FromArgb(0, 0, 0, 0))
