@@ -44,9 +44,8 @@ Geometry and drawing:
 
 ## Documentation
 
-- Treat `docs/sot/*` as maintained source-of-truth documents for parity status, runtime/config behavior, and genuine drift.
-- When a change affects parity, drift, or workflow assumptions, update the relevant `docs/sot/*` file in the same slice.
-- Keep `docs/sot/*` honest: do not mark work done, parity matched, or drift accepted unless the current implementation actually supports that claim.
+- The current frontend implementation remains the real product source of truth for UI behavior and architecture.
+- Do not create or rely on WinUI-side parity/source-of-truth shadow docs when the frontend implementation already answers the question.
 
 ## Validation
 

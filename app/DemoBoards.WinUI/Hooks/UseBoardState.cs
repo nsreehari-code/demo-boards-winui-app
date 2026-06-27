@@ -34,6 +34,7 @@ public sealed record BoardState(
     IReadOnlyDictionary<string, string> DataObjects,
     IReadOnlyList<string> RefreshableCardIds,
     bool HasRefreshableCards,
+    IReadOnlyList<string> CardIds,
     Func<IReadOnlyList<Func<BoardCardState, bool>>?, IReadOnlySet<string>> FilterCards,
     Func<IReadOnlyList<Func<BoardCardState, bool>>?, IReadOnlySet<string>> ExcludedCards,
     BoardActions BoardActions);
@@ -127,6 +128,7 @@ public abstract partial class HookComponent<TProps>
             dataObjects,
             refreshableCardIds,
             refreshableCardIds.Count > 0,
+            cardIds,
             FilterCards,
             ExcludedCards,
             boardActions);

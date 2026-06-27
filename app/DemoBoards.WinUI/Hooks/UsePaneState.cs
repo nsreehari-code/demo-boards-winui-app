@@ -44,10 +44,12 @@ public abstract partial class HookComponent<TProps>
         var (expanded, setExpanded) = UseState(false);
         var (idx, setIdx) = UseState(0);
 
-        // The web spreads the matched Set (insertion order == card-id iteration order).
-        // BoardStore card ids are ordinal-sorted, so sorting the matched set reproduces it.
-        IReadOnlyList<string> cardIds = board.FilterCards(includeFilters)
-            .OrderBy(cardId => cardId, StringComparer.Ordinal)
+        // The web spreads the matched Set in insertion order, which equals the card-iteration
+        // order from the board store. Preserve that order by walking board.CardIds (already in
+        // store order) and keeping only the matched ones, instead of re-sorting the Set.
+        IReadOnlySet<string> matched = board.FilterCards(includeFilters);
+        IReadOnlyList<string> cardIds = board.CardIds
+            .Where(cardId => matched.Contains(cardId))
             .ToArray();
 
         int count = cardIds.Count;

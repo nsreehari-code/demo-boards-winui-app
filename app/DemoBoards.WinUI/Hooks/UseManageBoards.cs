@@ -43,6 +43,7 @@ public sealed record ManageBoardsActions(
     Func<string, JsonObject, string?, Task<JsonNode?>> SaveLayout,
     Func<string, JsonObject, Task<ManagedBoardEntry?>> SaveBoardRecord,
     Func<string, Task<ManagedBoardEntry?>> RefreshBoard,
+    Func<string, Task<ManagedBoardEntry?>> DeprecateBoard,
     Func<string, Task<JsonNode?>> ExportBoard,
     Func<string, JsonNode, string, Task<JsonNode?>> PreviewImportBoard,
     Func<string, JsonNode, string, bool, Task<JsonNode?>> ApplyImportBoard);
@@ -217,6 +218,14 @@ public abstract partial class HookComponent<TProps>
             return NormalizeManagedBoardEntry(GetChild(data, "board"));
         }
 
+        async Task<ManagedBoardEntry?> DeprecateBoard(string boardId)
+        {
+            string normalizedBoardId = NormalizeBoardId(boardId);
+            JsonNode? data = await client.ManageBoardsAsync("deprecate-board", new { boardId = normalizedBoardId });
+            await ListBoards();
+            return NormalizeManagedBoardEntry(GetChild(data, "board"));
+        }
+
         async Task<ManagedBoardEntry?> GetBoard(string boardId)
         {
             string normalizedBoardId = NormalizeBoardId(boardId);
@@ -275,6 +284,7 @@ public abstract partial class HookComponent<TProps>
             SaveLayout,
             SaveBoardRecord,
             RefreshBoard,
+            DeprecateBoard,
             ExportBoard,
             PreviewImportBoard,
             ApplyImportBoard);

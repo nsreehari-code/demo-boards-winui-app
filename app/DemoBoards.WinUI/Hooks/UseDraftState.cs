@@ -53,7 +53,7 @@ public abstract partial class HookComponent<TProps> : Component<TProps>
         IEqualityComparer<TValue>? valueComparer = null)
         where TKey : notnull
     {
-        IEqualityComparer<TValue> comparer = valueComparer ?? EqualityComparer<TValue>.Default;
+        IEqualityComparer<TValue> comparer = valueComparer ?? DraftDeepEqualityComparer<TValue>.Instance;
 
         // Per-key journal of in-flight edits. UseReducer's functional updater lets each setter compose
         // off the live previous journal rather than a render-time snapshot.
@@ -154,4 +154,46 @@ public abstract partial class HookComponent<TProps> : Component<TProps>
 
         return new DraftState<TKey, TValue>(values, journal.Count > 0, SetField, Discard);
     }
+}
+
+// Deep equality comparer used as the default for UseDraftState journal reconciliation.
+// For value types and records that implement IEquatable<T>, defers to the built-in comparer
+// (fast path). For other reference types, falls back to JSON-serialisation comparison,
+// matching the frontend deepEqual default behavior.
+file sealed class DraftDeepEqualityComparer<T> : IEqualityComparer<T>
+{
+    public static readonly DraftDeepEqualityComparer<T> Instance = new();
+
+    public bool Equals(T? x, T? y)
+    {
+        if (EqualityComparer<T>.Default.Equals(x, y))
+        {
+            return true;
+        }
+
+        if (typeof(T).IsValueType)
+        {
+            return false;
+        }
+
+        if (x is null || y is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return System.Text.Json.JsonSerializer.Serialize(x) ==
+                   System.Text.Json.JsonSerializer.Serialize(y);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    // GetHashCode intentionally returns 0 so Equals is always called; this is safe
+    // because DraftDeepEqualityComparer is only used for change detection, never as
+    // a dictionary or hash-set key comparer.
+    public int GetHashCode(T obj) => 0;
 }

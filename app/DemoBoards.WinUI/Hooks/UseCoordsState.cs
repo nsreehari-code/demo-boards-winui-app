@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using DemoBoards_WinUI.State;
 
@@ -13,8 +14,9 @@ namespace DemoBoards_WinUI.Hooks;
 //  useBoardLayoutActions, useCoordsState and useCardWidthState. In the embedded app there
 //  is a single board and BoardStore already owns the canvas layout (CanvasLayout slice +
 //  SetCanvasCardPosition/Width/Viewport reducers), so the context collapses: the hooks read
-//  from the store (subscribing for re-render) and bind the setters to it. Server autosave /
-//  flush are not applicable to the in-memory embedded store, so they are no-ops.
+//  from the store (subscribing for re-render) and bind the setters to it. FlushLayout persists
+//  via EmbeddedBoardClient.SaveLayoutAsync (manage-boards save-layout), and ScheduleAutosave
+//  debounces that to 30 s (matching the frontend DEFAULT_LAYOUT_AUTOSAVE_DELAY_MS).
 // =====================================================================================
 
 /// <summary>Stable layout action callbacks (port of <c>useBoardLayoutActions</c>).</summary>
@@ -39,6 +41,45 @@ public abstract partial class HookComponent<TProps>
     protected BoardLayoutActions UseBoardLayoutActions()
     {
         BoardStore store = App.Current.BoardStore;
+        EmbeddedBoardClient client = App.Current.BoardClient;
+        var autosaveTimerRef = UseRef<Timer?>(null);
+
+        // Dispose any pending autosave timer when the component unmounts.
+        UseEffect(
+            () => () =>
+            {
+                autosaveTimerRef.Current?.Dispose();
+                autosaveTimerRef.Current = null;
+            },
+            store.GetBoardInfo().BoardId);
+
+        async Task FlushLayoutAsync()
+        {
+            autosaveTimerRef.Current?.Dispose();
+            autosaveTimerRef.Current = null;
+
+            string boardId = store.GetBoardInfo().BoardId;
+            BoardCanvasLayoutState layout = store.GetCanvasLayout();
+            try
+            {
+                await client.SaveLayoutAsync(boardId, layout).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Layout save failures are non-fatal; the next autosave or explicit flush will retry.
+            }
+        }
+
+        void ScheduleAutosave()
+        {
+            autosaveTimerRef.Current?.Dispose();
+            autosaveTimerRef.Current = new Timer(
+                _ => _ = FlushLayoutAsync(),
+                null,
+                TimeSpan.FromSeconds(30),
+                Timeout.InfiniteTimeSpan);
+        }
+
         return new BoardLayoutActions(
             SetCoords: (cardId, x, y) => store.SetCanvasCardPosition(cardId, x, y),
             SetManyCoords: byCardId =>
@@ -60,10 +101,8 @@ public abstract partial class HookComponent<TProps>
             },
             SetWidth: (cardId, width) => store.SetCanvasCardWidth(cardId, width),
             SetViewport: (x, y, zoom) => store.SetCanvasViewport(x, y, zoom),
-            // The embedded board store holds the canvas layout in-memory; there is no server
-            // round-trip to flush or autosave, so these mirror the web shape as no-ops.
-            FlushLayout: () => Task.CompletedTask,
-            ScheduleAutosave: () => { });
+            FlushLayout: FlushLayoutAsync,
+            ScheduleAutosave: ScheduleAutosave);
     }
 
     /// <summary>Port of <c>useCoordsState(cardId)</c>: a single card's coords plus a bound setter.</summary>
