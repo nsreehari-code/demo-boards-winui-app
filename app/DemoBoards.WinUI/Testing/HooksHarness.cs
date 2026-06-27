@@ -717,6 +717,38 @@ internal static class HooksHarness
                 && Math.Abs(layout["b"].Y - layout2["b"].Y) < 0.0001;
             return storedSkipped && unsavedPlaced && deterministic;
         }));
+
+        checks.Add(("RegistryThreshold.ParseThreshold reads a leading numeric prefix like JS parseFloat", () =>
+        {
+            ThresholdExpr? parsed = RegistryThreshold.ParseThreshold(">= 80%");
+            return parsed is not null
+                && parsed.Op == ">="
+                && Math.Abs(parsed.Value - 80) < 0.0001
+                && RegistryThreshold.EvalThreshold(80, ">= 80%")
+                && !RegistryThreshold.EvalThreshold(70, ">= 80%");
+        }));
+
+        checks.Add(("CardViewShared.FormatFileSize matches the format.js tiers", () =>
+            CardViewShared.FormatFileSize(0) == "Unknown size"
+            && CardViewShared.FormatFileSize(512.0) == "512 B"
+            && CardViewShared.FormatFileSize(2048.0) == "2 KB"
+            && CardViewShared.FormatFileSize(5.0 * 1024 * 1024) == "5.0 MB"));
+
+        checks.Add(("InfiniteCanvasPane.BuildDeterministicCanvasLayout trims footprint and is case-sensitive", () =>
+        {
+            BoardCard trimmed = MakeBoardCard("w", "fresh", Array.Empty<string>(), Array.Empty<string>(),
+                rawDefinitionJson: "{\"meta\":{\"presentation\":{\"footprint\":\"  wide  \"}}}");
+            BoardCard upper = MakeBoardCard("u", "fresh", Array.Empty<string>(), Array.Empty<string>(),
+                rawDefinitionJson: "{\"meta\":{\"presentation\":{\"footprint\":\"WIDE\"}}}");
+            var cards = new Dictionary<string, BoardCard>(StringComparer.Ordinal) { ["w"] = trimmed, ["u"] = upper };
+            var graph = InfiniteCanvasPane.BuildGraph(new[] { "w", "u" }, cards, new Dictionary<string, string>(StringComparer.Ordinal));
+            var layout = InfiniteCanvasPane.BuildDeterministicCanvasLayout(
+                new[] { "w", "u" }, cards, graph.Incoming, graph.Outgoing,
+                new Dictionary<string, BoardCanvasPointState>(StringComparer.Ordinal),
+                new Dictionary<string, double>(StringComparer.Ordinal));
+            return Math.Abs(layout["w"].W - 440) < 0.0001   // "  wide  " trimmed -> wide -> 440
+                && Math.Abs(layout["u"].W - 360) < 0.0001;  // "WIDE" is a case-sensitive miss -> default 360
+        }));
         var failures = 0;
         for (var i = 0; i < checks.Count; i++)
         {
@@ -754,7 +786,7 @@ internal static class HooksHarness
     private static IReadOnlyDictionary<string, object?> Map(params (string Key, object? Value)[] entries) =>
         entries.ToDictionary(entry => entry.Key, entry => entry.Value);
 
-    private static BoardCard MakeBoardCard(string id, string status, string[] requires, string[] provides, string? title = null) =>
+    private static BoardCard MakeBoardCard(string id, string status, string[] requires, string[] provides, string? title = null, string rawDefinitionJson = "{}") =>
         new BoardCard(
             id,
             title ?? id,
@@ -772,7 +804,7 @@ internal static class HooksHarness
             Array.Empty<BoardChatMessage>(),
             false,
             false,
-            "{}",
+            rawDefinitionJson,
             "{}",
             "1");
 }

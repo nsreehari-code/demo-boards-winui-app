@@ -315,7 +315,7 @@ public sealed class InfiniteCanvasPane : HookComponent<InfiniteCanvasPaneProps>
         double? StoredWidth);
 
     private static readonly IReadOnlyDictionary<string, double> FootprintWidths =
-        new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase)
+        new Dictionary<string, double>(StringComparer.Ordinal)
         {
             ["compact"] = 300,
             ["standard"] = 360,
@@ -324,7 +324,7 @@ public sealed class InfiniteCanvasPane : HookComponent<InfiniteCanvasPaneProps>
         };
 
     private static readonly IReadOnlyDictionary<string, int> ProminenceOrder =
-        new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+        new Dictionary<string, int>(StringComparer.Ordinal)
         {
             ["spotlight"] = 0,
             ["feature"] = 1,
@@ -473,7 +473,7 @@ public sealed class InfiniteCanvasPane : HookComponent<InfiniteCanvasPaneProps>
             .OrderBy(component => component.Min(cardId => depthMap.GetValueOrDefault(cardId, 0)))
             .ThenBy(
                 component => component.Select(cardId => descriptorsById[cardId].Title).OrderBy(title => title, StringComparer.Ordinal).FirstOrDefault() ?? string.Empty,
-                StringComparer.Ordinal)
+                StringComparer.InvariantCulture)
             .ToList();
 
         foreach (List<string> componentIds in components)
@@ -524,7 +524,7 @@ public sealed class InfiniteCanvasPane : HookComponent<InfiniteCanvasPaneProps>
             .Select(cardId => descriptorsById[cardId])
             .OrderBy(descriptor => componentDepthMap.GetValueOrDefault(descriptor.CardId, 0))
             .ThenBy(descriptor => descriptor.Prominence)
-            .ThenBy(descriptor => descriptor.Title, StringComparer.Ordinal);
+            .ThenBy(descriptor => descriptor.Title, StringComparer.InvariantCulture);
 
     private static LayoutDescriptor BuildLayoutDescriptor(
         string cardId,
@@ -534,11 +534,14 @@ public sealed class InfiniteCanvasPane : HookComponent<InfiniteCanvasPaneProps>
         BoardCanvasLayoutDefaults config)
     {
         (string? prominence, string? footprint, double? legacyHeight) = ReadPresentation(card?.RawDefinitionJson);
-        double width = footprint is not null && FootprintWidths.TryGetValue(footprint, out double footprintWidth)
+        // JS trims before the (case-sensitive) lookup: FOOTPRINT_WIDTH[footprint.trim()] / PROMINENCE_ORDER[prominence.trim()].
+        string? footprintKey = footprint?.Trim();
+        double width = footprintKey is not null && FootprintWidths.TryGetValue(footprintKey, out double footprintWidth)
             ? footprintWidth
             : config.DefaultCardWidth;
         double height = legacyHeight is > 0 ? legacyHeight.Value : config.DefaultCardHeight;
-        int prominenceRank = prominence is not null && ProminenceOrder.TryGetValue(prominence, out int prominenceWeight)
+        string? prominenceKey = prominence?.Trim();
+        int prominenceRank = prominenceKey is not null && ProminenceOrder.TryGetValue(prominenceKey, out int prominenceWeight)
             ? prominenceWeight
             : ProminenceOrder["standard"];
         BoardCanvasPointState? stored = storedPositions.TryGetValue(cardId, out BoardCanvasPointState? point) ? point : null;

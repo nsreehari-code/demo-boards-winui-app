@@ -13,11 +13,14 @@ public sealed record NodeMeta(string? Label = null, string? Id = null);
 
 /// <summary>
 /// The injected services bag passed through the engine to leaf components — the typed C# stand-in for the
-/// frontend's loose <c>services</c> object. Currently exposes <c>fileUrlForIndex</c> (used by the text
-/// kind to resolve file-link hrefs); a host (the cardview renderer) constructs it.
+/// frontend's loose <c>services</c> object. Exposes <c>fileUrlForIndex</c> (used by the text + multi-file
+/// kinds to resolve file-link hrefs) and <c>uploadCardFilesMultiple</c> (used by the multi-file kind; null
+/// in the embedded host, which has no upload transport — matching the frontend's optional service). A host
+/// (the cardview renderer) constructs it.
 /// </summary>
 public sealed record NodeServices(
-    System.Func<int, IReadOnlyDictionary<string, object?>, string?>? FileUrlForIndex = null);
+    System.Func<int, IReadOnlyDictionary<string, object?>, string?>? FileUrlForIndex = null,
+    System.Func<IReadOnlyList<object?>, string?, System.Threading.Tasks.Task>? UploadCardFilesMultiple = null);
 
 /// <summary>
 /// The uniform prop contract every registered component receives — a faithful port of the props the

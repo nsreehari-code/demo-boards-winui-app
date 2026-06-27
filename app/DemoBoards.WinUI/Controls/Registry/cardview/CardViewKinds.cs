@@ -56,6 +56,53 @@ internal static class CardViewShared
     /// <summary>JS <c>spec.x !== false</c>: true unless the value is exactly boolean false.</summary>
     public static bool NotFalse(IReadOnlyDictionary<string, object?> spec, string key)
         => BoardData.Get(spec, key) as bool? != false;
+
+    /// <summary>Port of <c>Number(value)</c>: null -&gt; 0, bool -&gt; 0/1, numeric string -&gt; value, else NaN.</summary>
+    private static double JsNumber(object? value) => value switch
+    {
+        null => 0,
+        double d => d,
+        int i => i,
+        long l => l,
+        bool b => b ? 1 : 0,
+        string s => string.IsNullOrWhiteSpace(s)
+            ? 0
+            : (double.TryParse(s.Trim(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double parsed) ? parsed : double.NaN),
+        _ => double.NaN,
+    };
+
+    /// <summary>Human-readable file size — a faithful port of <c>format.js</c> <c>formatFileSize</c>.</summary>
+    public static string FormatFileSize(object? size)
+    {
+        double value = JsNumber(size);
+        if (double.IsNaN(value) || double.IsInfinity(value) || value <= 0)
+        {
+            return "Unknown size";
+        }
+
+        if (value < 1024)
+        {
+            return $"{value.ToString(System.Globalization.CultureInfo.InvariantCulture)} B";
+        }
+
+        double kb = value / 1024;
+        if (kb < 1024)
+        {
+            return $"{System.Math.Max(1, System.Math.Round(kb, System.MidpointRounding.AwayFromZero)).ToString(System.Globalization.CultureInfo.InvariantCulture)} KB";
+        }
+
+        double mb = kb / 1024;
+        if (mb < 1024)
+        {
+            return $"{mb.ToString(mb >= 100 ? "F0" : "F1", System.Globalization.CultureInfo.InvariantCulture)} MB";
+        }
+
+        double gb = mb / 1024;
+        return $"{gb.ToString(gb >= 100 ? "F0" : "F1", System.Globalization.CultureInfo.InvariantCulture)} GB";
+    }
+
+    /// <summary>JS truthy-string fallback (<c>a || b</c>): returns the value unless it is null/empty.</summary>
+    public static string? NonEmpty(string? value) => string.IsNullOrEmpty(value) ? null : value;
 }
 
 public sealed class TableKind : Component<NodeProps>
@@ -317,4 +364,168 @@ public sealed class MarkdownKind : Component<NodeProps>
 
         return Component<BoardMarkdown, BoardMarkdownProps>(new BoardMarkdownProps(Text: text));
     }
+}
+
+public sealed class MultiFileUploadKind : Component<NodeProps>
+{
+    public override Element Render()
+    {
+        AppTheme theme = UseContext(AppThemeContext.Current);
+        IReadOnlyDictionary<string, object?> spec = Props.Spec;
+        var services = Props.Services as NodeServices;
+
+        IReadOnlyList<object?> files = ResolveFiles(Props.Data);
+        IReadOnlyList<object?> filegroups = ResolveFilegroups(Props.Data);
+        Func<int, IReadOnlyDictionary<string, object?>, string?>? fileUrlForIndex = services?.FileUrlForIndex;
+        Func<IReadOnlyList<object?>, string?, System.Threading.Tasks.Task>? uploadFiles = services?.UploadCardFilesMultiple;
+
+        var children = new List<Element>();
+        if (filegroups.Count > 0)
+        {
+            var groups = new List<Element>(filegroups.Count);
+            for (int groupIndex = 0; groupIndex < filegroups.Count; groupIndex++)
+            {
+                groups.Add(RenderFileGroup(theme, BoardData.AsMap(filegroups[groupIndex]), files, fileUrlForIndex));
+            }
+
+            children.Add(VStack(8, groups.ToArray()));
+        }
+
+        children.Add(Component<MessageWithAttachmentsInput, MessageWithAttachmentsInputProps>(new MessageWithAttachmentsInputProps(
+            Multiple: true,
+            RequireAttachment: true,
+            Disabled: uploadFiles is null,
+            Accept: BoardData.StrList(spec, "accept"),
+            Placeholder: BoardData.Str(spec, "placeholder") ?? "Add a message…",
+            SubmitLabel: BoardData.Str(spec, "submitLabel") ?? "Upload",
+            OnSubmit: payload =>
+            {
+                if (uploadFiles is null)
+                {
+                    return;
+                }
+
+                IReadOnlyList<object?> staged = BoardData.ToList(BoardData.Get(payload, "files")) ?? Array.Empty<object?>();
+                if (staged.Count == 0)
+                {
+                    return;
+                }
+
+                _ = uploadFiles(staged, BoardData.Str(payload, "text"));
+            })));
+
+        return VStack(12, children.ToArray());
+    }
+
+    // Reads the bound card_data slice: `data` is the card_data object ({ files, filegroups }); for
+    // resilience a bare files array is also accepted as `data` (port of resolveFiles/resolveFilegroups).
+    private static IReadOnlyList<object?> ResolveFiles(object? data)
+    {
+        if (data is IReadOnlyList<object?> list)
+        {
+            return list;
+        }
+
+        if (data is IReadOnlyDictionary<string, object?> map && BoardData.ToList(BoardData.Get(map, "files")) is { } files)
+        {
+            return files;
+        }
+
+        return Array.Empty<object?>();
+    }
+
+    private static IReadOnlyList<object?> ResolveFilegroups(object? data)
+    {
+        if (data is IReadOnlyDictionary<string, object?> map && BoardData.ToList(BoardData.Get(map, "filegroups")) is { } groups)
+        {
+            return groups;
+        }
+
+        return Array.Empty<object?>();
+    }
+
+    private static Element RenderFileGroup(
+        AppTheme theme,
+        IReadOnlyDictionary<string, object?> group,
+        IReadOnlyList<object?> files,
+        Func<int, IReadOnlyDictionary<string, object?>, string?>? fileUrlForIndex)
+    {
+        IReadOnlyList<object?> fileIdxs = BoardData.ToList(BoardData.Get(group, "file_idxs")) ?? Array.Empty<object?>();
+        string message = (BoardData.Str(group, "message") ?? string.Empty).Trim();
+
+        var chips = new List<Element>();
+        foreach (object? idxValue in fileIdxs)
+        {
+            if (!TryGetIndex(idxValue, out int fileIdx) || fileIdx < 0 || fileIdx >= files.Count)
+            {
+                continue;
+            }
+
+            IReadOnlyDictionary<string, object?> file = BoardData.AsMap(files[fileIdx]);
+            string name = CardViewShared.NonEmpty(BoardData.Str(file, "name"))
+                ?? CardViewShared.NonEmpty(BoardData.Str(file, "stored_name"))
+                ?? $"file {fileIdx}";
+            object? sizeValue = BoardData.Get(file, "size");
+            string size = IsTruthy(sizeValue) ? $" ({CardViewShared.FormatFileSize(sizeValue)})" : string.Empty;
+            string? href = fileUrlForIndex?.Invoke(fileIdx, file);
+
+            Element nameEl = string.IsNullOrEmpty(href)
+                ? TextBlock(name).Foreground(theme.TextPrimary)
+                : Button(name, () =>
+                    {
+                        if (Uri.TryCreate(href, UriKind.Absolute, out Uri? uri))
+                        {
+                            _ = Windows.System.Launcher.LaunchUriAsync(uri);
+                        }
+                    })
+                    .SubtleButton()
+                    .AutomationName(name);
+
+            chips.Add(string.IsNullOrEmpty(size)
+                ? nameEl
+                : HStack(4, nameEl, TextBlock(size).FontSize(12).Opacity(0.65).Foreground(theme.TextPrimary)));
+        }
+
+        var groupChildren = new List<Element>();
+        if (!string.IsNullOrEmpty(message))
+        {
+            groupChildren.Add(TextBlock(message).Foreground(theme.TextPrimary));
+        }
+
+        groupChildren.Add(VStack(6, chips.ToArray()));
+
+        return Border(VStack(8, groupChildren.ToArray()))
+            .Padding(8)
+            .Background(theme.CardBackground)
+            .CornerRadius(8);
+    }
+
+    private static bool TryGetIndex(object? value, out int index)
+    {
+        switch (value)
+        {
+            case int i:
+                index = i;
+                return true;
+            case long l:
+                index = (int)l;
+                return true;
+            case double d when !double.IsNaN(d) && !double.IsInfinity(d):
+                index = (int)d;
+                return true;
+            default:
+                index = 0;
+                return false;
+        }
+    }
+
+    // JS `file.size ? ...` truthiness for the displayed size suffix.
+    private static bool IsTruthy(object? value) => value switch
+    {
+        double d => d != 0 && !double.IsNaN(d),
+        int i => i != 0,
+        long l => l != 0,
+        string s => s.Length > 0,
+        _ => false,
+    };
 }

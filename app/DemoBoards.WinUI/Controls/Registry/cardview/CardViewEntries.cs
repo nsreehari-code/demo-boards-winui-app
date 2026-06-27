@@ -44,5 +44,7 @@ public static class CardViewEntries
         // `markdown` and `markup` are two explicit kinds sharing one component.
         new RegistryEntry("markdown", p => Component<MarkdownKind, NodeProps>(p), Meta: ReadOnly),
         new RegistryEntry("markup", p => Component<MarkdownKind, NodeProps>(p), Meta: ReadOnly),
+        new RegistryEntry("multi-file-upload", p => Component<MultiFileUploadKind, NodeProps>(p),
+            Meta: new RegistryMeta(ShowLabel: true, IsReadonly: false)),
     };
 }
