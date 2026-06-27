@@ -4,6 +4,7 @@ using Microsoft.UI.Reactor.Core;
 using Microsoft.UI.Xaml;
 using static Microsoft.UI.Reactor.Factories;
 using DemoBoards_WinUI;
+using DemoBoards_WinUI.Assets;
 
 namespace DemoBoards_WinUI.Controls.Shared;
 
@@ -23,10 +24,10 @@ public sealed record ChatBubbleProps(
 public sealed class ChatBubble : Component<ChatBubbleProps>
 {
     /// <summary>Default avatar glyph for <c>user</c> bubbles — mirrors <c>UserBubbleIcon</c>.</summary>
-    public static Element UserBubbleIcon() => TextBlock("\U0001F9D1").FontSize(13);
+    public static Element UserBubbleIcon() => Component<SvgIcon, SvgIconProps>(new SvgIconProps(HostIconSources.ChatUserBubble, 14));
 
     /// <summary>Default avatar glyph for <c>assistant</c> bubbles — mirrors <c>AssistantBubbleIcon</c>.</summary>
-    public static Element AssistantBubbleIcon() => TextBlock("\u2728").FontSize(13);
+    public static Element AssistantBubbleIcon() => Component<SvgIcon, SvgIconProps>(new SvgIconProps(HostIconSources.ChatAssistantBubble, 14));
 
     /// <summary>Wraps an avatar in the muted shell used beside the bubble — mirrors <c>ChatIconShell</c>.</summary>
     public static Element ChatIconShell(Element child) => Border(child).Opacity(0.55);

@@ -5,6 +5,7 @@ using Microsoft.UI.Reactor.Core;
 using Microsoft.UI.Xaml;
 using static Microsoft.UI.Reactor.Factories;
 using DemoBoards_WinUI;
+using DemoBoards_WinUI.Assets;
 
 namespace DemoBoards_WinUI.Controls.Shared;
 
@@ -93,6 +94,7 @@ public sealed class ChatPane : Component<ChatPaneProps>
     public static Element PopoutHeader(Action onPopout, AppTheme theme) =>
         Border(HStack(6,
                 TextBlock("Chat").FontSize(12).Bold().Foreground(theme.TextPrimary).Flex(grow: 1),
-                Button("\u2197", onPopout).SubtleButton().AutomationName("Open full chat")))
+                Button(Component<SvgIcon, SvgIconProps>(new SvgIconProps(HostIconSources.ChatPopout, 14)), onPopout)
+                    .SubtleButton().AutomationName("Open full chat")))
             .Padding(4);
 }

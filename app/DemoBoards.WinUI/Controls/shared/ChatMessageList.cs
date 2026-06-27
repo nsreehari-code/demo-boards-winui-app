@@ -8,6 +8,7 @@ using Microsoft.UI.Reactor.Core;
 using Microsoft.UI.Xaml;
 using static Microsoft.UI.Reactor.Factories;
 using DemoBoards_WinUI;
+using DemoBoards_WinUI.Assets;
 
 namespace DemoBoards_WinUI.Controls.Shared;
 
@@ -127,9 +128,10 @@ public sealed class MessageList : Component<MessageListProps>
 
     private Element RenderExpandToggle(string msgId, bool expanded)
     {
-        string glyph = expanded ? "\u25B2" : "\u25BC";
         string label = expanded ? "Collapse message" : "Expand message";
-        return Button(glyph, () => Props.OnToggleExpand?.Invoke(msgId))
+        return Button(
+                Component<SvgIcon, SvgIconProps>(new SvgIconProps(HostIconSources.ChatExpandChevron, 18, expanded ? 180 : 0)),
+                () => Props.OnToggleExpand?.Invoke(msgId))
             .SubtleButton()
             .AutomationName(label)
             .HAlign(HorizontalAlignment.Center);

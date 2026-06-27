@@ -10,6 +10,7 @@ using Microsoft.UI.Xaml.Media;
 using static Microsoft.UI.Reactor.Factories;
 using DemoBoards.RuntimeHost;
 using DemoBoards_WinUI;
+using DemoBoards_WinUI.Assets;
 using DemoBoards_WinUI.Controls.Shared;
 using DemoBoards_WinUI.Hooks;
 using DemoBoards_WinUI.State;
@@ -181,7 +182,10 @@ public sealed class InspectCard : HookComponent<InspectCardProps>
 
         Element preview = VStack(8,
             Component<CardRenderer, CardRendererProps>(new CardRendererProps(Props.BoardId, Props.CardId, Chrome: "inspect")),
-            Button($"\uD83D\uDDD1 {(deletePending ? "Deleting\u2026" : "Delete card")}", () => setDeleteConfirmOpen(true))
+            Button(HStack(6,
+                    Component<SvgIcon, SvgIconProps>(new SvgIconProps(HostIconSources.InspectDeleteCard, 14)),
+                    TextBlock(deletePending ? "Deleting\u2026" : "Delete card")),
+                () => setDeleteConfirmOpen(true))
                 .SubtleButton()
                 .AutomationName("Delete this card")
                 .Set(b => b.IsEnabled = !deletePending));

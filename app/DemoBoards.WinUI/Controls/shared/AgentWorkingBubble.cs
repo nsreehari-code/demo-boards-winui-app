@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml;
 using Windows.UI.Text;
 using static Microsoft.UI.Reactor.Factories;
 using DemoBoards_WinUI;
+using DemoBoards_WinUI.Assets;
 
 namespace DemoBoards_WinUI.Controls.Shared;
 
@@ -119,7 +120,7 @@ public sealed class AgentWorkingBubble : Component<AgentWorkingBubbleProps>
     }
 
     /// <summary>Default glyph for the working bubble avatar — mirrors <c>WorkingBubbleIcon</c>.</summary>
-    private static Element WorkingBubbleIcon() => TextBlock("\u23F3").FontSize(13);
+    private static Element WorkingBubbleIcon() => Component<SvgIcon, SvgIconProps>(new SvgIconProps(HostIconSources.ChatWorkingBubble, 14));
 
     private static string PickRandom(string[] options) => options[Random.Shared.Next(options.Length)];
 

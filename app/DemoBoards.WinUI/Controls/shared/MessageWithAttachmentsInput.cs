@@ -8,6 +8,7 @@ using Windows.System;
 using Windows.UI.Core;
 using static Microsoft.UI.Reactor.Factories;
 using DemoBoards_WinUI;
+using DemoBoards_WinUI.Assets;
 
 namespace DemoBoards_WinUI.Controls.Shared;
 
@@ -152,7 +153,7 @@ public sealed class MessageWithAttachmentsInput : Component<MessageWithAttachmen
         });
 
         Element row = HStack(6,
-            Button("\uE723", () => Attach()).SubtleButton().AutomationName("Attach files").Set(button => button.IsEnabled = !Props.Disabled),
+            Button(Component<SvgIcon, SvgIconProps>(new SvgIconProps(HostIconSources.ChatAttach, 16)), () => Attach()).SubtleButton().AutomationName("Attach files").Set(button => button.IsEnabled = !Props.Disabled),
             configured,
             Button(Props.SubmitLabel, Submit).AccentButton().AutomationName(Props.SubmitLabel).Set(button => button.IsEnabled = canSubmit));
 
