@@ -247,7 +247,7 @@ internal sealed class PostboxDownloadChip : HookComponent<PostboxDownloadChipPro
         }
 
         Element content = HStack(4,
-            Component<SvgIcon, SvgIconProps>(new SvgIconProps(HostIconSources.ChatAttach, 14)),
+            Component<SvgIcon, SvgIconProps>(new SvgIconProps(HostIconSources.Paperclip, 14)),
             TextBlock(label).FontSize(12).Foreground(theme.TextPrimary));
 
         return Button(content, () =>

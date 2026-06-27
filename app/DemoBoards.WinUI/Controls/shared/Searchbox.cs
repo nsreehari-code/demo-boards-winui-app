@@ -4,6 +4,7 @@ using Microsoft.UI.Reactor;
 using Microsoft.UI.Reactor.Core;
 using static Microsoft.UI.Reactor.Factories;
 using DemoBoards_WinUI;
+using DemoBoards_WinUI.Assets;
 
 namespace DemoBoards_WinUI.Controls.Shared;
 
@@ -54,7 +55,7 @@ public sealed class Searchbox : Component<SearchboxProps>
             .Foreground(theme.TextPrimary)
             .Flex(grow: 1);
 
-        Element submit = Button(Props.ButtonLabel, Submit)
+        Element submit = Button(Component<SvgIcon, SvgIconProps>(new SvgIconProps(HostIconSources.Search, 15)), Submit)
             .SubtleButton()
             .AutomationName(Props.ButtonLabel);
 

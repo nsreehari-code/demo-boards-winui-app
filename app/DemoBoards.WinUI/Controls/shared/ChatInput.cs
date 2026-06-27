@@ -5,6 +5,7 @@ using Microsoft.UI.Reactor;
 using Microsoft.UI.Reactor.Core;
 using static Microsoft.UI.Reactor.Factories;
 using DemoBoards_WinUI;
+using DemoBoards_WinUI.Assets;
 
 namespace DemoBoards_WinUI.Controls.Shared;
 
@@ -33,6 +34,7 @@ public sealed class ChatInput : Component<ChatInputProps>
             RequireText: true,
             Disabled: Props.Processing,
             Placeholder: Props.Placeholder ?? "Send a message\u2026",
+            SubmitIcon: HostIconSources.Send,
             OnAttach: files =>
             {
                 if (Props.Processing || files.Count == 0)

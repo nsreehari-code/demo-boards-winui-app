@@ -20,7 +20,8 @@ namespace DemoBoards_WinUI.Controls.Shared;
 /// only carries the text. <c>RequireText</c>/<c>RequireAttachment</c> gate submit; <c>SubmitOnEnter</c>
 /// submits on Enter (Shift+Enter inserts a newline when <c>Multiline</c>).
 /// </summary>
-/// <remarks>DOM-only render/style slots (className, dropzone/attach/submit content, renderChip) are dropped.</remarks>
+/// <remarks>DOM-only render/style slots (className, dropzone/attach content, renderChip) are dropped;
+/// the submit-content slot is supported via <c>SubmitIcon</c> (renders an SVG glyph in place of the label).</remarks>
 public sealed record MessageWithAttachmentsInputProps(
     Action<IReadOnlyDictionary<string, object?>>? OnSubmit = null,
     Action<IReadOnlyList<IReadOnlyDictionary<string, object?>>>? OnAttach = null,
@@ -34,7 +35,8 @@ public sealed record MessageWithAttachmentsInputProps(
     bool? AutoResize = null,
     string Placeholder = "",
     bool SubmitOnEnter = true,
-    string SubmitLabel = "Send");
+    string SubmitLabel = "Send",
+    string? SubmitIcon = null);
 
 public sealed class MessageWithAttachmentsInput : Component<MessageWithAttachmentsInputProps>
 {
@@ -152,10 +154,14 @@ public sealed class MessageWithAttachmentsInput : Component<MessageWithAttachmen
             };
         });
 
+        Element submitContent = string.IsNullOrEmpty(Props.SubmitIcon)
+            ? (Element)TextBlock(Props.SubmitLabel)
+            : Component<SvgIcon, SvgIconProps>(new SvgIconProps(Props.SubmitIcon, 16));
+
         Element row = HStack(6,
             Button(Component<SvgIcon, SvgIconProps>(new SvgIconProps(HostIconSources.ChatAttach, 16)), () => Attach()).SubtleButton().AutomationName("Attach files").Set(button => button.IsEnabled = !Props.Disabled),
             configured,
-            Button(Props.SubmitLabel, Submit).AccentButton().AutomationName(Props.SubmitLabel).Set(button => button.IsEnabled = canSubmit));
+            Button(submitContent, Submit).AccentButton().AutomationName(Props.SubmitLabel).Set(button => button.IsEnabled = canSubmit));
 
         return VStack(6, chips, row);
     }

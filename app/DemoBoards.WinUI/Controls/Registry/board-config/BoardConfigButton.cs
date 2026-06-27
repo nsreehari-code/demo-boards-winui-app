@@ -65,8 +65,15 @@ public sealed class BoardConfigButton : Component<BoardConfigButtonProps>
                     ? TextBlock(Props.Label!)
                     : TextBlock("");
 
+        // Resolve an accessible name up front so it can be chained directly onto the Button call:
+        // labelled buttons take their visible text, icon-only buttons fall back to the explicit
+        // automation name, the tooltip title, or the icon id (mirrors the frontend's aria-label/title).
+        string accessibleName = Props.AutomationName
+            ?? (hasLabel ? Props.Label! : Props.Title ?? Props.Icon ?? "Button");
+
         var button = Button(buttonContent, Props.OnClick ?? (() => { }))
-            .IsEnabled(!Props.Disabled);
+            .IsEnabled(!Props.Disabled)
+            .AutomationName(accessibleName);
 
         // Apply variant styling
         button = Props.Variant switch
@@ -80,11 +87,6 @@ public sealed class BoardConfigButton : Component<BoardConfigButtonProps>
         if (!string.IsNullOrEmpty(Props.Title))
         {
             button = button.Set(b => ToolTipService.SetToolTip(b, new ToolTip { Content = Props.Title }));
-        }
-
-        if (!string.IsNullOrEmpty(Props.AutomationName))
-        {
-            button = button.AutomationName(Props.AutomationName);
         }
 
         return button;
