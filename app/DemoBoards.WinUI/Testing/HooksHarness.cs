@@ -532,6 +532,104 @@ internal static class HooksHarness
             return single && none && unwrapped;
         }));
 
+        checks.Add(("RegistryJson maps JSON onto the loose object model", () =>
+        {
+            var d = RegistryJson.Parse("{\"n\":3,\"b\":true,\"s\":\"hi\",\"arr\":[1,2],\"nil\":null,\"obj\":{\"k\":\"v\"}}")
+                as IReadOnlyDictionary<string, object?>;
+            bool shape = d != null
+                && d["n"] is double n && n == 3
+                && d["b"] is true
+                && d["s"] as string == "hi"
+                && d["arr"] is IReadOnlyList<object?> arr && arr.Count == 2 && arr[0] is double
+                && d["nil"] == null
+                && (d["obj"] as IReadOnlyDictionary<string, object?>)?["k"] as string == "v";
+            bool empties = RegistryJson.Parse(null) == null
+                && RegistryJson.Parse("not json") == null
+                && RegistryJson.ParseOrString("plain") as string == "plain";
+            return shape && empties;
+        }));
+
+        checks.Add(("CardviewRenderer.BuildNamespaces parses card/card_data/runtime/requires", () =>
+        {
+            IReadOnlyDictionary<string, object?> ns = CardviewRenderer.BuildNamespaces(
+                "b",
+                "{\"card_data\":{\"title\":\"T\",\"status\":\"open\"},\"fieldValues\":{\"x\":1}}",
+                "{\"computed_values\":{\"score\":7},\"runtime\":{\"phase\":\"idle\"}}",
+                new Dictionary<string, string>(StringComparer.Ordinal) { ["tok"] = "{\"a\":1}" });
+
+            bool board = ns["boardId"] as string == "b";
+            bool data = (ns["card_data"] as IReadOnlyDictionary<string, object?>)?["status"] as string == "open";
+            bool computed = (ns["computed_values"] as IReadOnlyDictionary<string, object?>)?["score"] is double sc && sc == 7;
+            bool runtime = (ns["runtime_state"] as IReadOnlyDictionary<string, object?>)?["phase"] as string == "idle";
+            bool requires = ((ns["requires"] as IReadOnlyDictionary<string, object?>)?["tok"]
+                as IReadOnlyDictionary<string, object?>)?["a"] is double a && a == 1;
+            return board && data && computed && runtime && requires;
+        }));
+
+        checks.Add(("CardviewRenderer.NormalizeElement resolves contract-B data/spec/writeTo", () =>
+        {
+            IReadOnlyDictionary<string, object?> ns = Map(("card_data", Map(("status", "open"))));
+            IReadOnlyDictionary<string, object?> element = Map(
+                ("kind", "metric"),
+                ("spec", Map(("format", "x"))),
+                ("data", Map(("bind", "card_data.status"))),
+                ("writeTo", "card_data.status"));
+            CardviewRenderer.Normalized bound = CardviewRenderer.NormalizeElement(ns, element);
+            bool dynamicBind = bound.Kind == "metric"
+                && BoardData.Str(bound.Spec, "format") == "x"
+                && bound.Bind == "card_data.status"
+                && bound.WriteTo == "card_data.status"
+                && bound.HasData && bound.Data as string == "open";
+
+            CardviewRenderer.Normalized literal = CardviewRenderer.NormalizeElement(
+                ns, Map(("kind", "text"), ("data", Map(("value", "lit")))));
+            bool staticValue = literal.HasData && literal.Data as string == "lit" && literal.Bind == null;
+
+            return dynamicBind && staticValue;
+        }));
+
+        checks.Add(("CardviewRenderer.NormalizeElement resolves ref via descriptor and data-shape", () =>
+        {
+            IReadOnlyDictionary<string, object?> descriptorView = Map(
+                ("kind", "table"),
+                ("spec", Map(("columns", new List<object?> { "a" }))),
+                ("data", Map(("value", new List<object?> { Map(("a", "1")) }))));
+            IReadOnlyDictionary<string, object?> ns = Map(("computed_values", Map(("view", descriptorView))));
+            CardviewRenderer.Normalized viaDescriptor = CardviewRenderer.NormalizeElement(
+                ns, Map(("kind", "ref"), ("spec", Map(("viewBind", "computed_values.view")))));
+            bool descriptor = viaDescriptor.Kind == "table"
+                && viaDescriptor.Spec.ContainsKey("columns")
+                && viaDescriptor.Data is IReadOnlyList<object?>;
+
+            CardviewRenderer.Normalized asText = CardviewRenderer.NormalizeElement(
+                Map(), Map(("kind", "ref"), ("data", Map(("value", "hello")))));
+            CardviewRenderer.Normalized asNarrative = CardviewRenderer.NormalizeElement(
+                Map(), Map(("kind", "ref")));
+            CardviewRenderer.Normalized viaFallback = CardviewRenderer.NormalizeElement(
+                Map(), Map(("kind", "ref"), ("spec", Map(("fallbackKind", "badge")))));
+
+            return descriptor
+                && asText.Kind == "text"
+                && asNarrative.Kind == "narrative"
+                && viaFallback.Kind == "badge";
+        }));
+
+        checks.Add(("CardviewRenderer.BuildNextCardData merges, deep-sets and replaces", () =>
+        {
+            IReadOnlyDictionary<string, object?> cardData = Map(("a", "1"), ("notes", "x"));
+            var merged = CardviewRenderer.BuildNextCardData(cardData, "card_data", Map(("a", "2")))
+                as IReadOnlyDictionary<string, object?>;
+            bool mergeOk = merged?["a"] as string == "2" && merged?["notes"] as string == "x";
+
+            var deep = CardviewRenderer.BuildNextCardData(cardData, "card_data.a", "9")
+                as IReadOnlyDictionary<string, object?>;
+            bool deepOk = deep?["a"] as string == "9";
+
+            bool replaceOk = CardviewRenderer.BuildNextCardData(cardData, "card_data", "scalar") as string == "scalar";
+
+            return mergeOk && deepOk && replaceOk;
+        }));
+
         var failures = 0;
         for (var i = 0; i < checks.Count; i++)
         {
