@@ -14,8 +14,10 @@ namespace DemoBoards_WinUI.Hooks;
 //    • the chat SSE subscription lifecycle,
 //    • live message accumulation (new turns append rather than replace),
 //    • the immutable history/live boundary (HistoryAnchorTurnId),
-//    • backward history pagination, and
-//    • draft turn-id rotation.
+//    • backward history pagination,
+//    • draft turn-id rotation, and
+//    • watch-party agent-output/tools channels (subscribed and live-updated via
+//      UseReducedWatchParty → BoardStore.CardWatchParties → StateChanged re-render).
 //  Consumers (the shared ChatPane) own only rendering; they receive the resolved
 //  live/history message lists and the pagination/draft actions through props.
 //

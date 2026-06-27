@@ -1,4 +1,3 @@
-using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using DemoBoards_WinUI.State;
 
@@ -7,19 +6,26 @@ namespace DemoBoards_WinUI.Hooks;
 // =====================================================================================
 //  UseBoardUiConfig — Reactor port of useBoardUiConfig.js
 //
-//  Loads the board's resolved `ui` template (filters etc.). The web hook is server-mode
-//  only and reads it from get-board; the embedded app exposes the same record via
-//  EmbeddedBoardClient.GetManagedBoardConfigAsync (whose RawUiJson is the board's ui).
-//  Returns the ui object (or {} when present), or null on failure / before load.
+//  Loads the board's resolved `ui` template. The frontend returns a typed plain object;
+//  WinUI callers consume the ui config as a raw JSON string throughout (passed to
+//  CardPresentationConfig.ResolvePaneFilters, CompileRendererRules, and
+//  BoardTheme.ResolveThemePackIdFromUiJson), so returning the raw JSON string is the
+//  natural normalised form for this host — it eliminates the need to re-serialize a
+//  JsonObject at each call site.
+//  Returns null before load or on failure; callers fall back to built-in defaults.
 // =====================================================================================
 
 public abstract partial class HookComponent<TProps>
 {
-    /// <summary>Port of <c>useBoardUiConfig</c>: the board's resolved ui template, or null.</summary>
-    protected JsonObject? UseBoardUiConfig(string boardId)
+    /// <summary>
+    /// Port of <c>useBoardUiConfig</c>: the board's resolved ui template as a raw JSON string,
+    /// or null before load or on failure. Pass the result directly to
+    /// <see cref="CardPresentationConfig"/> helpers or <see cref="BoardTheme"/> resolvers.
+    /// </summary>
+    protected string? UseBoardUiConfig(string boardId)
     {
         EmbeddedBoardClient client = App.Current.BoardClient;
-        var (uiConfig, setUiConfig) = UseState<JsonObject?>(null);
+        var (uiConfig, setUiConfig) = UseState<string?>(null);
 
         UseEffect(() =>
         {
@@ -40,7 +46,7 @@ public abstract partial class HookComponent<TProps>
                         return;
                     }
 
-                    setUiConfig(ParseObjectOrEmpty(state?.RawUiJson));
+                    setUiConfig(string.IsNullOrWhiteSpace(state?.RawUiJson) ? null : state!.RawUiJson);
                 }
                 catch
                 {
