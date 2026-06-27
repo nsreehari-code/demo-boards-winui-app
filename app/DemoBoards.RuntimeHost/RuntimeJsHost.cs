@@ -14,7 +14,7 @@ internal sealed class RuntimeJsHost : IDisposable
     public RuntimeJsHost(
         HostStorageBridge storageBridge,
         HostControlfaceBridge controlfaceBridge,
-        CopilotFoundryInvocationBridge invocationBridge,
+      HostInvocationBridge invocationBridge,
         HostBoardNotifier boardNotifier)
     {
         engine = new V8ScriptEngine(
@@ -46,7 +46,7 @@ internal sealed class RuntimeJsHost : IDisposable
     private void InitializeEngine(
         HostStorageBridge storageBridge,
         HostControlfaceBridge controlfaceBridge,
-        CopilotFoundryInvocationBridge invocationBridge,
+      HostInvocationBridge invocationBridge,
         HostBoardNotifier boardNotifier)
     {
         engine.AddHostObject("HostStorageBridge", storageBridge);

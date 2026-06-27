@@ -22,7 +22,7 @@ public sealed class DemoBoardsRuntimeService : IAsyncDisposable
     private readonly BoardSseStateReducerHost boardSseStateReducerHost;
     private readonly RuntimeSnapshotPublisher snapshotPublisher = new();
     private readonly RuntimeHttpRequestProcessor requestProcessor;
-    private CopilotFoundryInvocationBridge invocationBridge;
+    private HostInvocationBridge invocationBridge;
     private HttpListener httpListener;
     private CancellationTokenSource? listenerCts;
     private Task? listenerTask;
@@ -283,9 +283,9 @@ public sealed class DemoBoardsRuntimeService : IAsyncDisposable
         httpListener = CreateHttpListener(prefix);
     }
 
-    private CopilotFoundryInvocationBridge CreateInvocationBridge(string prefix)
+    private HostInvocationBridge CreateInvocationBridge(string prefix)
     {
-        return new CopilotFoundryInvocationBridge(controlfaceBridge, prefix.TrimEnd('/'));
+        return new HostInvocationBridge(controlfaceBridge, prefix.TrimEnd('/'));
     }
 
     private static HttpListener CreateHttpListener(string prefix)

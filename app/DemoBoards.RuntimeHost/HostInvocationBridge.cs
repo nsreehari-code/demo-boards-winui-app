@@ -5,7 +5,7 @@ using System.Text.Json.Nodes;
 
 namespace DemoBoards.RuntimeHost;
 
-public sealed class CopilotFoundryInvocationBridge
+public sealed class HostInvocationBridge
 {
     private readonly HostControlfaceBridge controlfaceBridge;
     private string serverUrl = string.Empty;
@@ -14,7 +14,7 @@ public sealed class CopilotFoundryInvocationBridge
     private readonly string repoRoot;
     private string? lastInvocationJson;
 
-    public CopilotFoundryInvocationBridge(HostControlfaceBridge controlfaceBridge, string serverUrl)
+    public HostInvocationBridge(HostControlfaceBridge controlfaceBridge, string serverUrl)
     {
         this.controlfaceBridge = controlfaceBridge ?? throw new ArgumentNullException(nameof(controlfaceBridge));
         runnerPath = Path.Combine(AppContext.BaseDirectory, "node", "host-invocation-runner.mjs");
