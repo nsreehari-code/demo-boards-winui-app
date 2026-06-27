@@ -798,6 +798,82 @@ internal static class HooksHarness
             && !PaneRenderer.PaneIsHidden("gandalf", 2)
             && !PaneRenderer.PaneIsHidden("centre", 0)));
 
+        // ---- CardPreflight pure helpers (formatScalar / toYamlLines / distinctViewKinds / buildSourceSummary) ----
+        checks.Add(("CardPreflight.FormatScalar mirrors the formatScalar tiers", () =>
+            CardPreflight.FormatScalar(null) == "null"
+            && CardPreflight.FormatScalar("hi") == "hi"
+            && CardPreflight.FormatScalar(true) == "true"
+            && CardPreflight.FormatScalar(false) == "false"
+            && CardPreflight.FormatScalar(new Dictionary<string, object?>(StringComparer.Ordinal) { ["a"] = 1.0 }) == "{\"a\":1}"));
+
+        checks.Add(("CardPreflight.DistinctViewKinds dedupes, trims, and is case-sensitive", () =>
+        {
+            var elements = new object?[]
+            {
+                new Dictionary<string, object?>(StringComparer.Ordinal) { ["kind"] = "table" },
+                new Dictionary<string, object?>(StringComparer.Ordinal) { ["kind"] = "  table  " },
+                new Dictionary<string, object?>(StringComparer.Ordinal) { ["kind"] = "Table" },
+                new Dictionary<string, object?>(StringComparer.Ordinal) { ["kind"] = "" },
+            };
+            IReadOnlyList<string> kinds = CardPreflight.DistinctViewKinds(elements);
+            return kinds.Count == 2 && kinds[0] == "table" && kinds[1] == "Table";
+        }));
+
+        checks.Add(("CardPreflight.BuildSourceSummary picks the kind key, keeps bindTo, and ids by index", () =>
+        {
+            var sourceDef = new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["bindTo"] = "rows",
+                ["fetch_url"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["url"] = "https://x" },
+            };
+            CardPreflight.SourceSummary summary = CardPreflight.BuildSourceSummary(sourceDef, 2);
+            return summary.Id == "source-2"
+                && summary.Index == 2
+                && summary.BindTo == "rows"
+                && summary.DetailLines.Count > 0
+                && summary.DetailLines[0] == "fetch_url:";
+        }));
+
+        // ---- InspectCard pure helpers (pluralize / normalizeSource|CardFlightData) ----
+        checks.Add(("InspectCard.Pluralize matches the pluralize helper", () =>
+            InspectCard.Pluralize(1, "issue") == "1 issue"
+            && InspectCard.Pluralize(2, "issue") == "2 issues"
+            && InspectCard.Pluralize(2, "provide", "provides") == "2 provides"));
+
+        checks.Add(("InspectCard.NormalizeSourceFlightData defaults ok=true and reads bindTo/issues/result", () =>
+        {
+            InspectCard.SourceFlightData full = InspectCard.NormalizeSourceFlightData(new JsonObject
+            {
+                ["bindTo"] = "rows",
+                ["ok"] = false,
+                ["issues"] = new JsonArray("missing token"),
+                ["result"] = new JsonObject { ["x"] = 1 },
+            });
+            InspectCard.SourceFlightData implicitOk = InspectCard.NormalizeSourceFlightData(new JsonObject { ["bindTo"] = "rows" });
+            InspectCard.SourceFlightData nonObject = InspectCard.NormalizeSourceFlightData(JsonValue.Create(7));
+            return full.BindTo == "rows" && !full.Ok && full.Issues.Count == 1 && full.Result is not null
+                && implicitOk.Ok
+                && nonObject is { BindTo: "", Ok: false, Result: null } && nonObject.Issues.Count == 0;
+        }));
+
+        checks.Add(("InspectCard.NormalizeCardFlightData defaults outputs/view and reads provides/elements", () =>
+        {
+            InspectCard.CardFlightData full = InspectCard.NormalizeCardFlightData(new JsonObject
+            {
+                ["cardId"] = "card-1",
+                ["ok"] = false,
+                ["issues"] = new JsonArray("bad"),
+                ["provides_outputs"] = new JsonObject { ["a"] = 1 },
+                ["rendered_view"] = new JsonObject { ["elements"] = new JsonArray(new JsonObject()) },
+            });
+            InspectCard.CardFlightData empty = InspectCard.NormalizeCardFlightData(JsonValue.Create("nope"));
+            return full.CardId == "card-1" && !full.Ok && full.Issues.Count == 1
+                && full.ProvidesOutputs.ContainsKey("a")
+                && full.RenderedView["elements"] is JsonArray arr && arr.Count == 1
+                && empty is { CardId: "", Ok: false } && empty.ProvidesOutputs.Count == 0
+                && empty.RenderedView["elements"] is JsonArray emptyArr && emptyArr.Count == 0;
+        }));
+
         var failures = 0;
         for (var i = 0; i < checks.Count; i++)
         {

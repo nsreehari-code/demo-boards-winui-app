@@ -1,3 +1,5 @@
+using static Microsoft.UI.Reactor.Factories;
+
 namespace DemoBoards_WinUI.Controls.Registry;
 
 /// <summary>
@@ -34,5 +36,7 @@ public static class RegistryBootstrap
     {
         CardChromeSeams.MiniChatPane = (boardId, cardId, onPopout) => ConnectedChat.Mini(boardId, cardId, onPopout);
         CardChromeSeams.ChatPane = (boardId, cardId) => ConnectedChat.Pane(boardId, cardId);
+        CardChromeSeams.InspectCard = (boardId, cardId, title, onClose) =>
+            Component<InspectCard, InspectCardProps>(new InspectCardProps(boardId, cardId, title, onClose));
     }
 }

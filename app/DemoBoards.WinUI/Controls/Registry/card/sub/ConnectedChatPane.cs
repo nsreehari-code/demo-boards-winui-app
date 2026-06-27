@@ -40,7 +40,8 @@ public sealed class ConnectedChatPane : HookComponent<ConnectedChatPaneProps>
             Props.CardId,
             new ChatConversationOptions(HistoryEnabled: Props.HistoryEnabled));
 
-        CardState? cardState = UseCardState(Props.BoardId, Props.CardId);
+        IReadOnlyList<IReadOnlyDictionary<string, object?>> filesUploaded =
+            UseCardStateFilesData(Props.BoardId, Props.CardId);
 
         if (conv.Chat is null)
         {
@@ -80,7 +81,6 @@ public sealed class ConnectedChatPane : HookComponent<ConnectedChatPaneProps>
                 }
             };
 
-        IReadOnlyList<IReadOnlyDictionary<string, object?>> filesUploaded = ResolveFilesUploaded(cardState?.CardContent);
         Func<int, IReadOnlyDictionary<string, object?>, string?> resolveFileUrl =
             (index, file) => client.GetCardFileUrl(Props.CardId, index, BoardData.Str(file, "stored_name"));
 
@@ -109,19 +109,6 @@ public sealed class ConnectedChatPane : HookComponent<ConnectedChatPaneProps>
             Header: header,
             OnSubmit: onSubmit,
             OnAttach: onAttach));
-    }
-
-    private static IReadOnlyList<IReadOnlyDictionary<string, object?>> ResolveFilesUploaded(BoardCard? content)
-    {
-        IReadOnlyDictionary<string, object?> cardData = PostboxCard.ParseCardData(content);
-        IReadOnlyList<object?> files = BoardData.ToList(BoardData.Get(cardData, "files")) ?? Array.Empty<object?>();
-        var result = new List<IReadOnlyDictionary<string, object?>>(files.Count);
-        foreach (object? file in files)
-        {
-            result.Add(BoardData.AsMap(file));
-        }
-
-        return result;
     }
 
     private static NativeAttachmentFile? ToNativeFile(IReadOnlyDictionary<string, object?>? file)
