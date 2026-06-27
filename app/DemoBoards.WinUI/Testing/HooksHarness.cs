@@ -630,6 +630,36 @@ internal static class HooksHarness
             return mergeOk && deepOk && replaceOk;
         }));
 
+        checks.Add(("CardChrome.NormalizePathState keeps known states and trims rationale", () =>
+        {
+            var meta = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["path_state"] = "  Dead_Ended ",
+                ["path_state_rationale"] = "  ruled out  ",
+            };
+            bool known = CardChrome.NormalizePathState(meta) == "dead_ended";
+            bool rationale = CardChrome.NormalizePathStateRationale(meta) == "ruled out";
+            bool unknown = CardChrome.NormalizePathState(
+                new Dictionary<string, string>(StringComparer.Ordinal) { ["path_state"] = "active" }) == string.Empty;
+            bool none = CardChrome.NormalizePathState(null) == string.Empty
+                && CardChrome.NormalizePathStateRationale(null) == string.Empty;
+            return known && rationale && unknown && none;
+        }));
+
+        checks.Add(("CardChrome.ClampCardWidth clamps to bounds, rounds and honours the viewport", () =>
+        {
+            bool min = CardChrome.ClampCardWidth(100) == 280;
+            bool max = CardChrome.ClampCardWidth(2000) == 960;
+            bool round = CardChrome.ClampCardWidth(500.4) == 500;
+            bool viewport = CardChrome.ClampCardWidth(900, 600) == 552;
+            return min && max && round && viewport;
+        }));
+
+        checks.Add(("CardChrome.PathStateDefs map stamps and tones", () =>
+            CardChrome.PathStateDefs["suspended"].ToneStatus == "blocked"
+            && CardChrome.PathStateDefs["dead_ended"].Stamp == "Ruled out"
+            && CardChrome.PathStateDefs["wiped"].ToneStatus == "secondary"));
+
         var failures = 0;
         for (var i = 0; i < checks.Count; i++)
         {
