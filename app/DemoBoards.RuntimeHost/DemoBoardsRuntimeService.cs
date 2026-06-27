@@ -11,7 +11,6 @@ namespace DemoBoards.RuntimeHost;
 
 public sealed class DemoBoardsRuntimeService : IAsyncDisposable
 {
-    private const int PreferredAgentfacePort = 43123;
     private const int DynamicPortAttemptCount = 8;
 
     private readonly RuntimePaths paths;
@@ -21,6 +20,7 @@ public sealed class DemoBoardsRuntimeService : IAsyncDisposable
     private readonly RuntimeJsHost jsHost;
     private readonly BoardSseStateReducerHost boardSseStateReducerHost;
     private readonly RuntimeHttpRequestProcessor requestProcessor;
+    private readonly RuntimeHostOptions options;
     private HostInvocationBridge invocationBridge;
     private HttpListener httpListener;
     private CancellationTokenSource? listenerCts;
@@ -35,9 +35,10 @@ public sealed class DemoBoardsRuntimeService : IAsyncDisposable
 
     public event EventHandler<BoardSseCanonicalEnvelope>? BoardCanonicalStateChanged;
 
-    public DemoBoardsRuntimeService(RuntimePaths? paths = null)
+    public DemoBoardsRuntimeService(RuntimePaths? paths = null, RuntimeHostOptions? options = null)
     {
         this.paths = paths ?? RuntimePaths.CreateDefault();
+        this.options = options ?? RuntimeHostOptions.Default;
         Directory.CreateDirectory(this.paths.RootDir);
 
         storageBridge = new HostStorageBridge(this.paths.HostStorageDir);
@@ -45,7 +46,7 @@ public sealed class DemoBoardsRuntimeService : IAsyncDisposable
         boardNotifier = new HostBoardNotifier();
         boardNotifier.BoardChanged += () => Interlocked.Increment(ref boardChangeNotifications);
         boardNotifier.BoardNotificationsReceived += HandleBoardNotificationsReceived;
-        agentfacePrefix = BuildAgentfacePrefix(PreferredAgentfacePort);
+        agentfacePrefix = BuildAgentfacePrefix(this.options.AgentfacePort);
         invocationBridge = CreateInvocationBridge(agentfacePrefix);
         jsHost = new RuntimeJsHost(storageBridge, controlfaceBridge, invocationBridge, boardNotifier);
         boardSseStateReducerHost = new BoardSseStateReducerHost(jsHost);
@@ -226,6 +227,13 @@ public sealed class DemoBoardsRuntimeService : IAsyncDisposable
         }
         catch (HttpListenerException ex) when (ex.ErrorCode == 183)
         {
+            if (options.RequireFixedAgentfacePort)
+            {
+                throw new InvalidOperationException(
+                    $"Configured embedded agentface port {options.AgentfacePort} is unavailable. "
+                    + "Strict hosted-compat mode requires the fixed port to be free.",
+                    ex);
+            }
         }
 
         Exception? lastError = null;

@@ -41,6 +41,8 @@ public sealed record WinUiFrontendAppConfig(BoardCanvasLayoutDefaults CanvasLayo
 public sealed record WinUiBackendAppConfig(
     string NsCodeRepoRoot,
     string HostInvocationRunnerPath,
+    int AgentfacePort,
+    bool RequireFixedAgentfacePort,
     string HostConfigPath,
     string TemplatesConfigPath,
     string LocalFsConfigLoaderPath,
@@ -54,6 +56,8 @@ public sealed record WinUiBackendAppConfig(
         return new(
             nsCodeRepoRoot,
             hostInvocationRunnerPath,
+            RuntimeHostOptions.Default.AgentfacePort,
+            RuntimeHostOptions.Default.RequireFixedAgentfacePort,
             System.IO.Path.Combine(nsCodeRepoRoot, "demo-board", "server", "hosted-board-runtime", "hosted-board-runtime.localfs.config.json"),
             System.IO.Path.Combine(nsCodeRepoRoot, "demo-board", "server", "hosted-board-runtime", "templates-config.json"),
             System.IO.Path.Combine(nsCodeRepoRoot, "demo-board", "server", "hosted-board-runtime", "localfs-adapter", "load-config.js"),

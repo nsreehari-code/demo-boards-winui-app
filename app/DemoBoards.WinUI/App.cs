@@ -50,7 +50,10 @@ public sealed class App : IAsyncDisposable
             LogStartup($"App config loaded. Templates config path: {appConfig.Backend.TemplatesConfigPath}");
             Environment.SetEnvironmentVariable(RuntimeAssetResolver.NsCodeRepoRootEnvVar, appConfig.Backend.NsCodeRepoRoot);
             Environment.SetEnvironmentVariable(RuntimeAssetResolver.HostInvocationRunnerPathEnvVar, appConfig.Backend.HostInvocationRunnerPath);
-            runtimeService = new DemoBoardsRuntimeService();
+            runtimeService = new DemoBoardsRuntimeService(
+                options: new RuntimeHostOptions(
+                    appConfig.Backend.AgentfacePort,
+                    appConfig.Backend.RequireFixedAgentfacePort));
             LogStartup("Runtime service created.");
             runtimeService.StartAsync().GetAwaiter().GetResult();
             LogStartup("Runtime service started.");

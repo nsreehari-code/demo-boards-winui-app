@@ -17,6 +17,8 @@
   "backend": {
     "nsCodeRepoRoot": "${repoRoot}/demo-boards-ns-code",
     "hostInvocationRunnerPath": "${repoRoot}/demo-boards-winui-app/app/DemoBoards.RuntimeHost/node/host-invocation-runner.mjs",
+    "agentfacePort": 7799,
+    "requireFixedAgentfacePort": true,
     "hostConfigPath": "${nsCodeRepoRoot}/demo-board/server/hosted-board-runtime/hosted-board-runtime.localfs.config.json",
     "templatesConfigPath": "${nsCodeRepoRoot}/demo-board/server/hosted-board-runtime/templates-config.json",
     "localFsConfigLoaderPath": "${nsCodeRepoRoot}/demo-board/server/hosted-board-runtime/localfs-adapter/load-config.js",

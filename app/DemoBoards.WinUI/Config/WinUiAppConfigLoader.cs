@@ -50,6 +50,8 @@ public static class WinUiAppConfigLoader
             nsCodeRepoRoot,
             RuntimeAssetResolver.ResolvePathTemplate(backend["hostInvocationRunnerPath"]?.GetValue<string>(), configuredRepoRoot, baseDirectory, nsCodeRepoRoot)
                 ?? backendDefaults.HostInvocationRunnerPath,
+            ReadPositiveInt(backend, "agentfacePort", backendDefaults.AgentfacePort),
+            ReadBool(backend, "requireFixedAgentfacePort", backendDefaults.RequireFixedAgentfacePort),
             RuntimeAssetResolver.ResolvePathTemplate(backend["hostConfigPath"]?.GetValue<string>(), configuredRepoRoot, baseDirectory, nsCodeRepoRoot)
                 ?? backendDefaults.HostConfigPath,
             RuntimeAssetResolver.ResolvePathTemplate(backend["templatesConfigPath"]?.GetValue<string>(), configuredRepoRoot, baseDirectory, nsCodeRepoRoot)
@@ -115,6 +117,18 @@ public static class WinUiAppConfigLoader
         return source[key]?.GetValue<double?>() is double value && double.IsFinite(value)
             ? value
             : fallback;
+    }
+
+    private static int ReadPositiveInt(JsonObject source, string key, int fallback)
+    {
+        return source[key]?.GetValue<int?>() is int value && value > 0
+            ? value
+            : fallback;
+    }
+
+    private static bool ReadBool(JsonObject source, string key, bool fallback)
+    {
+        return source[key]?.GetValue<bool?>() ?? fallback;
     }
 
     private static string ReadRequiredString(JsonObject source, string key, string fallback)
