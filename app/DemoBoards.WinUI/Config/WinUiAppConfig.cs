@@ -1,4 +1,5 @@
 using System;
+using DemoBoards.RuntimeHost;
 using DemoBoards_WinUI.Lib;
 
 namespace DemoBoards_WinUI.Config;
@@ -38,6 +39,8 @@ public sealed record WinUiFrontendAppConfig(BoardCanvasLayoutDefaults CanvasLayo
 }
 
 public sealed record WinUiBackendAppConfig(
+    string NsCodeRepoRoot,
+    string HostInvocationRunnerPath,
     string HostConfigPath,
     string TemplatesConfigPath,
     string LocalFsConfigLoaderPath,
@@ -45,15 +48,18 @@ public sealed record WinUiBackendAppConfig(
     string SetupSingleAiWorkspaceScriptPath,
     string AssistantRegistryPath)
 {
-    public static WinUiBackendAppConfig CreateDefault(string repoRoot)
+    public static WinUiBackendAppConfig CreateDefault(string repoRoot, string nsCodeRepoRoot, string baseDirectory)
     {
+        string hostInvocationRunnerPath = RuntimeAssetResolver.ResolveHostInvocationRunnerPathOrThrow(baseDirectory);
         return new(
-            System.IO.Path.Combine(repoRoot, "demo-boards-ns-code", "demo-board", "server", "hosted-board-runtime", "hosted-board-runtime.localfs.config.json"),
-            System.IO.Path.Combine(repoRoot, "demo-boards-ns-code", "demo-board", "server", "hosted-board-runtime", "templates-config.json"),
-            System.IO.Path.Combine(repoRoot, "demo-boards-ns-code", "demo-board", "server", "hosted-board-runtime", "localfs-adapter", "load-config.js"),
-            System.IO.Path.Combine(repoRoot, "demo-boards-ns-code", "demo-board", "server", "hosted-board-runtime", "scripts", "prestart.js"),
-            System.IO.Path.Combine(repoRoot, "demo-boards-ns-code", "demo-board", "server", "hosted-board-runtime", "scripts", "setup-single-ai-workspace.js"),
-            System.IO.Path.Combine(repoRoot, "demo-boards-ns-code", "demo-board", "server", "chat-flow", "assistant_registry.json"));
+            nsCodeRepoRoot,
+            hostInvocationRunnerPath,
+            System.IO.Path.Combine(nsCodeRepoRoot, "demo-board", "server", "hosted-board-runtime", "hosted-board-runtime.localfs.config.json"),
+            System.IO.Path.Combine(nsCodeRepoRoot, "demo-board", "server", "hosted-board-runtime", "templates-config.json"),
+            System.IO.Path.Combine(nsCodeRepoRoot, "demo-board", "server", "hosted-board-runtime", "localfs-adapter", "load-config.js"),
+            System.IO.Path.Combine(nsCodeRepoRoot, "demo-board", "server", "hosted-board-runtime", "scripts", "prestart.js"),
+            System.IO.Path.Combine(nsCodeRepoRoot, "demo-board", "server", "hosted-board-runtime", "scripts", "setup-single-ai-workspace.js"),
+            System.IO.Path.Combine(nsCodeRepoRoot, "demo-board", "server", "chat-flow", "assistant_registry.json"));
     }
 }
 

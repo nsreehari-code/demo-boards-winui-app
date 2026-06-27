@@ -11,15 +11,16 @@ public sealed class HostInvocationBridge
     private string serverUrl = string.Empty;
     private string mcpServerUrl = string.Empty;
     private readonly string runnerPath;
-    private readonly string repoRoot;
+    private readonly string workspaceRoot;
+    private readonly string nsCodeRepoRoot;
     private string? lastInvocationJson;
 
     public HostInvocationBridge(HostControlfaceBridge controlfaceBridge, string serverUrl)
     {
         this.controlfaceBridge = controlfaceBridge ?? throw new ArgumentNullException(nameof(controlfaceBridge));
-        runnerPath = Path.Combine(AppContext.BaseDirectory, "node", "host-invocation-runner.mjs");
-        repoRoot = ResolveRepoRoot(AppContext.BaseDirectory)
-            ?? throw new InvalidOperationException("Unable to locate the ai-tool-evolver repo root from the WinUI runtime host.");
+        runnerPath = RuntimeAssetResolver.ResolveHostInvocationRunnerPathOrThrow(AppContext.BaseDirectory);
+        workspaceRoot = RuntimeAssetResolver.ResolveWorkspaceRootOrThrow(AppContext.BaseDirectory, "WinUI runtime host");
+        nsCodeRepoRoot = RuntimeAssetResolver.ResolveNsCodeRepoRootOrThrow(AppContext.BaseDirectory);
         UpdateServerUrl(serverUrl);
     }
 
@@ -107,7 +108,8 @@ public sealed class HostInvocationBridge
             return new JsonObject
             {
                 ["mode"] = "task",
-                ["repoRoot"] = repoRoot,
+                ["repoRoot"] = workspaceRoot,
+                ["nsCodeRepoRoot"] = nsCodeRepoRoot,
                 ["boardId"] = boardId,
                 ["request"] = request,
             };
@@ -119,7 +121,8 @@ public sealed class HostInvocationBridge
             return new JsonObject
             {
                 ["mode"] = "chat",
-                ["repoRoot"] = repoRoot,
+                ["repoRoot"] = workspaceRoot,
+                ["nsCodeRepoRoot"] = nsCodeRepoRoot,
                 ["boardId"] = boardId,
                 ["serverUrl"] = serverUrl,
                 ["mcpServerUrl"] = mcpServerUrl,
@@ -162,7 +165,7 @@ public sealed class HostInvocationBridge
 
         ProcessStartInfo startInfo = new("node")
         {
-            WorkingDirectory = Path.Combine(repoRoot, "demo-boards-ns-code"),
+            WorkingDirectory = nsCodeRepoRoot,
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -224,32 +227,6 @@ public sealed class HostInvocationBridge
                 invocationRef["extra"]?["boardId"]?.GetValue<string>(),
                 invocationRef["extra"]?["board_id"]?.GetValue<string>())
             ?? "winui-board";
-    }
-
-    private static string? ResolveRepoRoot(string startPath)
-    {
-        foreach (string seed in new[] { startPath, Directory.GetCurrentDirectory() })
-        {
-            DirectoryInfo? current = Directory.Exists(seed)
-                ? new DirectoryInfo(seed)
-                : Path.GetDirectoryName(seed) is string parentPath
-                    ? new DirectoryInfo(parentPath)
-                    : null;
-            while (current is not null)
-            {
-                bool hasDemoBoards = Directory.Exists(Path.Combine(current.FullName, "demo-boards-ns-code"));
-                bool hasYamlFlow = Directory.Exists(Path.Combine(current.FullName, "yaml-flow"));
-                bool hasWinUi = Directory.Exists(Path.Combine(current.FullName, "demo-boards-winui-app"));
-                if (hasDemoBoards && hasYamlFlow && hasWinUi)
-                {
-                    return current.FullName;
-                }
-
-                current = current.Parent;
-            }
-        }
-
-        return null;
     }
 
     private static JsonObject ParseRequiredJsonObject(string json, string errorMessage)

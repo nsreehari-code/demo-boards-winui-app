@@ -22,9 +22,19 @@ function optionalString(value) {
   return normalized || undefined;
 }
 
-async function runTask(payload) {
+function resolveNsCodeRepoRoot(payload) {
+  const explicitRoot = normalizeString(payload.nsCodeRepoRoot);
+  if (explicitRoot) {
+    return explicitRoot;
+  }
+
   const repoRoot = normalizeString(payload.repoRoot);
-  const modulePath = path.join(repoRoot, 'demo-boards-ns-code', 'demo-board', 'server', 'board-worker', 'task-executor.js');
+  return path.join(repoRoot, 'demo-boards-ns-code');
+}
+
+async function runTask(payload) {
+  const nsCodeRepoRoot = resolveNsCodeRepoRoot(payload);
+  const modulePath = path.join(nsCodeRepoRoot, 'demo-board', 'server', 'board-worker', 'task-executor.js');
   const request = normalizeObject(payload.request);
   const mod = await import(pathToFileURL(modulePath).href);
   await mod.executeTaskExecutorRequest(request);
@@ -32,9 +42,9 @@ async function runTask(payload) {
 }
 
 async function runChat(payload) {
-  const repoRoot = normalizeString(payload.repoRoot);
+  const nsCodeRepoRoot = resolveNsCodeRepoRoot(payload);
   const boardId = normalizeString(payload.boardId, 'winui-board');
-  const modulePath = path.join(repoRoot, 'demo-boards-ns-code', 'demo-board', 'server', 'hosted-board-runtime', 'host-shared', 'chat-agent-handler', 'execute-chat-agent-request.js');
+  const modulePath = path.join(nsCodeRepoRoot, 'demo-board', 'server', 'hosted-board-runtime', 'host-shared', 'chat-agent-handler', 'execute-chat-agent-request.js');
   const mod = await import(pathToFileURL(modulePath).href);
   const boardRecord = normalizeObject(payload.boardRecord);
   const request = normalizeObject(payload.request);

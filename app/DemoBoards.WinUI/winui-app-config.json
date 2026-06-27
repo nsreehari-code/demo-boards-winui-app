@@ -15,11 +15,13 @@
     }
   },
   "backend": {
-    "hostConfigPath": "${repoRoot}/demo-boards-ns-code/demo-board/server/hosted-board-runtime/hosted-board-runtime.localfs.config.json",
-    "templatesConfigPath": "${repoRoot}/demo-boards-ns-code/demo-board/server/hosted-board-runtime/templates-config.json",
-    "localFsConfigLoaderPath": "${repoRoot}/demo-boards-ns-code/demo-board/server/hosted-board-runtime/localfs-adapter/load-config.js",
-    "hostedPrestartScriptPath": "${repoRoot}/demo-boards-ns-code/demo-board/server/hosted-board-runtime/scripts/prestart.js",
-    "setupSingleAiWorkspaceScriptPath": "${repoRoot}/demo-boards-ns-code/demo-board/server/hosted-board-runtime/scripts/setup-single-ai-workspace.js",
-    "assistantRegistryPath": "${repoRoot}/demo-boards-ns-code/demo-board/server/chat-flow/assistant_registry.json"
+    "nsCodeRepoRoot": "${repoRoot}/demo-boards-ns-code",
+    "hostInvocationRunnerPath": "${repoRoot}/demo-boards-winui-app/app/DemoBoards.RuntimeHost/node/host-invocation-runner.mjs",
+    "hostConfigPath": "${nsCodeRepoRoot}/demo-board/server/hosted-board-runtime/hosted-board-runtime.localfs.config.json",
+    "templatesConfigPath": "${nsCodeRepoRoot}/demo-board/server/hosted-board-runtime/templates-config.json",
+    "localFsConfigLoaderPath": "${nsCodeRepoRoot}/demo-board/server/hosted-board-runtime/localfs-adapter/load-config.js",
+    "hostedPrestartScriptPath": "${nsCodeRepoRoot}/demo-board/server/hosted-board-runtime/scripts/prestart.js",
+    "setupSingleAiWorkspaceScriptPath": "${nsCodeRepoRoot}/demo-board/server/hosted-board-runtime/scripts/setup-single-ai-workspace.js",
+    "assistantRegistryPath": "${nsCodeRepoRoot}/demo-board/server/chat-flow/assistant_registry.json"
   }
 }

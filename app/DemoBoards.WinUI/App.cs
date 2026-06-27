@@ -48,6 +48,8 @@ public sealed class App : IAsyncDisposable
             appConfig = WinUiAppConfigLoader.Load(AppContext.BaseDirectory);
             BoardCanvasLayoutEngine.ConfigureDefaults(appConfig.Frontend.CanvasLayout);
             LogStartup($"App config loaded. Templates config path: {appConfig.Backend.TemplatesConfigPath}");
+            Environment.SetEnvironmentVariable(RuntimeAssetResolver.NsCodeRepoRootEnvVar, appConfig.Backend.NsCodeRepoRoot);
+            Environment.SetEnvironmentVariable(RuntimeAssetResolver.HostInvocationRunnerPathEnvVar, appConfig.Backend.HostInvocationRunnerPath);
             runtimeService = new DemoBoardsRuntimeService();
             LogStartup("Runtime service created.");
             runtimeService.StartAsync().GetAwaiter().GetResult();
