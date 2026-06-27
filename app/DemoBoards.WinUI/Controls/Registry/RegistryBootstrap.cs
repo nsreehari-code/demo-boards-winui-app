@@ -21,5 +21,18 @@ public static class RegistryBootstrap
         ComponentRegistry.RegisterEntries(CardEntries.All);
         ComponentRegistry.RegisterEntries(PaneEntries.All);
         ComponentRegistry.RegisterEntries(BoardEntries.All);
+
+        WireCardChromeSeams();
+    }
+
+    /// <summary>
+    /// Wires the deferred <see cref="CardChromeSeams"/> to the connected chat / inspect clusters. On the web
+    /// these are plain imports inside <c>CardChrome.jsx</c>; here the chrome tier stays decoupled and the
+    /// delegates are assigned once during registration.
+    /// </summary>
+    private static void WireCardChromeSeams()
+    {
+        CardChromeSeams.MiniChatPane = (boardId, cardId, onPopout) => ConnectedChat.Mini(boardId, cardId, onPopout);
+        CardChromeSeams.ChatPane = (boardId, cardId) => ConnectedChat.Pane(boardId, cardId);
     }
 }
