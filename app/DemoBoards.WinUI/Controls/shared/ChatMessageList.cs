@@ -177,7 +177,10 @@ public sealed class MessageList : Component<MessageListProps>
             return null;
         }
 
-        return Button($"\U0001F4CE {label}", () =>
+        return Button(HStack(6,
+                Component<SvgIcon, SvgIconProps>(new SvgIconProps(HostIconSources.Paperclip, 13)),
+                TextBlock(label)),
+            () =>
             {
                 if (Uri.TryCreate(href, UriKind.Absolute, out Uri? uri))
                 {

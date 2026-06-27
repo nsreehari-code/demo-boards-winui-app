@@ -4,6 +4,7 @@ using Microsoft.UI.Reactor;
 using Microsoft.UI.Reactor.Core;
 using static Microsoft.UI.Reactor.Factories;
 using DemoBoards_WinUI;
+using DemoBoards_WinUI.Assets;
 using DemoBoards_WinUI.Hooks;
 using DemoBoards_WinUI.Controls.Shared;
 using DemoBoards.RuntimeHost;
@@ -121,7 +122,7 @@ public sealed class ChatHeaderButton : HookComponent<ChatHeaderButtonProps>
         string label = Props.ChatOpen
             ? $"Close chat for {Props.CardId}"
             : chatProcessing ? $"Chat processing for {Props.CardId}" : $"Open chat for {Props.CardId}";
-        return Button(Props.ChatOpen ? "\uD83D\uDDA8" : "\uD83D\uDCAC", Props.OnToggleChat)
+        return Button(Component<SvgIcon, SvgIconProps>(new SvgIconProps(Props.ChatOpen ? HostIconSources.ChatClose : HostIconSources.Chat, 15)), Props.OnToggleChat)
             .SubtleButton()
             .AutomationName(label);
     }
@@ -233,7 +234,7 @@ public sealed class CardChromeBoardView : HookComponent<CardChromeBoardViewProps
 
         Element RefreshControl() => refreshDisabled
             ? ProgressRing().AutomationName("Refreshing")
-            : Button("\u21BB", () => _ = cardState.CardActions.Refresh()).SubtleButton().AutomationName("Refresh");
+            : Button(Component<SvgIcon, SvgIconProps>(new SvgIconProps(HostIconSources.ArrowClockwise, 15)), () => _ = cardState.CardActions.Refresh()).SubtleButton().AutomationName("Refresh");
 
         Element header = Empty();
         if (showHeader)
@@ -244,7 +245,8 @@ public sealed class CardChromeBoardView : HookComponent<CardChromeBoardViewProps
                     ? TextBlock(status).FontSize(11).Foreground(BoardTheme.CreateStatusBrush(status, 0xFF))
                     : Empty());
 
-            Element inspectButton = Button(inspectOpen ? "\u2715" : "\u2261",
+            Element inspectButton = Button(
+                    Component<SvgIcon, SvgIconProps>(new SvgIconProps(inspectOpen ? HostIconSources.CardCloseDetails : HostIconSources.Sliders2, 15)),
                     () => setInspectedCardId(inspectOpen ? null : Props.CardId))
                 .SubtleButton()
                 .AutomationName(inspectOpen ? "Close inspect view" : "Show source information");

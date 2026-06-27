@@ -114,7 +114,7 @@ public sealed class MessageWithAttachmentsInput : Component<MessageWithAttachmen
             ? VStack(2, files
                 .Select((file, index) => (Element)HStack(6,
                     TextBlock($"{file.Name} ({FileUpload.FormatSize(file.Size)})").FontSize(12).Foreground(theme.TextPrimary).Flex(grow: 1),
-                    Button("\u2715", () => setFiles(files.Where((_, i) => i != index).ToList()))
+                    Button(Component<SvgIcon, SvgIconProps>(new SvgIconProps(HostIconSources.X, 13)), () => setFiles(files.Where((_, i) => i != index).ToList()))
                         .SubtleButton().AutomationName($"Remove {file.Name}")))
                 .ToArray())
             : Empty();

@@ -5,6 +5,7 @@ using Microsoft.UI.Reactor;
 using Microsoft.UI.Reactor.Core;
 using static Microsoft.UI.Reactor.Factories;
 using DemoBoards_WinUI;
+using DemoBoards_WinUI.Assets;
 
 namespace DemoBoards_WinUI.Controls.Shared;
 
@@ -80,7 +81,7 @@ public sealed class EditableTable : Component<EditableTableProps>
 
                 if (allowDeleteRow)
                 {
-                    cells.Add(Button("\u2715", () => Commit(rows.Where((_, index) => index != capturedRow).Select(r => new Dictionary<string, object?>(r, StringComparer.Ordinal)).ToList()))
+                    cells.Add(Button(Component<SvgIcon, SvgIconProps>(new SvgIconProps(HostIconSources.X, 13)), () => Commit(rows.Where((_, index) => index != capturedRow).Select(r => new Dictionary<string, object?>(r, StringComparer.Ordinal)).ToList()))
                         .SubtleButton().AutomationName("Remove row").Width(28));
                 }
 

@@ -8,6 +8,7 @@ using Microsoft.UI.Reactor.Core;
 using Microsoft.UI.Xaml;
 using static Microsoft.UI.Reactor.Factories;
 using DemoBoards_WinUI;
+using DemoBoards_WinUI.Assets;
 using DemoBoards_WinUI.Controls.Shared;
 using DemoBoards_WinUI.Hooks;
 
@@ -324,7 +325,7 @@ public sealed class CardPreflight : HookComponent<CardPreflightProps>
     internal static Element FlightButton(string title, Action onClick, bool loading, bool disabled, AppTheme theme) =>
         loading
             ? ProgressRing().AutomationName(title)
-            : Button("\u2697", onClick).SubtleButton().AutomationName(title).Set(b => b.IsEnabled = !disabled);
+            : Button(Component<SvgIcon, SvgIconProps>(new SvgIconProps(HostIconSources.Flask, 15)), onClick).SubtleButton().AutomationName(title).Set(b => b.IsEnabled = !disabled);
 }
 
 /// <summary>Props for <see cref="SourceBlock"/> — one expandable source summary row.</summary>
@@ -345,14 +346,12 @@ public sealed class SourceBlock : HookComponent<SourceBlockProps>
         string bind = Props.Summary.BindTo.Length > 0 ? Props.Summary.BindTo : "unbound";
 
         Element header = HStack(6,
-            Button($"{(expanded ? "\u25BE" : "\u25B8")} {bind}", () => setExpanded(!expanded))
+            Button(HStack(6,
+                    Component<SvgIcon, SvgIconProps>(new SvgIconProps(expanded ? HostIconSources.ChevronDown : HostIconSources.ChevronRight, 11)),
+                    TextBlock(bind).FontSize(11).Bold()),
+                () => setExpanded(!expanded))
                 .SubtleButton()
                 .AutomationName(expanded ? "Collapse source details" : "Expand source details")
-                .Set(b =>
-                {
-                    b.FontSize = 11;
-                    b.FontWeight = Microsoft.UI.Text.FontWeights.Bold;
-                })
                 .Flex(grow: 1),
             Props.OnRunFlight is not null
                 ? CardPreflight.FlightButton(

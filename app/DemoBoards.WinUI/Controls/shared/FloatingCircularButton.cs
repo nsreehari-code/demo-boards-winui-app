@@ -3,7 +3,9 @@ using Microsoft.UI.Reactor;
 using Microsoft.UI.Reactor.Core;
 using Microsoft.UI.Xaml;
 using static Microsoft.UI.Reactor.Factories;
+using System.Collections.Generic;
 using DemoBoards_WinUI;
+using DemoBoards_WinUI.Assets;
 
 namespace DemoBoards_WinUI.Controls.Shared;
 
@@ -23,15 +25,33 @@ public sealed record FloatingCircularButtonProps(
 
 public sealed class FloatingCircularButton : Component<FloatingCircularButtonProps>
 {
+    /// <summary>Maps the frontend Bootstrap-icon names this control receives to host SVG assets.</summary>
+    private static readonly Dictionary<string, string> IconSources = new(StringComparer.Ordinal)
+    {
+        ["bi-chevron-left"] = HostIconSources.ChevronLeft,
+        ["bi-chevron-right"] = HostIconSources.ChevronRight,
+        ["bi-chevron-up"] = HostIconSources.ChevronUp,
+        ["bi-chevron-down"] = HostIconSources.ChevronDown,
+        ["bi-gear-fill"] = HostIconSources.GearFill,
+        ["bi-x-lg"] = HostIconSources.XLg,
+        ["bi-flask"] = HostIconSources.Flask,
+        ["bi-compass"] = HostIconSources.Compass,
+        ["bi-diagram-3"] = HostIconSources.Diagram3,
+        ["bi-bounding-box"] = HostIconSources.BoundingBox,
+        ["bi-list"] = HostIconSources.List,
+    };
+
     public override Element Render()
     {
         AppTheme theme = UseContext(AppThemeContext.Current);
 
         string? activeIcon = Props.Toggled ? Props.IconToggled ?? Props.Icon : Props.Icon;
         Action? activeOnClick = Props.Toggled ? Props.OnClickToggled ?? Props.OnClick : Props.OnClick;
-        string glyph = string.IsNullOrEmpty(activeIcon) ? "\u2261" : activeIcon!.Replace("bi-", string.Empty);
+        string source = activeIcon is not null && IconSources.TryGetValue(activeIcon, out string? mapped)
+            ? mapped
+            : HostIconSources.List;
 
-        return Button(glyph, () => activeOnClick?.Invoke())
+        return Button(Component<SvgIcon, SvgIconProps>(new SvgIconProps(source, 20)), () => activeOnClick?.Invoke())
             .AccentButton()
             .AutomationName(Props.AriaLabel ?? "Toggle")
             .Foreground(theme.TextPrimary)

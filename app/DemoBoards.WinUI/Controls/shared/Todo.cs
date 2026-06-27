@@ -6,6 +6,7 @@ using Microsoft.UI.Reactor.Core;
 using Microsoft.UI.Xaml;
 using static Microsoft.UI.Reactor.Factories;
 using DemoBoards_WinUI;
+using DemoBoards_WinUI.Assets;
 
 namespace DemoBoards_WinUI.Controls.Shared;
 
@@ -54,7 +55,7 @@ public sealed class Todo : Component<TodoProps>
                 })
                 .Flex(grow: 1);
 
-            Element remove = Button("\u00d7", () => Save(pending.Where((_, i) => i != rowIndex).ToList()))
+            Element remove = Button(Component<SvgIcon, SvgIconProps>(new SvgIconProps(HostIconSources.X, 13)), () => Save(pending.Where((_, i) => i != rowIndex).ToList()))
                 .SubtleButton()
                 .AutomationName($"Remove {item.Text}");
 

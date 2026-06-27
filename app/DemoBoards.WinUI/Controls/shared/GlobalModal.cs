@@ -3,6 +3,7 @@ using Microsoft.UI.Reactor;
 using Microsoft.UI.Reactor.Core;
 using static Microsoft.UI.Reactor.Factories;
 using DemoBoards_WinUI;
+using DemoBoards_WinUI.Assets;
 
 namespace DemoBoards_WinUI.Controls.Shared;
 
@@ -20,7 +21,7 @@ public sealed class GlobalModal : Component<GlobalModalProps>
 
         Element header = HStack(12,
             TextBlock(Props.Title).Bold().FontSize(16).Foreground(theme.TextPrimary).Flex(grow: 1),
-            Button("\u2715", Props.OnClose).SubtleButton().AutomationName($"Close {Props.Title}"));
+            Button(Component<SvgIcon, SvgIconProps>(new SvgIconProps(HostIconSources.XLg, 14)), Props.OnClose).SubtleButton().AutomationName($"Close {Props.Title}"));
 
         return Border(VStack(12, header, Props.Children ?? Empty()))
             .Padding(16)
