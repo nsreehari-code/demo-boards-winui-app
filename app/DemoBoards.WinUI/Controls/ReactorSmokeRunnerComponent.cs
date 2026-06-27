@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using DemoBoards.RuntimeHost;
 using DemoBoards_WinUI.Config;
+using DemoBoards_WinUI.Hooks;
 using DemoBoards_WinUI.State;
 using Microsoft.UI;
 using Microsoft.UI.Reactor;
@@ -20,7 +21,9 @@ using static Microsoft.UI.Reactor.Factories;
 
 namespace DemoBoards_WinUI.Controls;
 
-public sealed class ReactorSmokeRunnerComponent : Component
+public sealed record SmokeRunnerProps();
+
+public sealed class ReactorSmokeRunnerComponent : HookComponent<SmokeRunnerProps>
 {
     private const string T3UChatCardId = "card-portfolio-t3u-9105";
     private const string RunTestsPlaceholder = "MB1, T3u, T8F";
@@ -66,7 +69,8 @@ public sealed class ReactorSmokeRunnerComponent : Component
 
         SmokeCaseSelection selection = ResolveSelectedSmokeCases(runTestsText);
         HashSet<string> selectedRunnableCaseIds = ResolveSelectedRunnableCaseIds(selection);
-        string activeBoardId = App.Current.BoardStore.State.BoardId;
+        BoardInfoState boardInfo = UseBoardInfo();
+        string activeBoardId = boardInfo.BoardId;
         string durationText = BuildDurationText(startedAtTicks, finishedAtTicks);
 
         var sections = new List<Element>();

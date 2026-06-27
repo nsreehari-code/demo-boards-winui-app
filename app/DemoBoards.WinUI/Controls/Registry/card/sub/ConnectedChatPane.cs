@@ -33,7 +33,7 @@ public sealed class ConnectedChatPane : HookComponent<ConnectedChatPaneProps>
     public override Element Render()
     {
         AppTheme theme = UseContext(AppThemeContext.Current);
-        EmbeddedBoardClient client = App.Current.BoardClient;
+        EmbeddedBoardClient client = UseEmbeddedClient();
 
         ChatConversation conv = UseChatConversation(
             Props.BoardId,

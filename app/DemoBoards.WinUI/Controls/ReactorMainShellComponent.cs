@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Text.Json;
 using System.Threading.Tasks;
 using DemoBoards_WinUI.Controls.Registry;
+using DemoBoards_WinUI.Hooks;
 using DemoBoards_WinUI.State;
 using Microsoft.UI.Reactor;
 using Microsoft.UI.Reactor.Core;
@@ -14,14 +15,15 @@ using static Microsoft.UI.Reactor.Factories;
 
 namespace DemoBoards_WinUI.Controls;
 
-public sealed class ReactorMainShellComponent : Component
+public sealed record MainShellProps();
+
+public sealed class ReactorMainShellComponent : HookComponent<MainShellProps>
 {
     public override Element Render()
     {
-        BoardStore boardStore = App.Current.BoardStore;
-        EmbeddedBoardClient boardClient = App.Current.BoardClient;
+        BoardStore boardStore = UseBoardStoreSubscription(includeUiState: true);
+        EmbeddedBoardClient boardClient = UseEmbeddedClient();
 
-        var (_, setRevision) = UseState(string.Empty);
         var (loading, setLoading) = UseState(true);
         var (startupMessage, setStartupMessage) = UseState("Preparing board surface...");
         var (refreshingBoard, setRefreshingBoard) = UseState(false);
@@ -30,22 +32,18 @@ public sealed class ReactorMainShellComponent : Component
 
         UseEffect(() =>
         {
-            EventHandler<BoardStoreChangedEventArgs> onBoardStateChanged = (_, _) => setRevision(Guid.NewGuid().ToString("N"));
-            EventHandler<BoardUiState> onBoardUiStateChanged = (_, _) => setRevision(Guid.NewGuid().ToString("N"));
             Action onSmokeRequested = () =>
             {
                 setConfigOpen(false);
                 setSmokeVisible(true);
             };
 
-            boardStore.StateChanged += onBoardStateChanged;
-            boardStore.UiStateChanged += onBoardUiStateChanged;
+            // UseBoardStoreSubscription handles BoardStore.StateChanged + UiStateChanged subscriptions
+            // We only need to subscribe to the smoke runner event here
             ReactorShellBridge.SmokeRunnerRequested += onSmokeRequested;
 
             return () =>
             {
-                boardStore.StateChanged -= onBoardStateChanged;
-                boardStore.UiStateChanged -= onBoardUiStateChanged;
                 ReactorShellBridge.SmokeRunnerRequested -= onSmokeRequested;
             };
         });

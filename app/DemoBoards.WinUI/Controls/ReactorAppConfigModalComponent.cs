@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using DemoBoards_WinUI.Config;
+using DemoBoards_WinUI.Hooks;
 using DemoBoards_WinUI.State;
 using Microsoft.UI;
 using Microsoft.UI.Reactor;
@@ -18,7 +19,7 @@ namespace DemoBoards_WinUI.Controls;
 
 public sealed record ReactorAppConfigModalProps(string BoardId, ManagedBoardConfigState? Config, Action CloseAction);
 
-public sealed class ReactorAppConfigModalComponent : Component<ReactorAppConfigModalProps>
+public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppConfigModalProps>
 {
     private static readonly JsonSerializerOptions PrettyJsonOptions = new() { WriteIndented = true };
     private const int DefaultRefreshAllIntervalSeconds = 30 * 60;
@@ -79,6 +80,9 @@ public sealed class ReactorAppConfigModalComponent : Component<ReactorAppConfigM
         var (previewingHostConfig, setPreviewingHostConfig) = UseState(false);
         var (addingBoard, setAddingBoard) = UseState(false);
 
+        // Get the embedded board client via hook instead of App.Current
+        EmbeddedBoardClient boardClient = UseEmbeddedClient();
+
         UseEffect(() =>
         {
             string nextRawBoardJson = Props.Config?.RawBoardJson ?? "{}";
@@ -119,6 +123,7 @@ public sealed class ReactorAppConfigModalComponent : Component<ReactorAppConfigM
             setAddBoardTemplateKey(string.Empty);
 
             _ = LoadCatalogAndTemplatesAsync(
+                boardClient,
                 setAssistantNames,
                 setAiWorkspaceTemplateNames,
                 setUiTemplateNames,
@@ -408,6 +413,7 @@ public sealed class ReactorAppConfigModalComponent : Component<ReactorAppConfigM
     }
 
     private static async Task LoadCatalogAndTemplatesAsync(
+        EmbeddedBoardClient boardClient,
         Action<IReadOnlyList<string>> setAssistantNames,
         Action<IReadOnlyList<string>> setAiWorkspaceTemplateNames,
         Action<IReadOnlyList<string>> setUiTemplateNames,
@@ -428,11 +434,9 @@ public sealed class ReactorAppConfigModalComponent : Component<ReactorAppConfigM
         string currentThemePackId,
         string currentUiTemplate)
     {
-        App app = App.Current;
-
         try
         {
-            WinUiHostTemplateCatalog hostTemplateCatalog = await app.BoardClient.DescribeHostConfigAsync();
+            WinUiHostTemplateCatalog hostTemplateCatalog = await boardClient.DescribeHostConfigAsync();
             IReadOnlyList<string> assistantOptions = hostTemplateCatalog.AssistantNames
                 .Where(name => string.Equals(name, "copilot", StringComparison.OrdinalIgnoreCase)
                     || string.Equals(name, "foundry", StringComparison.OrdinalIgnoreCase))
@@ -469,7 +473,7 @@ public sealed class ReactorAppConfigModalComponent : Component<ReactorAppConfigM
 
         try
         {
-            IReadOnlyList<SampleTemplateEntry> templates = await app.BoardClient.ListSampleTemplatesAsync();
+            IReadOnlyList<SampleTemplateEntry> templates = await boardClient.ListSampleTemplatesAsync();
             setTemplateEntries(templates);
             setSelectedTemplateKey(templates.FirstOrDefault()?.Key ?? string.Empty);
             setTemplateHelpText(templates.Count == 0

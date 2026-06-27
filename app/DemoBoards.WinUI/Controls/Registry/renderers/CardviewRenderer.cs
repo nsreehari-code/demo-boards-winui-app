@@ -34,7 +34,7 @@ public sealed class CardviewRenderer : HookComponent<CardviewRendererProps>
     public override Element Render()
     {
         AppTheme theme = UseContext(AppThemeContext.Current);
-        EmbeddedBoardClient client = App.Current.BoardClient;
+        EmbeddedBoardClient client = UseEmbeddedClient();
 
         CardState? cardState = UseCardState(Props.BoardId, Props.CardId);
         var (saving, setSaving) = UseState(false);

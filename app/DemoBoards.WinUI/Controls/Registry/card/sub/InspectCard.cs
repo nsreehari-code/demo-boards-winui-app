@@ -35,7 +35,7 @@ public sealed class InspectCard : HookComponent<InspectCardProps>
     public override Element Render()
     {
         AppTheme theme = UseContext(AppThemeContext.Current);
-        EmbeddedBoardClient client = App.Current.BoardClient;
+        EmbeddedBoardClient client = UseEmbeddedClient();
         CardState? cardState = UseCardState(Props.BoardId, Props.CardId);
 
         (FlightResult? flightResult, Action<FlightResult?> setFlightResult) = UseState<FlightResult?>(null);
