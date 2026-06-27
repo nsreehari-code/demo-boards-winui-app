@@ -568,6 +568,30 @@ internal static class HooksHarness
             return board && data && computed && runtime && requires;
         }));
 
+        checks.Add(("PostboxCard.ParseCardData reads structured files/filegroups from the definition", () =>
+        {
+            BoardCard card = MakeBoardCard(
+                "c",
+                "active",
+                Array.Empty<string>(),
+                Array.Empty<string>(),
+                rawDefinitionJson: "{\"card_data\":{\"files\":[{\"stored_name\":\"s\"}],\"filegroups\":[{\"file_idxs\":[0]}]}}");
+            IReadOnlyDictionary<string, object?> cardData = PostboxCard.ParseCardData(card);
+            bool files = (BoardData.ToList(BoardData.Get(cardData, "files"))?.Count ?? 0) == 1;
+            bool groups = (BoardData.ToList(BoardData.Get(cardData, "filegroups"))?.Count ?? 0) == 1;
+            bool empty = PostboxCard.ParseCardData(null).Count == 0;
+            return files && groups && empty;
+        }));
+
+        checks.Add(("PostboxCard.FormatTimestamp returns '' for empty/invalid and formats valid ISO input", () =>
+        {
+            bool blanks = PostboxCard.FormatTimestamp(null) == string.Empty
+                && PostboxCard.FormatTimestamp("   ") == string.Empty
+                && PostboxCard.FormatTimestamp("not a date") == string.Empty;
+            bool formatted = PostboxCard.FormatTimestamp("2024-06-27T14:05:00Z").Length > 0;
+            return blanks && formatted;
+        }));
+
         checks.Add(("CardviewRenderer.NormalizeElement resolves contract-B data/spec/writeTo", () =>
         {
             IReadOnlyDictionary<string, object?> ns = Map(("card_data", Map(("status", "open"))));

@@ -132,6 +132,45 @@ public sealed class EmbeddedBoardClient
         });
     }
 
+    /// <summary>
+    /// Port of <c>uploadCardFilesMultiple</c>: submits one or more staged attachments (the plain
+    /// <c>{ name, contentType, bytes }</c> dicts the file components emit) to a card as a single evidence
+    /// bundle. <paramref name="message"/> is omitted from the payload when empty, mirroring the web.
+    /// </summary>
+    public Task UploadCardFilesMultipleAsync(string cardId, string? message, IReadOnlyList<object?> files)
+    {
+        var fileArgs = new List<object>();
+        foreach (object? file in files ?? Array.Empty<object?>())
+        {
+            if (file is not IReadOnlyDictionary<string, object?> map)
+            {
+                continue;
+            }
+
+            string fileName = map.TryGetValue("name", out object? n) ? n as string ?? string.Empty : string.Empty;
+            string contentType = map.TryGetValue("contentType", out object? c) ? c as string ?? string.Empty : string.Empty;
+            byte[] bytes = map.TryGetValue("bytes", out object? b) && b is byte[] arr ? arr : Array.Empty<byte>();
+            fileArgs.Add(new
+            {
+                file_name = fileName,
+                content_type = contentType,
+                base64 = Convert.ToBase64String(bytes)
+            });
+        }
+
+        var args = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["card_id"] = cardId,
+            ["files"] = fileArgs,
+        };
+        if (!string.IsNullOrEmpty(message))
+        {
+            args["message"] = message;
+        }
+
+        return PostMcpControlplaneAsync("manage.upload-card-file-multiple", args);
+    }
+
     public string GetCardFileUrl(string cardId, int fileIndex, string? storedName = null)
     {
         string query = string.IsNullOrWhiteSpace(storedName)

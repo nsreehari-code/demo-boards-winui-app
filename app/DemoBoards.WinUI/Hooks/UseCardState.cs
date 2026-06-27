@@ -26,6 +26,7 @@ public sealed record CardActions(
     Func<object, Task> Patch,
     Func<string, object?, Task> DispatchAction,
     Func<NativeAttachmentFile, Task> UploadFileForChat,
+    Func<IReadOnlyList<object?>, string?, Task> UploadCardFilesMultiple,
     Func<Task<JsonNode?>> DiscoverSourceKinds,
     Func<JsonNode?, Task<JsonNode?>> ValidateCandidateCardDefinition,
     Func<int, IReadOnlyDictionary<string, string>?, Task<JsonNode?>> RunSingleSourceInLiveCard,
@@ -103,6 +104,7 @@ public abstract partial class HookComponent<TProps>
             Patch: patch => client.PatchCardAsync(cardId, patch),
             DispatchAction: (type, payload) => client.DispatchActionAsync(cardId, type, payload),
             UploadFileForChat: file => client.AddChatAttachmentAsync(cardId, string.Empty, file),
+            UploadCardFilesMultiple: (files, message) => client.UploadCardFilesMultipleAsync(cardId, message, files),
             DiscoverSourceKinds: async () =>
                 UnwrapMcpToolPayload(await client.CallBoardMcpAsync("discover.source-kinds").ConfigureAwait(false)),
             ValidateCandidateCardDefinition: async candidate =>
