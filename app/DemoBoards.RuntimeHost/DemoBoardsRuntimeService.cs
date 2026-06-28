@@ -302,7 +302,7 @@ public sealed class DemoBoardsRuntimeService : IAsyncDisposable
             + "{\"id\":\"runtime-status-card\",\"card_data\":{\"title\":\"Mounted Adapters\",\"storage\":\"KV / Journal / Queue / Blob\",\"surface\":\"agentface\"},\"view\":{\"elements\":[]}},"
             + "{\"id\":\"gandalf-ingest-card\",\"card_data\":{\"title\":\"Gandalf Ingest\",\"mode\":\"ingest\",\"owner\":\"board-manager\",\"requires\":[\"source.report\"],\"provides\":[{\"bindTo\":\"report.summary\"}]},\"source_defs\":[{\"bindTo\":\"source.report\",\"url\":\"https://example.invalid/report.json\",\"kind\":\"http\",\"timeout\":30000}],\"view\":{\"elements\":[{\"kind\":\"ingest\"},{\"kind\":\"markdown\"}]}}"
             + "]";
-        string payload = await jsHost.InvokeJsAsync("initWinuiRuntime", "winui-board", cardsJson).ConfigureAwait(false);
+        string payload = await jsHost.InvokeJsAsync("initWinuiRuntime", options.InitialBoardId, cardsJson).ConfigureAwait(false);
         string reducedPayload = await boardSseStateReducerHost.InitializeFromPublishedPayloadAsync(payload).ConfigureAwait(false);
         lastPublishedPayloadJson = reducedPayload;
         await PublishCanonicalEnvelopeAsync().ConfigureAwait(false);

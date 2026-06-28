@@ -72,10 +72,12 @@ public static class WinUiAppConfigLoader
             ReadRequiredString(boardServerConstants, "agentOutputChannel", WinUiBoardServerConstants.Default.AgentOutputChannel),
             ReadRequiredString(boardServerConstants, "agentToolsChannel", WinUiBoardServerConstants.Default.AgentToolsChannel));
 
+        string defaultBoardId = ReadRequiredString(frontend, "defaultBoardId", WinUiFrontendAppConfig.Default.DefaultBoardId);
+
         return new WinUiAppConfig(
             appConfigPath,
             configuredRepoRoot,
-            new WinUiFrontendAppConfig(canvasLayout, serverConstants),
+            new WinUiFrontendAppConfig(canvasLayout, serverConstants, defaultBoardId),
             backendConfig);
     }
 

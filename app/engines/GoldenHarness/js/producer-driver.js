@@ -9,7 +9,9 @@
 // published payload. The host-backed path is the real Phase D seam.
 
 function createSyntheticRequest(method, url, bodyText, headers) {
-  var chunks = bodyText == null || bodyText === '' ? [] : [String(bodyText)];
+  var encoder = new TextEncoder();
+  var body = bodyText == null ? '' : String(bodyText);
+  var chunks = body === '' ? [] : [encoder.encode(body)];
   return {
     method: method,
     url: url,
@@ -32,9 +34,24 @@ function createSyntheticRequest(method, url, bodyText, headers) {
 }
 
 function createSyntheticResponse() {
+  var decoder = new TextDecoder();
   var chunks = [];
   var statusCode = 200;
   var headers = {};
+  function chunkToText(chunk) {
+    if (chunk == null) return '';
+    if (typeof chunk === 'string') return chunk;
+    if (chunk instanceof Uint8Array) {
+      return decoder.decode(chunk);
+    }
+    if (ArrayBuffer.isView(chunk)) {
+      return decoder.decode(new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength));
+    }
+    if (chunk instanceof ArrayBuffer) {
+      return decoder.decode(new Uint8Array(chunk));
+    }
+    return String(chunk);
+  }
   return {
     res: {
       writeHead: function (status, nextHeaders) {
@@ -47,10 +64,10 @@ function createSyntheticResponse() {
         headers[String(name || '').toLowerCase()] = value;
       },
       write: function (chunk) {
-        if (chunk != null) chunks.push(String(chunk));
+        if (chunk != null) chunks.push(chunkToText(chunk));
       },
       end: function (chunk) {
-        if (chunk != null) chunks.push(String(chunk));
+        if (chunk != null) chunks.push(chunkToText(chunk));
       },
     },
     body: function () {
@@ -97,6 +114,48 @@ function getHostControlfaceBridge() {
     throw new Error('HostControlfaceBridge is required for embedded controlface routes');
   }
   return globalThis.HostControlfaceBridge;
+}
+
+function normalizeServerUrl(value) {
+  return typeof value === 'string' ? value.trim().replace(/\/+$/, '') : '';
+}
+
+function resolveHostServerUrl() {
+  if (!globalThis.HostInvocationBridge || typeof HostInvocationBridge.GetServerUrl !== 'function') {
+    return '';
+  }
+  try {
+    return normalizeServerUrl(HostInvocationBridge.GetServerUrl());
+  } catch {
+    return '';
+  }
+}
+
+function createHttpCallbackTransport(baseUrl) {
+  return {
+    createCallback: function (token) {
+      return {
+        token: token,
+        via: {
+          meta: 'board-live-cards',
+          howToRun: 'http:post',
+          whatToRun: {
+            kind: 'http-url',
+            value: baseUrl,
+          },
+        },
+      };
+    },
+  };
+}
+
+function createHostCallbackTransport(boardId) {
+  var serverUrl = resolveHostServerUrl();
+  if (!serverUrl) {
+    return createNoopCallbackTransport();
+  }
+  var webhooksUrl = serverUrl + '/api/boards/' + encodeURIComponent(boardId) + '/mcp-webhooks';
+  return createHttpCallbackTransport(webhooksUrl);
 }
 
 function createManagedBoardsApi() {
@@ -209,7 +268,7 @@ async function bootstrapRuntime(runtime) {
 function createRuntimeOptions(boardId, bundle, invocationAdapter, extras) {
   var refs = bundle.refs;
   if (!bundle.boardAdapter.callbackTransport) {
-    bundle.boardAdapter.callbackTransport = createNoopCallbackTransport();
+    bundle.boardAdapter.callbackTransport = createHostCallbackTransport(boardId);
   }
   var boardConfig = {
     label: 'base',
@@ -228,10 +287,11 @@ function createRuntimeOptions(boardId, bundle, invocationAdapter, extras) {
   };
   return Object.assign({
     boardId: boardId,
+    apiBasePath: '/api/boards/' + encodeURIComponent(boardId),
     boards: [boardConfig],
     invocationAdapter: invocationAdapter || { invoke: async function () { return { dispatched: false }; } },
     chatFlowRunner: createHostChatFlowRunner(),
-    serverUrl: 'http://localhost:3000',
+    serverUrl: resolveHostServerUrl() || undefined,
     logger: { info: function () {}, warn: function () {}, error: function () {} },
   }, extras || {});
 }
@@ -513,7 +573,7 @@ function createHostBridgeBundle(boardId) {
       journalStorage: function () { return createJournalStorage(refs.baseRef.value + ':journal'); },
       journalStorageForRef: function (ref) { return createJournalStorage(ref + ':journal'); },
       lock: createRelayLock(),
-      callbackTransport: createNoopCallbackTransport(),
+      callbackTransport: createHostCallbackTransport(boardId),
       dispatchExecution: async function (ref, args) {
         if (!globalThis.HostInvocationBridge) {
           throw new Error('HostInvocationBridge is required for embedded executor dispatch');

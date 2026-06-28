@@ -50,10 +50,14 @@ public sealed class App : IAsyncDisposable
             LogStartup($"App config loaded. Templates config path: {appConfig.Backend.TemplatesConfigPath}");
             Environment.SetEnvironmentVariable(RuntimeAssetResolver.NsCodeRepoRootEnvVar, appConfig.Backend.NsCodeRepoRoot);
             Environment.SetEnvironmentVariable(RuntimeAssetResolver.HostInvocationRunnerPathEnvVar, appConfig.Backend.HostInvocationRunnerPath);
+            string initialBoardId = WinUiBoardIdStore.LoadOverride() ?? appConfig.Frontend.DefaultBoardId;
+            GlobalStateStore.Current.Set(GlobalStateKeys.BoardId, initialBoardId);
+            LogStartup($"Initial board id resolved: {initialBoardId}");
             runtimeService = new DemoBoardsRuntimeService(
                 options: new RuntimeHostOptions(
                     appConfig.Backend.AgentfacePort,
-                    appConfig.Backend.RequireFixedAgentfacePort));
+                    appConfig.Backend.RequireFixedAgentfacePort,
+                    initialBoardId));
             LogStartup("Runtime service created.");
             runtimeService.StartAsync().GetAwaiter().GetResult();
             LogStartup("Runtime service started.");
@@ -115,6 +119,16 @@ public sealed class App : IAsyncDisposable
         {
             await runtimeService.DisposeAsync();
         }
+    }
+
+    /// <summary>
+    /// Relaunches the app so the embedded runtime re-initializes on the persisted board id —
+    /// the WinUI analog of the frontend's <c>window.location.reload()</c> after a board switch.
+    /// </summary>
+    public void RequestRestart()
+    {
+        LogStartup("Board switch requested app relaunch.");
+        Microsoft.Windows.AppLifecycle.AppInstance.Restart(string.Empty);
     }
 
     private static void LogStartup(string message)

@@ -8,6 +8,7 @@
     "converterharness": "node ./scripts/dotnet.mjs run --project app/engines/ConverterHarness/ConverterHarness.csproj",
     "renderharness": "node ./scripts/dotnet.mjs run --project app/DemoBoards.WinUI/DemoBoards.WinUI.csproj -- --render-harness",
     "hooksharness": "node ./scripts/dotnet.mjs run --project app/DemoBoards.WinUI/DemoBoards.WinUI.csproj -- --hooks-harness",
+    "my-http:winui:headless": "node ./scripts/run-my-http-winui-headless.mjs",
     "winui:guard:xaml": "node ./scripts/check-xaml-drift.mjs",
     "prewinui:build": "npm run winui:guard:xaml",
     "prewinui:start": "npm run winui:guard:xaml",

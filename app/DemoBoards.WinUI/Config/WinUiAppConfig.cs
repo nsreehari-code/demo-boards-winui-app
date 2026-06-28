@@ -33,9 +33,9 @@ public sealed record WinUiHostTemplateCatalog(
     string RuntimeBoardsLayoutRef,
     string RawHostSummaryJson);
 
-public sealed record WinUiFrontendAppConfig(BoardCanvasLayoutDefaults CanvasLayout, WinUiBoardServerConstants BoardServerConstants)
+public sealed record WinUiFrontendAppConfig(BoardCanvasLayoutDefaults CanvasLayout, WinUiBoardServerConstants BoardServerConstants, string DefaultBoardId)
 {
-    public static WinUiFrontendAppConfig Default { get; } = new(BoardCanvasLayoutDefaults.Default, WinUiBoardServerConstants.Default);
+    public static WinUiFrontendAppConfig Default { get; } = new(BoardCanvasLayoutDefaults.Default, WinUiBoardServerConstants.Default, RuntimeHostOptions.Default.InitialBoardId);
 }
 
 public sealed record WinUiBackendAppConfig(

@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using DemoBoards_WinUI.Config;
+using DemoBoards_WinUI.Controls.Registry.BoardConfig;
 using DemoBoards_WinUI.Controls.Shared;
 using DemoBoards_WinUI.Hooks;
 using DemoBoards_WinUI.State;
@@ -146,6 +147,30 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
                 draft.UiTemplate);
         }, Props.BoardId, Props.Config?.RawBoardJson ?? string.Empty, Props.Config?.RawUiJson ?? string.Empty, Props.Config?.RawMetadataJson ?? string.Empty, Props.Config?.RawLayoutJson ?? string.Empty);
 
+        ManageBoards manageBoards = UseManageBoards();
+        var (activeBoardId, setActiveBoardId) = UseGlobalState<string>(GlobalStateKeys.BoardId, Props.BoardId, WinUiBoardIdStore.SaveOverride);
+        var (pendingBoardId, setPendingBoardId) = UseState(activeBoardId);
+
+        var boardOptions = manageBoards.ManagedBoards
+            .Select(entry => (object?)new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["id"] = entry.Id,
+                ["label"] = string.IsNullOrWhiteSpace(entry.Label) ? entry.Id : entry.Label,
+            })
+            .ToList();
+
+        void SwitchBoard()
+        {
+            string target = pendingBoardId?.Trim() ?? string.Empty;
+            if (string.IsNullOrEmpty(target) || string.Equals(target, activeBoardId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            setActiveBoardId(target);
+            App.Current.RequestRestart();
+        }
+
         var sections = new List<Element>();
 
         sections.Add(
@@ -159,6 +184,17 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
                                 .Set(text => text.TextWrapping = TextWrapping.WrapWholeWords))
                             .Flex(grow: 1),
                         Button("Close", Props.CloseAction).AutomationName("Close board settings").SubtleButton()))));
+
+        sections.Add(
+            SectionCard(
+                Component<BoardSwitcher, BoardSwitcherProps>(new BoardSwitcherProps(
+                    Value: pendingBoardId,
+                    Options: boardOptions,
+                    CurrentBoardId: activeBoardId,
+                    OnChange: setPendingBoardId,
+                    OnSwitch: SwitchBoard,
+                    SelectDisabled: manageBoards.LoadingManagedBoards,
+                    Loading: manageBoards.LoadingManagedBoards))));
 
         sections.Add(
             SectionCard(

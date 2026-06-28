@@ -35,6 +35,11 @@ public sealed class HostInvocationBridge
         mcpServerUrl = this.serverUrl + "/agent/mcp";
     }
 
+    public string GetServerUrl()
+    {
+        return serverUrl;
+    }
+
     public string Invoke(string refJson, string argsJson)
     {
         lastInvocationJson = new JsonObject
@@ -92,6 +97,7 @@ public sealed class HostInvocationBridge
     private JsonObject BuildRunnerPayload(JsonObject invocationRef, JsonObject args)
     {
         string meta = invocationRef["meta"]?.GetValue<string>()?.Trim() ?? string.Empty;
+        ValidateInvocationRef(meta, invocationRef);
         string boardId = ResolveBoardId(invocationRef, args);
         JsonObject boardRecord = GetBoardRecord(boardId);
 
@@ -145,6 +151,9 @@ public sealed class HostInvocationBridge
         {
             ["boardId"] = boardId,
             ["serverUrl"] = serverUrl,
+            ["mcpServerUrl"] = mcpServerUrl,
+            ["agentFaceMcp"] = "/agent/mcp",
+            ["apiBasePath"] = $"/api/boards/{Uri.EscapeDataString(boardId)}",
         };
 
         string aiWorkspaceRoot = boardRecord["aiWorkspaceRoot"]?.GetValue<string>()?.Trim() ?? string.Empty;
@@ -153,7 +162,65 @@ public sealed class HostInvocationBridge
             extra["aiWorkspaceRoot"] = aiWorkspaceRoot;
         }
 
+        string foundryEndpoint = boardRecord["foundryEndpoint"]?.GetValue<string>()?.Trim() ?? string.Empty;
+        if (foundryEndpoint.Length > 0)
+        {
+            extra["foundryEndpoint"] = foundryEndpoint;
+        }
+
+        string foundryTaskExecutorAgentId = boardRecord["foundryTaskExecutorAgentId"]?.GetValue<string>()?.Trim() ?? string.Empty;
+        if (foundryTaskExecutorAgentId.Length > 0)
+        {
+            extra["foundryTaskExecutorAgentId"] = foundryTaskExecutorAgentId;
+        }
+
         return extra;
+    }
+
+    private static void ValidateInvocationRef(string meta, JsonObject invocationRef)
+    {
+        string howToRun = invocationRef["howToRun"]?.GetValue<string>()?.Trim() ?? string.Empty;
+
+        if (string.Equals(meta, "task-executor", StringComparison.Ordinal))
+        {
+            if (IsAllowedTaskExecutorHowToRun(howToRun))
+            {
+                return;
+            }
+
+            throw new InvalidOperationException(
+                $"Unsupported task-executor howToRun '{howToRun}'. Allowed: embedded-host, queue-storage, local-node, http:post, http:get, in-process-loop.");
+        }
+
+        if (string.Equals(meta, "chat-handler", StringComparison.Ordinal)
+            || string.Equals(meta, "chat-handler-flow", StringComparison.Ordinal))
+        {
+            if (IsAllowedChatHowToRun(howToRun))
+            {
+                return;
+            }
+
+            throw new InvalidOperationException(
+                $"Unsupported chat howToRun '{howToRun}'. Allowed: embedded-host, built-in, host-llm, local-node.");
+        }
+    }
+
+    private static bool IsAllowedTaskExecutorHowToRun(string howToRun)
+    {
+        return string.Equals(howToRun, "embedded-host", StringComparison.Ordinal)
+            || string.Equals(howToRun, "queue-storage", StringComparison.Ordinal)
+            || string.Equals(howToRun, "local-node", StringComparison.Ordinal)
+            || string.Equals(howToRun, "http:post", StringComparison.Ordinal)
+            || string.Equals(howToRun, "http:get", StringComparison.Ordinal)
+            || string.Equals(howToRun, "in-process-loop", StringComparison.Ordinal);
+    }
+
+    private static bool IsAllowedChatHowToRun(string howToRun)
+    {
+        return string.Equals(howToRun, "embedded-host", StringComparison.Ordinal)
+            || string.Equals(howToRun, "built-in", StringComparison.Ordinal)
+            || string.Equals(howToRun, "host-llm", StringComparison.Ordinal)
+            || string.Equals(howToRun, "local-node", StringComparison.Ordinal);
     }
 
     private JsonObject ExecuteRunner(JsonObject payload)

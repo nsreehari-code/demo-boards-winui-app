@@ -28,7 +28,7 @@ internal sealed class RuntimeHttpRequestProcessor
             string pathAndQuery = context.Request.Url?.PathAndQuery ?? path;
             if (context.Request.HttpMethod == "GET" && path == "/healthz")
             {
-                await WriteJsonAsync(context.Response, 200, "{\"status\":\"ok\"}").ConfigureAwait(false);
+                await WriteJsonAsync(context.Response, 200, "{\"ok\":true,\"status\":\"ok\",\"boards\":[]}").ConfigureAwait(false);
                 return;
             }
 

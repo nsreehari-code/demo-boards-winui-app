@@ -1,6 +1,7 @@
 {
   "repoRoot": "${repoRoot}",
   "frontend": {
+    "defaultBoardId": "live-test-frontend",
     "boardServerConstants": {
       "agentOutputChannel": "agent-output",
       "agentToolsChannel": "agent-tools"
