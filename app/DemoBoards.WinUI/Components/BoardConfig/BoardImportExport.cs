@@ -3,6 +3,7 @@ using Microsoft.UI.Reactor;
 using Microsoft.UI.Reactor.Core;
 using Microsoft.UI.Xaml.Media;
 using static Microsoft.UI.Reactor.Factories;
+using DemoBoards_WinUI;
 using DemoBoards_WinUI.Controls.Shared;
 
 namespace DemoBoards_WinUI.Controls.Registry.BoardConfig;
@@ -23,6 +24,8 @@ public sealed class BoardImportExport : Component<BoardImportExportProps>
 {
     public override Element Render()
     {
+        AppTheme theme = UseContext(AppThemeContext.Current);
+
         return VStack(12,
             TextBlock("Board Import / Export")
                 .FontSize(14)
@@ -46,8 +49,8 @@ public sealed class BoardImportExport : Component<BoardImportExportProps>
         .Set(stack => stack.BorderThickness = new(1))
         .Set(stack =>
         {
-            stack.BorderBrush = new SolidColorBrush(BoardShared.ToneColor("border-tertiary"));
-            stack.Background = new SolidColorBrush(BoardShared.ToneColor("surface-elevated"));
+            stack.BorderBrush = theme.CardBorder;
+            stack.Background = theme.SurfaceElevated;
         });
     }
 }

@@ -12,6 +12,7 @@ using DemoBoards_WinUI.Controls.Shared;
 using DemoBoards_WinUI.Hooks;
 using DemoBoards_WinUI.Lib;
 using DemoBoards_WinUI.State;
+using DemoBoards_WinUI;
 using Microsoft.UI;
 using Windows.UI;
 
@@ -54,6 +55,7 @@ public sealed class InfiniteCanvasPane : HookComponent<InfiniteCanvasPaneProps>
 
     public override Element Render()
     {
+        AppTheme theme = UseContext(AppThemeContext.Current);
         // Card-tier registry must be live before any node routes through CardRenderer.
         RegistryBootstrap.EnsureRegistered();
 
@@ -199,7 +201,7 @@ public sealed class InfiniteCanvasPane : HookComponent<InfiniteCanvasPaneProps>
             bool provide = string.Equals(variant, "provide", StringComparison.Ordinal);
             bool selected = port.TryGetProperty("selected", out JsonElement s) && s.ValueKind == JsonValueKind.True;
             bool active = port.TryGetProperty("active", out JsonElement a) && a.ValueKind == JsonValueKind.True;
-            return BuildTokenGem(token, provide, selected, active, () => HandleTokenToggle(token));
+            return BuildTokenGem(theme, token, provide, selected, active, () => HandleTokenToggle(token));
         }
 
         InfiniteCanvasNodeGeometry? GetInitialNodePos(InfiniteCanvasNodePlacement placement)
@@ -269,16 +271,16 @@ public sealed class InfiniteCanvasPane : HookComponent<InfiniteCanvasPaneProps>
                     GridSpacing: 24)));
     }
 
-    private static Element BuildTokenGem(string token, bool provide, bool selected, bool active, Action onClick) =>
+    private static Element BuildTokenGem(AppTheme theme, string token, bool provide, bool selected, bool active, Action onClick) =>
         Button(token, onClick)
             .AutomationName($"{(provide ? "Provides" : "Requires")} {token}")
             .CornerRadius(10)
             .Padding(8, 2, 8, 2)
             .MinWidth(0)
             .Background(selected || (provide && active)
-                ? BoardTheme.ResolveBrush("AccentFillColorDefaultBrush", Colors.Transparent)
-                : BoardTheme.ResolveBrush("ControlFillColorDefaultBrush", Colors.Transparent))
-            .WithBorder(BoardTheme.ResolveBrush("CardStrokeColorDefaultBrush", Colors.Transparent), 1)
+                ? theme.Accent
+                : theme.ControlFill)
+            .WithBorder(theme.CardBorder, 1)
             .Set(button => button.FontSize = 10);
 
     private static string? ReadString(JsonElement element, string name) =>

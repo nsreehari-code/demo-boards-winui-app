@@ -5,6 +5,7 @@ using Microsoft.UI.Reactor;
 using Microsoft.UI.Reactor.Core;
 using Microsoft.UI.Xaml.Media;
 using static Microsoft.UI.Reactor.Factories;
+using DemoBoards_WinUI;
 using DemoBoards_WinUI.Controls.Shared;
 
 namespace DemoBoards_WinUI.Controls.Registry.BoardConfig;
@@ -27,6 +28,7 @@ public sealed class TemplateCardIngest : Component<TemplateCardIngestProps>
 {
     public override Element Render()
     {
+        AppTheme theme = UseContext(AppThemeContext.Current);
         var entries = Props.Entries ?? Array.Empty<object?>();
         bool hasEntries = entries.Count > 0;
 
@@ -69,8 +71,8 @@ public sealed class TemplateCardIngest : Component<TemplateCardIngestProps>
         .Set(stack => stack.BorderThickness = new(1))
         .Set(stack =>
         {
-            stack.BorderBrush = new SolidColorBrush(BoardShared.ToneColor("border-tertiary"));
-            stack.Background = new SolidColorBrush(BoardShared.ToneColor("surface-elevated"));
+            stack.BorderBrush = theme.CardBorder;
+            stack.Background = theme.SurfaceElevated;
         });
     }
 }

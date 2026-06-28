@@ -22,6 +22,7 @@ public sealed class AppRoot : HookComponent<AppRootProps>
 {
     public override Element Render()
     {
+        AppTheme theme = AppTheme.FromResources();
         BoardStore boardStore = UseBoardStoreSubscription(includeUiState: true);
         EmbeddedBoardClient boardClient = UseEmbeddedClient();
         BoardInfoState runningBoardInfo = boardStore.GetBoardInfo();
@@ -96,12 +97,12 @@ public sealed class AppRoot : HookComponent<AppRootProps>
 
         var sections = new List<Element>
         {
-            BuildTopBar(boardStore, boardClient, configOpen, setConfigOpen),
+            BuildTopBar(boardStore, boardClient, configOpen, setConfigOpen, theme),
         };
 
         if (loading)
         {
-            sections.Add(BuildStartupBanner(startupMessage));
+            sections.Add(BuildStartupBanner(startupMessage, theme));
         }
 
         // Board surface: the fully reactive board-tier host. BoardRenderer reads the managed config
@@ -141,7 +142,7 @@ public sealed class AppRoot : HookComponent<AppRootProps>
 
         Element shell = Border(VStack(16, sections.ToArray()))
             .Padding(16)
-            .Background(ResolveBrush("BoardWindowBackgroundBrush"));
+            .Background(theme.WindowBackground);
 
         // ThemeProvider: resolve the live app theme (from the active BoardTheme pack's resources) and
         // provide it to the whole subtree. Descendants — including the InfiniteCanvas — read it via
@@ -157,10 +158,10 @@ public sealed class AppRoot : HookComponent<AppRootProps>
                         .HAlign(HorizontalAlignment.Center)
                         .VAlign(VerticalAlignment.Center)
                         .Margin(24))
-            .Provide(AppThemeContext.Current, AppTheme.FromResources());
+                .Provide(AppThemeContext.Current, theme);
     }
 
-    private static Element BuildTopBar(BoardStore boardStore, EmbeddedBoardClient boardClient, bool configOpen, Action<bool> setConfigOpen)
+            private static Element BuildTopBar(BoardStore boardStore, EmbeddedBoardClient boardClient, bool configOpen, Action<bool> setConfigOpen, AppTheme theme)
     {
         (string title, string subtitle) = ResolvePageTitleAndSubtitle(boardStore.State.ManagedBoardConfig, boardStore.GetBoardInfo().BoardId);
         double refreshIntervalMs = ResolveRefreshAllIntervalMs(boardStore.State.ManagedBoardConfig);
@@ -171,7 +172,7 @@ public sealed class AppRoot : HookComponent<AppRootProps>
                 OnClick: () => RefreshBoardAsync(boardClient),
                 Children: state => HStack(8,
                     TextBlock(state.Pending ? "Refreshing..." : FormatCountdown(state.RemainingMs))
-                        .Foreground(ResolveBrush("BoardTextBrush")))));
+                        .Foreground(theme.TextPrimary))));
 
         Element actions = HStack(12,
                 refreshButton)
@@ -185,13 +186,13 @@ public sealed class AppRoot : HookComponent<AppRootProps>
                     .Flex(grow: 1),
                     actions))
             .Padding(14)
-            .Background(ResolveBrush("BoardTopBarBackgroundBrush"))
-            .WithBorder(ResolveBrush("BoardTopBarBorderBrush"), 1)
+                .Background(theme.TopBarBackground)
+                .WithBorder(theme.TopBarBorder, 1)
             .CornerRadius(14)
             .HorizontalAlignment(HorizontalAlignment.Stretch);
     }
 
-    private static Element BuildStartupBanner(string startupMessage)
+            private static Element BuildStartupBanner(string startupMessage, AppTheme theme)
     {
         return Border(
                 HStack(10,
@@ -200,7 +201,7 @@ public sealed class AppRoot : HookComponent<AppRootProps>
                         TextBlock("Loading DemoBoards").Bold(),
                         TextBlock(startupMessage).Opacity(0.72))))
             .Padding(16)
-            .Background(ResolveBrush("CardBackgroundFillColorSecondaryBrush"))
+                .Background(theme.SecondaryCardBackground)
             .CornerRadius(14);
     }
 
@@ -313,12 +314,5 @@ public sealed class AppRoot : HookComponent<AppRootProps>
         int minutes = totalSeconds / 60;
         int seconds = totalSeconds % 60;
         return $"{minutes:00}:{seconds:00}";
-    }
-
-    private static Brush ResolveBrush(string resourceKey)
-    {
-        return Application.Current.Resources.TryGetValue(resourceKey, out object resource)
-            ? resource as Brush ?? new SolidColorBrush(Windows.UI.Color.FromArgb(0, 0, 0, 0))
-            : new SolidColorBrush(Windows.UI.Color.FromArgb(0, 0, 0, 0));
     }
 }

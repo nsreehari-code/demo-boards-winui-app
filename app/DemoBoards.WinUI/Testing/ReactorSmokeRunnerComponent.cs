@@ -55,6 +55,34 @@ public sealed class ReactorSmokeRunnerComponent : HookComponent<SmokeRunnerProps
 
     public override Element Render()
     {
+        AppTheme theme = UseContext(AppThemeContext.Current);
+
+        Element SectionCard(Element content) => Border(content)
+            .Padding(14)
+            .Background(theme.CardBackground)
+            .WithBorder(theme.CardBorderStrong, 1)
+            .CornerRadius(14);
+
+        Brush CreateStatusBrush(string status) => status switch
+        {
+            "passed" => theme.StatusSuccess,
+            "failed" => theme.StatusError,
+            "cancelled" => theme.StatusWarning,
+            "running" => theme.StatusRunning,
+            _ => theme.TextMuted,
+        };
+
+        Element BuildCaseRow(SmokeCaseState state) => Border(VStack(4,
+                TextBlock($"{state.Id} - {state.Title}").Bold().Opacity(0.9),
+                TextBlock(state.Status).Foreground(CreateStatusBrush(state.Status)).Opacity(0.84),
+                string.IsNullOrWhiteSpace(state.Detail)
+                    ? TextBlock(string.Empty).Set(text => text.Visibility = Visibility.Collapsed)
+                    : TextBlock(state.Detail).Opacity(0.7).Set(text => text.TextWrapping = TextWrapping.WrapWholeWords)))
+            .Padding(10)
+            .Background(theme.CardBackground)
+            .WithBorder(theme.CardBorderStrong, 1)
+            .CornerRadius(12);
+
         var processRef = UseRef<Process?>(null);
         var cancelRequestedRef = UseRef(false);
 
@@ -627,20 +655,6 @@ public sealed class ReactorSmokeRunnerComponent : HookComponent<SmokeRunnerProps
         }
     }
 
-    private static Element BuildCaseRow(SmokeCaseState state)
-    {
-        return Border(VStack(4,
-                TextBlock($"{state.Id} - {state.Title}").Bold().Opacity(0.9),
-                TextBlock(state.Status).Foreground(CreateStatusBrush(state.Status)).Opacity(0.84),
-                string.IsNullOrWhiteSpace(state.Detail)
-                    ? TextBlock(string.Empty).Set(text => text.Visibility = Visibility.Collapsed)
-                    : TextBlock(state.Detail).Opacity(0.7).Set(text => text.TextWrapping = TextWrapping.WrapWholeWords)))
-            .Padding(10)
-            .Background(BoardTheme.ResolveBrush("CardBackgroundFillColorDefaultBrush", Colors.White))
-            .WithBorder(BoardTheme.ResolveBrush("BoardBorderStrongBrush", Colors.LightGray), 1)
-            .CornerRadius(12);
-    }
-
     private static Element BuildCodeBlock(string value, double minHeight)
     {
         return TextBox(value)
@@ -655,32 +669,11 @@ public sealed class ReactorSmokeRunnerComponent : HookComponent<SmokeRunnerProps
             });
     }
 
-    private static Element SectionCard(Element content)
-    {
-        return Border(content)
-            .Padding(14)
-            .Background(BoardTheme.ResolveBrush("CardBackgroundFillColorDefaultBrush", Colors.White))
-            .WithBorder(BoardTheme.ResolveBrush("BoardBorderStrongBrush", Colors.LightGray), 1)
-            .CornerRadius(14);
-    }
-
     private static Element HintText(string message)
     {
         return TextBlock(message)
             .Opacity(0.68)
             .Set(text => text.TextWrapping = TextWrapping.WrapWholeWords);
-    }
-
-    private static Brush CreateStatusBrush(string status)
-    {
-        return status switch
-        {
-            "passed" => new SolidColorBrush(Colors.SeaGreen),
-            "failed" => new SolidColorBrush(Colors.IndianRed),
-            "cancelled" => new SolidColorBrush(Colors.DarkGoldenrod),
-            "running" => new SolidColorBrush(Colors.SteelBlue),
-            _ => BoardTheme.ResolveBrush("BoardTextMutedBrush", Colors.DimGray),
-        };
     }
 
     private static string BuildPortfolioFixtureCardJson(string cardId, string title)

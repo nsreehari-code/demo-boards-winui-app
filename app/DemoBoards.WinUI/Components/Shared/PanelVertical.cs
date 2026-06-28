@@ -70,7 +70,7 @@ public sealed class PanelVertical : Component<PanelVerticalProps>
         return Grid(
             new[] { GridSize.Star() },
             new[] { GridSize.Star() },
-            Border(Empty()).Background(BoardTheme.ResolveBrush("BoardOverlayBrush", Color.FromArgb(0x99, 0x06, 0x0C, 0x18))),
+            Border(Empty()).Background(theme.Overlay),
             rail.Margin(12));
     }
 

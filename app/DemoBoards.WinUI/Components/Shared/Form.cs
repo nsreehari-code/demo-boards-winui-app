@@ -133,7 +133,7 @@ public sealed class Form : Component<FormProps>
             var footer = new List<Element>();
             if (messages.Count > 0)
             {
-                var danger = new SolidColorBrush(BoardShared.ToneColor("danger"));
+                Brush danger = theme.StatusError;
                 footer.Add(VStack(2, messages
                     .Select(message => (Element)TextBlock(message).FontSize(11).Foreground(danger))
                     .ToArray()).Flex(grow: 1));

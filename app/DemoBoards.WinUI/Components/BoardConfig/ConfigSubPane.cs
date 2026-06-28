@@ -3,6 +3,7 @@ using Microsoft.UI.Reactor;
 using Microsoft.UI.Reactor.Core;
 using Microsoft.UI.Xaml.Media;
 using static Microsoft.UI.Reactor.Factories;
+using DemoBoards_WinUI;
 using DemoBoards_WinUI.Assets;
 using DemoBoards_WinUI.Controls.Shared;
 
@@ -21,6 +22,7 @@ public sealed class ConfigSubPane : Component<ConfigSubPaneProps>
 {
     public override Element Render()
     {
+        AppTheme theme = UseContext(AppThemeContext.Current);
         var children = Props.Children ?? Array.Empty<Element>();
 
         return VStack(0,
@@ -38,7 +40,7 @@ public sealed class ConfigSubPane : Component<ConfigSubPaneProps>
                     .Flex(grow: 1))
                 .Flex(shrink: 0)
                 .Set(stack => stack.Padding = new(12, 8, 12, 8))
-                .Set(stack => stack.Background = new SolidColorBrush(BoardShared.ToneColor("surface-elevated"))),
+                .Set(stack => stack.Background = theme.SurfaceElevated),
 
             // Scrollable body
             VStack(12, children)

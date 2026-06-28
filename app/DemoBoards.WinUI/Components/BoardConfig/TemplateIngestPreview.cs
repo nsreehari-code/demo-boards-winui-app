@@ -6,6 +6,7 @@ using Microsoft.UI.Reactor.Core;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
 using static Microsoft.UI.Reactor.Factories;
+using DemoBoards_WinUI;
 using DemoBoards_WinUI.Controls.Shared;
 
 namespace DemoBoards_WinUI.Controls.Registry.BoardConfig;
@@ -55,6 +56,7 @@ public sealed class TemplateIngestPreview : Component<TemplateIngestPreviewProps
 
     public override Element Render()
     {
+        AppTheme theme = UseContext(AppThemeContext.Current);
         var cardsToReplace = Props.CardsToReplace ?? Array.Empty<object?>();
         var cardsToAdd = Props.CardsToAdd ?? Array.Empty<object?>();
         var invalidCards = Props.InvalidCards ?? Array.Empty<object?>();
@@ -81,13 +83,13 @@ public sealed class TemplateIngestPreview : Component<TemplateIngestPreviewProps
             Border(TextBlock($"Replace: {cardsToReplace.Count}")
                 .FontSize(11))
                 .Padding(6, 4)
-                .Background(new SolidColorBrush(BoardShared.ToneColor("surface-elevated")))
-                .WithBorder(new SolidColorBrush(BoardShared.ToneColor("border-tertiary")), 1),
+                .Background(theme.SurfaceElevated)
+                .WithBorder(theme.CardBorder, 1),
             Border(TextBlock($"Add: {cardsToAdd.Count}")
                 .FontSize(11))
                 .Padding(6, 4)
-                .Background(new SolidColorBrush(BoardShared.ToneColor("surface-elevated")))
-                .WithBorder(new SolidColorBrush(BoardShared.ToneColor("border-tertiary")), 1)
+                .Background(theme.SurfaceElevated)
+                .WithBorder(theme.CardBorder, 1)
         };
 
         if (hasInvalidCards)
@@ -95,10 +97,10 @@ public sealed class TemplateIngestPreview : Component<TemplateIngestPreviewProps
             badges.Add(
                 Border(TextBlock($"Invalid: {invalidCards.Count}")
                     .FontSize(11)
-                    .Foreground(new SolidColorBrush(BoardShared.ToneColor("danger"))))
+                    .Foreground(theme.StatusError))
                     .Padding(6, 4)
-                    .Background(new SolidColorBrush(BoardShared.ToneColor("surface-danger")))
-                    .WithBorder(new SolidColorBrush(BoardShared.ToneColor("danger")), 1));
+                    .Background(theme.SurfaceForTone("danger"))
+                    .WithBorder(theme.StatusError, 1));
         }
 
         sections.Add(HStack(8, badges.ToArray()));
@@ -122,7 +124,7 @@ public sealed class TemplateIngestPreview : Component<TemplateIngestPreviewProps
                 var issueElements = issues
                     .Select(issue => (Element)TextBlock(issue)
                         .FontSize(11)
-                        .Foreground(new SolidColorBrush(BoardShared.ToneColor("danger")))
+                        .Foreground(theme.StatusError)
                         .Opacity(0.9))
                     .ToArray();
 
@@ -143,7 +145,8 @@ public sealed class TemplateIngestPreview : Component<TemplateIngestPreviewProps
                     VStack(4, invalidCardElements.ToArray())
                         .Set(stack =>
                         {
-                            stack.Background = new SolidColorBrush(BoardShared.ToneColor("surface-danger"));
+                            stack.Background = theme.SurfaceForTone("danger");
+                            stack.BorderBrush = theme.StatusError;
                             stack.BorderThickness = new(1);
                             stack.Padding = new(8);
                         })

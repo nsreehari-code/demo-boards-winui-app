@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using DemoBoards_WinUI;
 using Microsoft.UI.Reactor;
 using Microsoft.UI.Reactor.Core;
 using Microsoft.UI.Xaml.Media;
@@ -86,6 +87,7 @@ public sealed class EditPageDetails : Component<EditPageDetailsProps>
 
     public override Element Render()
     {
+        AppTheme theme = UseContext(AppThemeContext.Current);
         var (draft, setDraft) = UseState<IReadOnlyDictionary<string, object?>>(
             ExtractPageDetailsDraft(null));
 
@@ -189,7 +191,7 @@ public sealed class EditPageDetails : Component<EditPageDetailsProps>
             sections.Add(TextBlock("Board not available in this mode")
                 .FontSize(12)
                 .Opacity(0.6)
-                .Foreground(new SolidColorBrush(BoardShared.ToneColor("warning"))));
+                .Foreground(theme.StatusWarning));
         }
         else
         {
@@ -245,7 +247,7 @@ public sealed class EditPageDetails : Component<EditPageDetailsProps>
         {
             sections.Add(TextBlock(successMessage)
                 .FontSize(12)
-                .Foreground(new SolidColorBrush(BoardShared.ToneColor("success"))));
+                .Foreground(theme.StatusSuccess));
         }
 
         return VStack(12, sections.ToArray())

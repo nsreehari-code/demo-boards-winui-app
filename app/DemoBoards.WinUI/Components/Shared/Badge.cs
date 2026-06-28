@@ -16,11 +16,10 @@ public sealed class Badge : Component<BadgeProps>
 {
     public override Element Render()
     {
-        _ = UseContext(AppThemeContext.Current);
-        Color tone = BoardShared.ToneColor(Props.Tone);
+        AppTheme theme = UseContext(AppThemeContext.Current);
 
-        return Border(TextBlock(Props.Value).FontSize(12).Foreground(new SolidColorBrush(Colors.White)))
-            .Background(new SolidColorBrush(tone))
+        return Border(TextBlock(Props.Value).FontSize(12).Foreground(theme.TextOnAccent))
+            .Background(theme.BrushForTone(Props.Tone))
             .CornerRadius(10)
             .Set(border => border.Padding = new Thickness(8, 2, 8, 2));
     }

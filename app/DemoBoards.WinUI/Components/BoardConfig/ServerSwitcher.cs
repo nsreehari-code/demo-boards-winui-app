@@ -20,6 +20,7 @@ public sealed class ServerSwitcher : HookComponent<ServerSwitcherProps>
 {
     public override Element Render()
     {
+        AppTheme theme = UseContext(AppThemeContext.Current);
         EmbeddedBoardClient boardClient = UseEmbeddedClient();
         var (serverUrl, setServerUrl) = UseGlobalState<string>(
             GlobalStateKeys.ServerUrl,
@@ -130,7 +131,7 @@ public sealed class ServerSwitcher : HookComponent<ServerSwitcherProps>
             string.IsNullOrWhiteSpace(healthError)
                 ? TextBlock(string.Empty).Set(text => text.Visibility = Visibility.Collapsed)
                 : TextBlock(healthError)
-                    .Foreground(new SolidColorBrush(Colors.IndianRed))
+                    .Foreground(theme.StatusError)
                     .Opacity(0.88)
                     .Set(text => text.TextWrapping = TextWrapping.WrapWholeWords));
     }

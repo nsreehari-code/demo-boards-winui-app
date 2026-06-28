@@ -29,7 +29,7 @@ public sealed class ChallengeConfirmModal : Component<ChallengeConfirmModalProps
         bool isCorrect = int.TryParse(answer.Trim(), out int parsed) && parsed == expected;
 
         Element errorLine = answered && !isCorrect
-            ? (Element)TextBlock("Incorrect - try again.").Foreground(new SolidColorBrush(Colors.IndianRed))
+            ? (Element)TextBlock("Incorrect - try again.").Foreground(theme.StatusError)
             : TextBlock(string.Empty).Set(text => text.Visibility = Visibility.Collapsed);
 
         return Border(VStack(12,

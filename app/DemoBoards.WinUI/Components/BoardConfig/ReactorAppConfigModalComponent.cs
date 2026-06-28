@@ -28,6 +28,28 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
 
     public override Element Render()
     {
+        AppTheme theme = UseContext(AppThemeContext.Current);
+
+        Element SectionCard(Element content) => Border(content)
+            .Padding(14)
+            .Background(theme.CardBackground)
+            .WithBorder(theme.CardBorderStrong, 1)
+            .CornerRadius(14);
+
+        Brush CreateStatusBrush(StatusKind kind) => kind switch
+        {
+            StatusKind.Error => theme.StatusError,
+            StatusKind.Success => theme.StatusSuccess,
+            _ => theme.TextMuted,
+        };
+
+        Element StatusBlock(StatusMessage status) => string.IsNullOrWhiteSpace(status.Message)
+            ? TextBlock(string.Empty).Set(text => text.Visibility = Visibility.Collapsed)
+            : TextBlock(status.Message)
+                .Foreground(CreateStatusBrush(status.Kind))
+                .Opacity(0.88)
+                .Set(text => text.TextWrapping = TextWrapping.WrapWholeWords);
+
         var (rawBoardJson, setRawBoardJson) = UseState("{}");
         var (rawUiJson, setRawUiJson) = UseState("{}");
         var (rawMetadataJson, setRawMetadataJson) = UseState("{}");
@@ -951,16 +973,6 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
             .Set(text => text.TextWrapping = TextWrapping.WrapWholeWords);
     }
 
-    private static Element StatusBlock(StatusMessage status)
-    {
-        return string.IsNullOrWhiteSpace(status.Message)
-            ? TextBlock(string.Empty).Set(text => text.Visibility = Visibility.Collapsed)
-            : TextBlock(status.Message)
-                .Foreground(CreateStatusBrush(status.Kind))
-                .Opacity(0.88)
-                .Set(text => text.TextWrapping = TextWrapping.WrapWholeWords);
-    }
-
     private static Element BuildCodeBlock(string value, double minHeight)
     {
         return TextBox(value)
@@ -973,25 +985,6 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
                 textBox.MinHeight = minHeight;
                 textBox.FontFamily = new FontFamily("Consolas");
             });
-    }
-
-    private static Element SectionCard(Element content)
-    {
-        return Border(content)
-            .Padding(14)
-            .Background(BoardTheme.ResolveBrush("CardBackgroundFillColorDefaultBrush", Colors.White))
-            .WithBorder(BoardTheme.ResolveBrush("BoardBorderStrongBrush", Colors.LightGray), 1)
-            .CornerRadius(14);
-    }
-
-    private static Brush CreateStatusBrush(StatusKind kind)
-    {
-        return kind switch
-        {
-            StatusKind.Error => new SolidColorBrush(Colors.IndianRed),
-            StatusKind.Success => new SolidColorBrush(Colors.SeaGreen),
-            _ => BoardTheme.ResolveBrush("BoardTextMutedBrush", Colors.DimGray),
-        };
     }
 
     private static string BuildOptionsHint(string label, IReadOnlyList<string> options)

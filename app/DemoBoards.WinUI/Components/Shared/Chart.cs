@@ -43,7 +43,7 @@ public sealed class Chart : Component<ChartProps>
         bool showLegend = GetValue(spec, "legend") is not false
             && (model.SeriesKeys.Count > 1 || variant is "pie" or "doughnut");
 
-        var palette = BoardShared.ChartPalette.Select(color => (Brush)new SolidColorBrush(color)).ToList();
+        var palette = theme.CreateChartPalette().ToList();
 
         const double left = 6;
         const double top = 8;
@@ -54,7 +54,7 @@ public sealed class Chart : Component<ChartProps>
 
         List<Element> children = variant switch
         {
-            "pie" or "doughnut" => BuildPie(model, palette, width, height, variant == "doughnut"),
+            "pie" or "doughnut" => BuildPie(model, palette, width, height, variant == "doughnut", theme),
             "line" or "area" => BuildLineArea(model, palette, left, top, plotW, plotH, variant == "area", theme),
             "scatter" => BuildScatter(model, palette, left, top, plotW, plotH, theme),
             _ => BuildBar(model, palette, left, top, plotW, plotH, stacked, theme),
@@ -209,7 +209,7 @@ public sealed class Chart : Component<ChartProps>
         return children;
     }
 
-    private static List<Element> BuildPie(ChartModel model, List<Brush> palette, double width, double height, bool doughnut)
+    private static List<Element> BuildPie(ChartModel model, List<Brush> palette, double width, double height, bool doughnut, AppTheme theme)
     {
         var children = new List<Element>();
         string valueKey = model.SeriesKeys[0];
@@ -258,7 +258,7 @@ public sealed class Chart : Component<ChartProps>
             children.Add(Ellipse()
                 .Width(inner * 2)
                 .Height(inner * 2)
-                .Fill(new SolidColorBrush(Color.FromArgb(0xFF, 0x1a, 0x1a, 0x1a)))
+                .Fill(theme.WindowBackground)
                 .Canvas(centerX - inner, centerY - inner)
                 .WithKey("doughnut-hole"));
         }

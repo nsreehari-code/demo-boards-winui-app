@@ -463,7 +463,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
                 {
                     Width = surfaceWidth,
                     Height = surfaceHeight,
-                    Background = new SolidColorBrush(Colors.Transparent),
+                    Background = theme.Transparent,
                 })
                 .Set(canvas => canvasRef.Current = canvas)
                 .OnPointerPressed((element, args) =>
@@ -785,7 +785,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
             .Canvas(0, 0);
 
         var nodeChildren = new List<Element> { body };
-        nodeChildren.AddRange(BuildNodePortChips(box, ports, Props.RenderNodePort));
+        nodeChildren.AddRange(BuildNodePortChips(box, ports, Props.RenderNodePort, theme));
 
         return Canvas(nodeChildren.ToArray())
             .Width(box.Width)
@@ -861,7 +861,8 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
     private static IEnumerable<Element> BuildNodePortChips(
         InfiniteCanvasNodeBox box,
         InfiniteCanvasNodePorts? ports,
-        Func<JsonElement, InfiniteCanvasPortRenderContext, Element>? renderPort)
+        Func<JsonElement, InfiniteCanvasPortRenderContext, Element>? renderPort,
+        AppTheme theme)
     {
         if (ports is null || renderPort is null)
         {
@@ -879,15 +880,15 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
             {
                 (double anchorX, double anchorY) = PortLocalAnchor(side, i, list.Count, box.Width, box.Height);
                 Element content = renderPort(list[i], new InfiniteCanvasPortRenderContext(side, box.Descriptor));
-                yield return BuildPortChip(content, anchorX, anchorY);
+                yield return BuildPortChip(content, anchorX, anchorY, theme);
             }
         }
     }
 
-    private static Element BuildPortChip(Element content, double anchorX, double anchorY)
+    private static Element BuildPortChip(Element content, double anchorX, double anchorY, AppTheme theme)
     {
         return Border(content)
-            .Background(new SolidColorBrush(Colors.Transparent))
+            .Background(theme.Transparent)
             .Canvas(anchorX, anchorY)
             .Set(chip =>
             {
@@ -1438,7 +1439,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
                 {
                     Width = miniWidth,
                     Height = miniHeight,
-                    Background = new SolidColorBrush(Colors.Transparent),
+                    Background = theme.Transparent,
                 })
                 .Set(canvas => miniCanvasRef.Current = canvas)
                 .OnPointerWheelChanged((element, args) =>

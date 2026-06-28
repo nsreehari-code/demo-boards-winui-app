@@ -17,12 +17,12 @@ public sealed class Alert : Component<AlertProps>
     public override Element Render()
     {
         AppTheme theme = UseContext(AppThemeContext.Current);
-        Color tone = BoardShared.ToneColor(Props.Level);
+        Brush tone = theme.BrushForTone(Props.Level);
 
         Element dot = Ellipse()
             .Width(10)
             .Height(10)
-            .Fill(new SolidColorBrush(tone))
+            .Fill(tone)
             .VAlign(VerticalAlignment.Center);
 
         var body = new System.Collections.Generic.List<Element>
@@ -34,8 +34,8 @@ public sealed class Alert : Component<AlertProps>
             body.Add(TextBlock(Props.Label).FontSize(12).Opacity(0.7).Foreground(theme.TextPrimary));
         }
 
-        Element levelPill = Border(TextBlock(Props.Level).FontSize(11).Foreground(new SolidColorBrush(Colors.White)))
-            .Background(new SolidColorBrush(tone))
+        Element levelPill = Border(TextBlock(Props.Level).FontSize(11).Foreground(theme.TextOnAccent))
+            .Background(tone)
             .CornerRadius(8)
             .Set(border =>
             {
