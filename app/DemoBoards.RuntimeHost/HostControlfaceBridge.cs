@@ -18,8 +18,9 @@ public sealed class HostControlfaceBridge
     private readonly string sampleTemplateIndexPath;
     private readonly string agentfaceManifestPath;
     private readonly HostConfigRunner hostConfigRunner;
+    private readonly RuntimeHostOptions? hostConfigDefaults;
 
-    public HostControlfaceBridge(string runtimeRootDirectory, string assetBaseDirectory)
+    public HostControlfaceBridge(string runtimeRootDirectory, string assetBaseDirectory, RuntimeHostOptions? hostConfigDefaults = null)
     {
         if (string.IsNullOrWhiteSpace(runtimeRootDirectory))
         {
@@ -31,6 +32,7 @@ public sealed class HostControlfaceBridge
             throw new ArgumentException("Asset base directory is required.", nameof(assetBaseDirectory));
         }
 
+        this.hostConfigDefaults = hostConfigDefaults;
         managedBoardsDirectory = Path.Combine(runtimeRootDirectory, "controlface-state", "managed-boards");
         deprecatedManagedBoardsDirectory = Path.Combine(runtimeRootDirectory, "controlface-state", "deprecated-managed-boards");
         sampleTemplateDirectory = Path.Combine(assetBaseDirectory, "sample-card-templates");
@@ -247,6 +249,42 @@ public sealed class HostControlfaceBridge
         return hostConfigRunner.Invoke(payload).ToJsonString(JsonOptions);
     }
 
+    /// <summary>
+    /// Resolves a board's hydrated config (including ui['admin-cards']) using the host-config
+    /// paths configured for this host. Lets the embedded runtime follow the converged hosted
+    /// manage-boards path without each caller having to thread host-config paths.
+    /// </summary>
+    public string ResolveBoardConfig(string boardId, string recordJson)
+    {
+        return ResolveBoardConfigJson(
+            boardId,
+            recordJson,
+            RequireDefaultHostConfigPath(hostConfigDefaults?.HostConfigPath, nameof(RuntimeHostOptions.HostConfigPath)),
+            RequireDefaultHostConfigPath(hostConfigDefaults?.LocalFsConfigLoaderPath, nameof(RuntimeHostOptions.LocalFsConfigLoaderPath)));
+    }
+
+    /// <summary>
+    /// Validates a card against yaml-flow's adapter-free preflight validator (AJV JSON Schema +
+    /// JSONata compute-expression checks). Runs out-of-process in node so the embedded V8 runtime
+    /// can supply a real <c>BoardNonCorePlatformAdapter.validateSchema</c> without bundling AJV.
+    /// Returns <c>{ "ok": bool, "errors": string[] }</c> as a JSON string.
+    /// </summary>
+    public string ValidateCardSchema(string cardJson)
+    {
+        JsonObject payload = new()
+        {
+            ["mode"] = "validate-card-schema",
+            ["card"] = ParseRequiredJsonObject(cardJson, "Card content must be a JSON object."),
+            ["localFsConfigLoaderPath"] = RequireDefaultHostConfigPath(
+                hostConfigDefaults?.LocalFsConfigLoaderPath, nameof(RuntimeHostOptions.LocalFsConfigLoaderPath)),
+        };
+        JsonObject result = hostConfigRunner.Invoke(payload);
+        JsonNode? validation = result["validation"];
+        return validation is not null
+            ? validation.ToJsonString(JsonOptions)
+            : new JsonObject { ["ok"] = false, ["errors"] = new JsonArray("validator returned no result") }.ToJsonString(JsonOptions);
+    }
+
     public void SetupBoardWorkspace(string boardId, string recordJson, string hostConfigPath, string localFsConfigLoaderPath, string setupSingleAiWorkspaceScriptPath)
     {
         string normalizedBoardId = NormalizeRequiredKey(boardId, "Board id is required.");
@@ -265,6 +303,32 @@ public sealed class HostControlfaceBridge
             normalizedBoardId,
             NormalizeRequiredKey(hostConfigPath, "hostConfigPath is required."),
             scriptPath);
+    }
+
+    /// <summary>
+    /// Ensures a board's AI workspace using the host-config paths configured for this host.
+    /// Mirrors the hosted controlface ensureBoardAiWorkspaceReady step in the converged path.
+    /// </summary>
+    public void SetupBoardWorkspace(string boardId, string recordJson)
+    {
+        SetupBoardWorkspace(
+            boardId,
+            recordJson,
+            RequireDefaultHostConfigPath(hostConfigDefaults?.HostConfigPath, nameof(RuntimeHostOptions.HostConfigPath)),
+            RequireDefaultHostConfigPath(hostConfigDefaults?.LocalFsConfigLoaderPath, nameof(RuntimeHostOptions.LocalFsConfigLoaderPath)),
+            RequireDefaultHostConfigPath(hostConfigDefaults?.SetupSingleAiWorkspaceScriptPath, nameof(RuntimeHostOptions.SetupSingleAiWorkspaceScriptPath)));
+    }
+
+    private static string RequireDefaultHostConfigPath(string? value, string optionName)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new InvalidOperationException(
+                $"Host-config path '{optionName}' is not configured for this runtime host. "
+                + "Pass host-config defaults to HostControlfaceBridge to use the converged manage-boards path.");
+        }
+
+        return value;
     }
 
     public string? DeprecateManagedBoardStateJson(string boardId)

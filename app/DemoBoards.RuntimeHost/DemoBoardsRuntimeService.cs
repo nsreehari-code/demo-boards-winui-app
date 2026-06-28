@@ -42,7 +42,7 @@ public sealed class DemoBoardsRuntimeService : IAsyncDisposable
         Directory.CreateDirectory(this.paths.RootDir);
 
         storageBridge = new HostStorageBridge(this.paths.HostStorageDir);
-        controlfaceBridge = new HostControlfaceBridge(this.paths.RootDir, AppContext.BaseDirectory);
+        controlfaceBridge = new HostControlfaceBridge(this.paths.RootDir, AppContext.BaseDirectory, this.options);
         boardNotifier = new HostBoardNotifier();
         boardNotifier.BoardChanged += () => Interlocked.Increment(ref boardChangeNotifications);
         boardNotifier.BoardNotificationsReceived += HandleBoardNotificationsReceived;

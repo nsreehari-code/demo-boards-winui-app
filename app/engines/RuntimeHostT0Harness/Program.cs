@@ -29,8 +29,10 @@ internal static class Program
             bool requireFixedPort = HasFlag(args, "--require-fixed-port");
             bool serveMode = HasFlag(args, "--serve");
 
+            string nsCodeRepoRoot = RuntimeAssetResolver.ResolveNsCodeRepoRootOrThrow(AppContext.BaseDirectory);
+
             await using var runtimeService = new DemoBoardsRuntimeService(
-                options: new RuntimeHostOptions(port, requireFixedPort, boardId));
+                options: RuntimeHostOptions.CreateWithNsCodeDefaults(port, requireFixedPort, boardId, nsCodeRepoRoot));
             await runtimeService.StartAsync().ConfigureAwait(false);
 
             using var client = new HttpClient

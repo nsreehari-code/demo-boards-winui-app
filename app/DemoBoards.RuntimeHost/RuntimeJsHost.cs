@@ -118,6 +118,7 @@ if (typeof atob === 'undefined') {
         engine.Execute("board-sse-reducer-host.js", File.ReadAllText(Path.Combine(jsDir, "board-sse-reducer-host.js")));
         engine.Execute("compute-jsonata.js", File.ReadAllText(Path.Combine(jsDir, "compute-jsonata.js")));
         engine.Execute("golden-driver.js", File.ReadAllText(Path.Combine(jsDir, "golden-driver.js")));
+        engine.Execute("manage-boards-core.js", File.ReadAllText(Path.Combine(jsDir, "manage-boards-core.js")));
         engine.Execute("controlface-embedded-shared.js", File.ReadAllText(Path.Combine(jsDir, "controlface-embedded-shared.js")));
         engine.Execute("agentface-embedded-shared.js", File.ReadAllText(Path.Combine(jsDir, "agentface-embedded-shared.js")));
         engine.Execute("server-runtime-controlface.js", File.ReadAllText(Path.Combine(jsDir, "server-runtime-controlface.js")));

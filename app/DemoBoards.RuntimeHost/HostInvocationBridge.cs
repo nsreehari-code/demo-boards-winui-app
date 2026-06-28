@@ -1,7 +1,9 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Text;
 using System.Text.Json.Nodes;
+using System.Threading.Tasks;
 
 namespace DemoBoards.RuntimeHost;
 
@@ -67,10 +69,101 @@ public sealed class HostInvocationBridge
         }
     }
 
+    /// <summary>
+    /// Fire-and-forget task-executor dispatch used by the non-core platform adapter's
+    /// `dispatchExecution`. The board-worker runs out-of-process and reports completion
+    /// back through the HTTP `/mcp-webhooks` callback, which must be served by the same
+    /// (single-threaded) embedded runtime. Running the worker synchronously would block
+    /// the runtime thread and deadlock against that callback, so the runner is launched
+    /// on a background thread and this method returns `{ dispatched: true }` immediately.
+    /// </summary>
+    public string InvokeDispatch(string refJson, string argsJson)
+    {
+        try
+        {
+            JsonObject invocationRef = ParseRequiredJsonObject(refJson, "Invocation ref must be a JSON object.");
+            JsonObject args = ParseOptionalJsonObject(argsJson);
+            JsonObject payload = BuildRunnerPayload(invocationRef, args);
+            StartRunnerDetached(payload);
+            return new JsonObject { ["dispatched"] = true }.ToJsonString();
+        }
+        catch (Exception ex)
+        {
+            return new JsonObject
+            {
+                ["dispatched"] = false,
+                ["error"] = ex.Message,
+            }.ToJsonString();
+        }
+    }
+
+    private void StartRunnerDetached(JsonObject payload)
+    {
+        if (!File.Exists(runnerPath))
+        {
+            throw new FileNotFoundException("The host invocation runner is missing from the runtime output.", runnerPath);
+        }
+
+        string payloadJson = payload.ToJsonString();
+
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                ProcessStartInfo startInfo = new("node")
+                {
+                    WorkingDirectory = nsCodeRepoRoot,
+                    RedirectStandardInput = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                };
+                startInfo.ArgumentList.Add(runnerPath);
+
+                using Process process = Process.Start(startInfo)
+                    ?? throw new InvalidOperationException("Failed to launch node for host invocation dispatch.");
+
+                process.StandardInput.Write(payloadJson);
+                process.StandardInput.Close();
+
+                string stdout = process.StandardOutput.ReadToEnd();
+                string stderr = process.StandardError.ReadToEnd();
+                process.WaitForExit();
+
+                WriteDispatchDiagnostic(
+                    $"mode={payload["mode"]?.GetValue<string>() ?? "<none>"} exit={process.ExitCode}\nstdout: {stdout?.Trim()}\nstderr: {stderr?.Trim()}");
+
+                if (process.ExitCode != 0)
+                {
+                    string detail = string.IsNullOrWhiteSpace(stderr) ? stdout : stderr;
+                    Console.Error.WriteLine($"[host-invocation-dispatch] runner exited {process.ExitCode}: {detail?.Trim()}");
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteDispatchDiagnostic($"background runner failed: {ex}");
+                Console.Error.WriteLine($"[host-invocation-dispatch] background runner failed: {ex.Message}");
+            }
+        });
+    }
+
+    private void WriteDispatchDiagnostic(string message)
+    {
+        try
+        {
+            string logPath = Path.Combine(Path.GetTempPath(), "winui-host-dispatch.log");
+            File.AppendAllText(logPath, $"[{DateTime.Now:HH:mm:ss}] {message}\n\n");
+        }
+        catch
+        {
+            // Diagnostics are best-effort only.
+        }
+    }
+
     public string Describe(string refJson)
     {
-        JsonObject invocationRef = ParseOptionalJsonObject(refJson);
-        string kind = invocationRef["meta"]?.GetValue<string>()
+        JsonObject invocationRef = ParseOptionalJsonObject(refJson);        string kind = invocationRef["meta"]?.GetValue<string>()
             ?? invocationRef["howToRun"]?.GetValue<string>()
             ?? "chat-handler";
 
@@ -82,6 +175,84 @@ public sealed class HostInvocationBridge
             ["ref"] = invocationRef,
             ["supports"] = new JsonArray("invoke", "describe"),
         }.ToJsonString();
+    }
+
+    /// <summary>
+    /// Request/response executor invocation used by the non-core platform adapter
+    /// (validate-source-def, describe-capabilities, run-source-preflight, probe-source-preflight, …).
+    /// Mirrors the yaml-flow non-core dispatcher's `local-node` branch: spawns
+    /// `node task-executor.js &lt;subcommand&gt; --extra &lt;base64&gt;` with the input on stdin
+    /// and returns the executor's raw stdout. The hosted/embedded task-executor ref is
+    /// resolved to the immediate local task-executor script (the host-side `resolveRef` rewrite).
+    /// </summary>
+    public string InvokeExecutor(string refJson, string subcommand, string? inputText)
+    {
+        JsonObject invocationRef = ParseRequiredJsonObject(refJson, "Executor ref must be a JSON object.");
+        string normalizedSubcommand = subcommand?.Trim() ?? string.Empty;
+        if (normalizedSubcommand.Length == 0)
+        {
+            throw new InvalidOperationException("Executor subcommand is required.");
+        }
+
+        string boardId = ResolveBoardId(invocationRef, new JsonObject());
+        JsonObject boardRecord = GetBoardRecord(boardId);
+
+        JsonObject extra = (invocationRef["extra"]?.DeepClone() as JsonObject) ?? new JsonObject();
+        foreach ((string key, JsonNode? value) in BuildTaskExecutorExtra(boardId, boardRecord))
+        {
+            extra[key] = value?.DeepClone();
+        }
+
+        string taskExecutorPath = Path.Combine(nsCodeRepoRoot, "demo-board", "server", "board-worker", "task-executor.js");
+        if (!File.Exists(taskExecutorPath))
+        {
+            throw new FileNotFoundException("The board-worker task executor script is missing.", taskExecutorPath);
+        }
+
+        return RunLocalNodeExecutor(taskExecutorPath, normalizedSubcommand, extra, inputText);
+    }
+
+    private string RunLocalNodeExecutor(string scriptPath, string subcommand, JsonObject extra, string? inputText)
+    {
+        string extraBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(extra.ToJsonString()));
+
+        ProcessStartInfo startInfo = new("node")
+        {
+            WorkingDirectory = nsCodeRepoRoot,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        startInfo.ArgumentList.Add(scriptPath);
+        startInfo.ArgumentList.Add(subcommand);
+        startInfo.ArgumentList.Add("--extra");
+        startInfo.ArgumentList.Add(extraBase64);
+
+        using Process process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("Failed to launch node for executor invocation.");
+
+        if (!string.IsNullOrEmpty(inputText))
+        {
+            process.StandardInput.Write(inputText);
+        }
+
+        process.StandardInput.Close();
+
+        string stdout = process.StandardOutput.ReadToEnd();
+        string stderr = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+
+        if (process.ExitCode != 0)
+        {
+            string errorText = string.IsNullOrWhiteSpace(stderr) ? stdout : stderr;
+            throw new InvalidOperationException(string.IsNullOrWhiteSpace(errorText)
+                ? $"Executor subcommand '{subcommand}' exited with code {process.ExitCode}."
+                : errorText.Trim());
+        }
+
+        return stdout;
     }
 
     public string? GetLastInvocationJson()

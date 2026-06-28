@@ -57,7 +57,11 @@ public sealed class App : IAsyncDisposable
                 options: new RuntimeHostOptions(
                     appConfig.Backend.AgentfacePort,
                     appConfig.Backend.RequireFixedAgentfacePort,
-                    initialBoardId));
+                    initialBoardId,
+                    appConfig.Backend.HostConfigPath,
+                    appConfig.Backend.LocalFsConfigLoaderPath,
+                    appConfig.Backend.TemplatesConfigPath,
+                    appConfig.Backend.SetupSingleAiWorkspaceScriptPath));
             LogStartup("Runtime service created.");
             runtimeService.StartAsync().GetAwaiter().GetResult();
             LogStartup("Runtime service started.");

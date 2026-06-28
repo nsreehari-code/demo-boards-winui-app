@@ -205,11 +205,40 @@ function createManagedBoardsApi() {
   });
   return shared.createManagedBoardsApi({
     lifecycle: lifecycle,
+    hostBridge: bridge,
     getActiveBoardId: function () {
       return globalThis.__winuiBoardId || '';
     },
     invokeRuntimeRoute: function (method, path, bodyText) {
       return winuiHandleRuntimeApi(method, path, bodyText, '{}');
+    },
+    resolveBoardConfig: function (boardId, record) {
+      if (typeof bridge.ResolveBoardConfig !== 'function') {
+        return null;
+      }
+      var raw = bridge.ResolveBoardConfig(String(boardId || ''), JSON.stringify(record || {}));
+      var parsed = raw && String(raw).trim() ? JSON.parse(raw) : null;
+      if (parsed && typeof parsed === 'object' && parsed.resolvedBoardConfig && typeof parsed.resolvedBoardConfig === 'object') {
+        return parsed.resolvedBoardConfig;
+      }
+      return parsed;
+    },
+    ensureWorkspace: function (board) {
+      if (typeof bridge.SetupBoardWorkspace !== 'function') {
+        return;
+      }
+      try {
+        bridge.SetupBoardWorkspace(String((board && board.id) || ''), JSON.stringify(board || {}));
+      } catch (e) {
+        // Workspace setup is best-effort in the embedded host; admin-card seeding (the parity
+        // contract) must still proceed even if the AI workspace cannot be provisioned here.
+      }
+    },
+    provisionRuntime: function (board) {
+      return ensureWinuiRuntime(String((board && board.id) || ''));
+    },
+    invokeRuntimeTool: function (runtimeEntry, boardId, routeKind, payload) {
+      return invokeWinuiRuntimeTool(runtimeEntry, boardId, routeKind, payload);
     },
   });
 }
@@ -273,6 +302,7 @@ function createRuntimeOptions(boardId, bundle, invocationAdapter, extras) {
   var boardConfig = {
     label: 'base',
     boardAdapter: bundle.boardAdapter,
+    nonCoreAdapter: bundle.nonCoreAdapter || bundle.boardAdapter,
     baseRef: refs.baseRef,
     boardRuntimeStoreRef: refs.boardRuntimeStoreRef,
     cardStoreRef: refs.cardStoreRef,
@@ -387,6 +417,21 @@ function createHostBridgeBundle(boardId) {
       listKeys: async function (prefix) { return JSON.parse(HostStorageBridge.BlobListKeysJson(scope, prefix || null)); },
       renameKey: async function (from, to) { return !!HostStorageBridge.BlobRenameKey(scope, from, to); },
       keyRef: async function (key) { return JSON.parse(HostStorageBridge.BlobKeyRefJson(scope, key)); },
+    };
+  }
+
+  // Shared filesystem-backed blob storage (kind: 'fs-path'). Used for the
+  // fetched-sources store so the out-of-process node board-worker (which only
+  // resolves `fs-path` refs) and the embedded host read/write the SAME file.
+  function createSharedFsBlobStorage(scope) {
+    return {
+      read: async function (key) { return HostStorageBridge.SharedBlobRead(scope, key); },
+      write: async function (key, content) { HostStorageBridge.SharedBlobWrite(scope, key, String(content)); },
+      exists: async function (key) { return !!HostStorageBridge.SharedBlobExists(scope, key); },
+      remove: async function (key) { HostStorageBridge.SharedBlobRemove(scope, key); },
+      listKeys: async function (prefix) { return JSON.parse(HostStorageBridge.SharedBlobListKeysJson(scope, prefix || null)); },
+      renameKey: async function (from, to) { return !!HostStorageBridge.SharedBlobRenameKey(scope, from, to); },
+      keyRef: async function (key) { return JSON.parse(HostStorageBridge.SharedBlobKeyRefJson(scope, key)); },
     };
   }
 
@@ -557,13 +602,17 @@ function createHostBridgeBundle(boardId) {
     };
   }
 
-  return {
-    refs: refs,
-    boardAdapter: {
+  var boardAdapter = {
       kvStorage: function (namespace) { return createKvStorage(refs.baseRef.value + ':' + (namespace || 'root')); },
       kvStorageForRef: function (ref) { return createKvStorage(ref); },
       blobStorage: function (namespace) { return createBlobStorage(refs.baseRef.value + ':' + (namespace || 'root')); },
-      blobStorageForRef: function (ref) { return createBlobStorage(ref); },
+      blobStorageForRef: function (ref) {
+        // The fetched-sources store must be shared on-disk (fs-path) so the
+        // out-of-process node board-worker and the embedded host see the same
+        // staged source files. All other stores stay embedded-host-blob.
+        if (ref === refs.fetchedSourcesStoreRef) { return createSharedFsBlobStorage(ref); }
+        return createBlobStorage(ref);
+      },
       chatStorageForRef: function (ref) { return createChatStorage(ref); },
       queueStorageForRef: function (ref, lane) { return createQueueStorage(ref + ':queue:' + lane); },
       scratchStorage: function () { return createScratchStorage(refs.scratchStoreRef); },
@@ -575,10 +624,14 @@ function createHostBridgeBundle(boardId) {
       lock: createRelayLock(),
       callbackTransport: createHostCallbackTransport(boardId),
       dispatchExecution: async function (ref, args) {
-        if (!globalThis.HostInvocationBridge) {
-          throw new Error('HostInvocationBridge is required for embedded executor dispatch');
+        if (!globalThis.HostInvocationBridge || typeof HostInvocationBridge.InvokeDispatch !== 'function') {
+          throw new Error('HostInvocationBridge.InvokeDispatch is required for embedded executor dispatch');
         }
-        var result = JSON.parse(HostInvocationBridge.Invoke(JSON.stringify(ref), JSON.stringify(args || {})));
+        // Fire-and-forget: the board-worker runs out-of-process and reports back via
+        // the /mcp-webhooks callback, which must be served by this same single-threaded
+        // runtime. A synchronous spawn would block that callback and deadlock, so the
+        // host launches the worker on a background thread and returns immediately.
+        var result = JSON.parse(HostInvocationBridge.InvokeDispatch(JSON.stringify(ref), JSON.stringify(args || {})));
         if (!result || result.dispatched !== true) {
           throw new Error(result && result.error ? String(result.error) : 'embedded executor dispatch failed');
         }
@@ -589,12 +642,54 @@ function createHostBridgeBundle(boardId) {
         if (raw == null) throw new Error('blob not found for ref: ' + JSON.stringify(ref));
         return raw;
       },
+      supportsDirectSourceOutput: function (ref) {
+        // The embedded host runs the board-worker out-of-process and writes
+        // fetched source output directly to the shared fs-path staged blob.
+        var howToRun = ref && ref.howToRun;
+        return howToRun === 'embedded-host'
+          || howToRun === 'queue-storage'
+          || howToRun === 'http:post'
+          || howToRun === 'in-process-loop';
+      },
       hashFn: function (value) { return JSON.stringify(canonical(value)); },
       genId: function () { return nextId('gen'); },
       requestProcessAccumulated: function () {},
       publishBoardChangeNotifications: function () {},
       warn: function () {},
+  };
+
+  // Non-core platform adapter: the board adapter plus the executor + schema +
+  // absolute-blob capabilities required by the MCP preflight/discovery tools
+  // (validateCardPreflight, admin-upsert-card, inspect/probe/simulate, …).
+  // Mirrors createFsBoardNonCorePlatformAdapter from yaml-flow's localfs host.
+  var nonCoreAdapter = Object.assign({}, boardAdapter, {
+    validateSchema: function (card) {
+      var bridge = getHostControlfaceBridge();
+      if (typeof bridge.ValidateCardSchema !== 'function') {
+        return { ok: true, errors: [] };
+      }
+      var raw = bridge.ValidateCardSchema(JSON.stringify(card || {}));
+      var parsed = raw && String(raw).trim() ? JSON.parse(raw) : null;
+      return {
+        ok: !!(parsed && parsed.ok),
+        errors: parsed && Array.isArray(parsed.errors) ? parsed.errors : [],
+      };
     },
+    invokeExecutor: async function (ref, subcommand, opts) {
+      if (!globalThis.HostInvocationBridge || typeof HostInvocationBridge.InvokeExecutor !== 'function') {
+        throw new Error('HostInvocationBridge.InvokeExecutor is required for non-core executor invocation');
+      }
+      var input = opts && typeof opts.input === 'string' ? opts.input : '';
+      return HostInvocationBridge.InvokeExecutor(JSON.stringify(ref || {}), String(subcommand || ''), input);
+    },
+    absoluteBlob: createBlobStorage(refs.baseRef.value + ':absolute'),
+    executorTimeouts: { validationMs: 10000, preflightMs: 60000, probeMs: 60000, describeMs: 10000 },
+  });
+
+  return {
+    refs: refs,
+    boardAdapter: boardAdapter,
+    nonCoreAdapter: nonCoreAdapter,
   };
 }
 
@@ -651,6 +746,13 @@ function createHostChatFlowRunner() {
           ? handlerFlow
           : { kind: 'hosted-chat-agent' },
       };
+      // Fire-and-forget: the chat agent runs out-of-process and delivers its reply,
+      // chat-processing state, and notifications via HTTP calls back to this same
+      // single-threaded runtime. A synchronous spawn would block those callbacks and
+      // deadlock, so dispatch on a background thread and return immediately.
+      if (typeof HostInvocationBridge.InvokeDispatch === 'function') {
+        return JSON.parse(HostInvocationBridge.InvokeDispatch(JSON.stringify(ref), JSON.stringify(args || {})));
+      }
       return JSON.parse(HostInvocationBridge.Invoke(JSON.stringify(ref), JSON.stringify(args || {})));
     },
   };
@@ -717,7 +819,87 @@ async function runInvocationAdapterProof() {
 
 async function initWinuiRuntime(boardId, cardsJson) {
   const cards = JSON.parse(cardsJson);
-  const bundle = createHostBridgeBundle(boardId);
+  const runtime = await buildWinuiRuntime(boardId, cards);
+
+  globalThis.__winuiRuntime = runtime;
+  globalThis.__winuiBoardId = boardId;
+
+  await winuiEnsureBoardSeeded(boardId);
+
+  return JSON.stringify(canonical(await runtime.buildPublishedRuntimePayload()), null, 2) + '\n';
+}
+
+// Warm-start bootstrap parity with the hosted controlface server: the initial board's
+// managed record is ensured and its admin template cards are seeded into the active runtime
+// via the SAME converged manage-boards path used by add-board. This guarantees control-plane
+// admin cards (e.g. gandalf-intake) exist even when the board record already persists from a
+// previous session and the test harness therefore skips add-board.
+async function winuiEnsureBoardSeeded(boardId) {
+  var normalizedBoardId = String(boardId || '');
+  if (!normalizedBoardId) {
+    return;
+  }
+  var shared = globalThis.ControlfaceEmbeddedShared;
+  if (!shared || typeof shared.createManagedBoardsApi !== 'function') {
+    return;
+  }
+
+  var bridge = getHostControlfaceBridge();
+  var defaultRecord = {
+    id: normalizedBoardId,
+    label: normalizedBoardId,
+    ai: 'copilot',
+    aiWorkspaceTemplate: 'default',
+    refsTemplate: 'localfs-default',
+    uiTemplate: 'default',
+  };
+
+  var existingRecord = null;
+  try {
+    var existingRaw = bridge.GetBoardContainerRecordJson(normalizedBoardId);
+    existingRecord = existingRaw && String(existingRaw).trim() ? JSON.parse(existingRaw) : null;
+  } catch (e) {
+    existingRecord = null;
+  }
+
+  var record = Object.assign({}, defaultRecord, existingRecord || {});
+  record.id = normalizedBoardId;
+
+  var hasRecord = false;
+  try {
+    hasRecord = !!bridge.HasBoardContainerRecord(normalizedBoardId);
+  } catch (e) {
+    hasRecord = false;
+  }
+
+  var api = createManagedBoardsApi();
+  var requestBody = JSON.stringify({
+    subcommand: hasRecord ? 'save-board-record' : 'add-board',
+    args: { boardId: normalizedBoardId, record: record },
+  });
+  var seedResponse = await api.handleRequest('POST', requestBody);
+  var seedEnvelope = seedResponse && String(seedResponse).trim() ? JSON.parse(seedResponse) : null;
+  var seedStatusCode = seedEnvelope && Number(seedEnvelope.statusCode) ? Number(seedEnvelope.statusCode) : 0;
+  if (seedStatusCode >= 400 || seedStatusCode === 0) {
+    var seedBodyText = seedEnvelope && typeof seedEnvelope.body === 'string' ? seedEnvelope.body : '';
+    throw new Error('winuiEnsureBoardSeeded failed (status ' + seedStatusCode + '): ' + seedBodyText);
+  }
+}
+
+// Per-board runtime registry. The embedded host keeps one host-backed runtime alive per
+// managed board so manage-boards can provision and seed boards other than the active one
+// (mirrors the hosted controlface boardRuntimes map). The active board is additionally
+// tracked via __winuiBoardId/__winuiRuntime for the shell snapshot/add-card fast path.
+function getWinuiRuntimeRegistry() {
+  if (!globalThis.__winuiRuntimes || typeof globalThis.__winuiRuntimes.get !== 'function') {
+    globalThis.__winuiRuntimes = new Map();
+  }
+  return globalThis.__winuiRuntimes;
+}
+
+async function buildWinuiRuntime(boardId, cards) {
+  const normalizedBoardId = String(boardId || '');
+  const bundle = createHostBridgeBundle(normalizedBoardId);
 
   if (globalThis.HostNotifier) {
     bundle.boardAdapter.publishBoardChangeNotifications = function (notifications) {
@@ -729,22 +911,76 @@ async function initWinuiRuntime(boardId, cardsJson) {
   }
 
   const runtime = ServerRuntimeControlface.createSingleBoardServerRuntime(
-    createRuntimeOptions(boardId, bundle, createHostInvocationAdapter())
+    createRuntimeOptions(normalizedBoardId, bundle, createHostInvocationAdapter())
   );
 
-  const seed = await runtime.cardStore.set({ body: cards });
+  const seed = await runtime.cardStore.set({ body: Array.isArray(cards) ? cards : [] });
   if (!seed || seed.status !== 'success') {
     throw new Error('winui runtime seed failed: ' + ((seed && seed.error) || 'unknown'));
   }
   await bootstrapRuntime(runtime);
 
-  globalThis.__winuiRuntime = runtime;
-  globalThis.__winuiBoardId = boardId;
-  return JSON.stringify(canonical(await runtime.buildPublishedRuntimePayload()), null, 2) + '\n';
+  getWinuiRuntimeRegistry().set(normalizedBoardId, runtime);
+  return runtime;
 }
 
-function getWinuiRuntime() {
-  var runtime = globalThis.__winuiRuntime;
+// provisionRuntime adapter for the converged manage-boards seeding path. Returns the
+// existing runtime for the board when one is already alive (e.g. the active warm runtime),
+// otherwise builds and registers a fresh host-backed runtime for that board.
+async function ensureWinuiRuntime(boardId) {
+  const normalizedBoardId = String(boardId || '');
+  const registry = getWinuiRuntimeRegistry();
+  if (registry.has(normalizedBoardId)) {
+    return registry.get(normalizedBoardId);
+  }
+  if (normalizedBoardId && normalizedBoardId === globalThis.__winuiBoardId && globalThis.__winuiRuntime) {
+    registry.set(normalizedBoardId, globalThis.__winuiRuntime);
+    return globalThis.__winuiRuntime;
+  }
+  return await buildWinuiRuntime(normalizedBoardId, []);
+}
+
+// invokeRuntimeTool adapter: routes a control-plane/runtime tool call directly into a
+// specific board's runtime entry (bypassing the active-board HTTP router so non-active
+// boards can be seeded during provisioning).
+async function invokeWinuiRuntimeTool(runtime, boardId, routeKind, payload) {
+  const normalizedBoardId = String(boardId || '');
+  const path = '/api/boards/' + encodeURIComponent(normalizedBoardId) + '/' + routeKind;
+  const parsedUrl = createParsedUrl(path);
+  const request = createSyntheticRequest(
+    'POST',
+    path,
+    JSON.stringify(payload || {}),
+    { 'content-type': 'application/json' }
+  );
+  const response = createSyntheticResponse();
+
+  await runtime.handleRuntimeApi(request, response.res, parsedUrl);
+  if (typeof runtime.__drainProcessAccumulatedLane === 'function') {
+    await runtime.__drainProcessAccumulatedLane();
+  }
+
+  const statusCode = response.statusCode();
+  const bodyText = response.body();
+  const parsed = bodyText && String(bodyText).trim() ? JSON.parse(bodyText) : null;
+  if (statusCode >= 400) {
+    const message = parsed && typeof parsed === 'object' && !Array.isArray(parsed) && typeof parsed.error === 'string' && parsed.error.trim()
+      ? parsed.error.trim()
+      : 'runtime request failed';
+    const error = new Error(message);
+    error.statusCode = statusCode;
+    throw error;
+  }
+  return parsed;
+}
+
+function getWinuiRuntime(boardId) {
+  var registry = getWinuiRuntimeRegistry();
+  var targetId = boardId ? String(boardId) : (globalThis.__winuiBoardId || '');
+  var runtime = targetId && registry.has(targetId) ? registry.get(targetId) : null;
+  if (!runtime) {
+    runtime = globalThis.__winuiRuntime;
+  }
   if (!runtime) throw new Error('winui runtime not initialized');
   return runtime;
 }
@@ -772,8 +1008,7 @@ async function winuiAddCard(cardJson) {
 }
 
 async function winuiHandleRuntimeApi(method, path, bodyText, requestHeadersJson) {
-  const runtime = getWinuiRuntime();
-  const boardId = globalThis.__winuiBoardId || 'winui-board';
+  const activeBoardId = globalThis.__winuiBoardId || 'winui-board';
   const managedBoardsApi = createManagedBoardsApi();
   const mcpExtrasApi = createMcpExtrasApi();
   const agentfaceMcpApi = createAgentfaceMcpApi();
@@ -794,10 +1029,16 @@ async function winuiHandleRuntimeApi(method, path, bodyText, requestHeadersJson)
   if (runtimePath === '/mcp-extras') {
     return mcpExtrasApi.handleHttpTool(method, bodyText);
   }
-  if (runtimePath.indexOf('/api/') !== 0) {
-    runtimePath = '/api/boards/' + encodeURIComponent(boardId) + runtimePath;
+  let routedBoardId = activeBoardId;
+  const apiBoardsMatch = runtimePath.match(/^\/api\/boards\/([^/]+)\//);
+  if (apiBoardsMatch) {
+    routedBoardId = decodeURIComponent(apiBoardsMatch[1]);
+  } else if (runtimePath.indexOf('/api/') !== 0) {
+    runtimePath = '/api/boards/' + encodeURIComponent(activeBoardId) + runtimePath;
+    routedBoardId = activeBoardId;
   }
 
+  const runtime = getWinuiRuntime(routedBoardId);
   const parsedUrl = createParsedUrl(runtimePath);
   const request = createSyntheticRequest(
     String(method || 'GET').toUpperCase(),

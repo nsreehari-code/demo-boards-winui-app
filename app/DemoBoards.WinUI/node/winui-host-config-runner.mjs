@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 
 async function readStdin() {
@@ -94,6 +95,27 @@ async function resolveBoardConfig(payload) {
   };
 }
 
+async function validateCardSchema(payload) {
+  const card = normalizeObject(payload.card);
+  const loaderPath = normalizeString(payload.localFsConfigLoaderPath);
+  if (!loaderPath) {
+    throw new Error('localFsConfigLoaderPath is required to resolve the card validator');
+  }
+  // Resolve yaml-flow's adapter-free card validator (AJV schema + JSONata + provides
+  // checks) from the host module tree that owns the localfs config loader.
+  const requireFromLoader = createRequire(pathToFileURL(loaderPath).href);
+  const cardValidationPath = requireFromLoader.resolve('yaml-flow/card-validation');
+  const mod = await import(pathToFileURL(cardValidationPath).href);
+  const result = mod.validateCardPreflight(card);
+  return {
+    ok: true,
+    validation: {
+      ok: result?.isValid === true,
+      errors: Array.isArray(result?.issues) ? result.issues : [],
+    },
+  };
+}
+
 async function syncBoardRecord(payload) {
   const boardId = normalizeString(payload.boardId);
   if (!boardId) {
@@ -128,6 +150,8 @@ async function main() {
     result = await resolveBoardConfig(payload);
   } else if (mode === 'sync-board-record') {
     result = await syncBoardRecord(payload);
+  } else if (mode === 'validate-card-schema') {
+    result = await validateCardSchema(payload);
   } else {
     throw new Error(`Unsupported mode: ${mode || '<empty>'}`);
   }

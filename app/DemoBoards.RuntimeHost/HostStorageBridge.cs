@@ -108,6 +108,11 @@ public sealed class HostStorageBridge
 
     public string? ResolveBlobRef(string kind, string value)
     {
+        if (string.Equals(kind, "fs-path", StringComparison.Ordinal))
+        {
+            return File.Exists(value) ? File.ReadAllText(value) : null;
+        }
+
         if (!string.Equals(kind, "embedded-host-blob", StringComparison.Ordinal)) return null;
 
         var payload = JsonNode.Parse(value)?.AsObject();
@@ -115,6 +120,93 @@ public sealed class HostStorageBridge
         var key = payload?["key"]?.GetValue<string>();
         if (string.IsNullOrEmpty(scope) || key is null) return null;
         return BlobRead(scope, key);
+    }
+
+    // ------------------------------------------------------------------------
+    // Shared filesystem blob store (kind = "fs-path").
+    //
+    // Used for the board's fetched-sources store so that an out-of-process
+    // node board-worker (which only understands `fs-path` refs) and the embedded
+    // host read/write the SAME on-disk file. keyRef returns an absolute fs-path
+    // ref; read/write map the logical (scope, key) deterministically to that path.
+    // ------------------------------------------------------------------------
+
+    public string SharedBlobKeyRefJson(string scope, string key)
+    {
+        return JsonSerializer.Serialize(new
+        {
+            kind = "fs-path",
+            value = SharedBlobAbsolutePath(scope, key),
+        });
+    }
+
+    public string? SharedBlobRead(string scope, string key)
+    {
+        var path = SharedBlobAbsolutePath(scope, key);
+        return File.Exists(path) ? File.ReadAllText(path) : null;
+    }
+
+    public void SharedBlobWrite(string scope, string key, string content)
+    {
+        var path = SharedBlobAbsolutePath(scope, key);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, content);
+    }
+
+    public bool SharedBlobExists(string scope, string key)
+    {
+        return File.Exists(SharedBlobAbsolutePath(scope, key));
+    }
+
+    public void SharedBlobRemove(string scope, string key)
+    {
+        var path = SharedBlobAbsolutePath(scope, key);
+        if (File.Exists(path)) File.Delete(path);
+    }
+
+    public string SharedBlobListKeysJson(string scope, string? prefix)
+    {
+        var scopeDir = Path.Combine(rootDir, "shared-fs", EncodePathSegment(scope));
+        var keys = new List<string>();
+        if (Directory.Exists(scopeDir))
+        {
+            foreach (var file in Directory.EnumerateFiles(scopeDir, "*", SearchOption.AllDirectories))
+            {
+                var relative = Path.GetRelativePath(scopeDir, file).Replace(Path.DirectorySeparatorChar, '/');
+                if (string.IsNullOrEmpty(prefix) || relative.StartsWith(prefix, StringComparison.Ordinal))
+                {
+                    keys.Add(relative);
+                }
+            }
+        }
+
+        return JsonSerializer.Serialize(keys);
+    }
+
+    public bool SharedBlobRenameKey(string scope, string from, string to)
+    {
+        var fromPath = SharedBlobAbsolutePath(scope, from);
+        if (!File.Exists(fromPath)) return false;
+
+        var toPath = SharedBlobAbsolutePath(scope, to);
+        Directory.CreateDirectory(Path.GetDirectoryName(toPath)!);
+        if (File.Exists(toPath)) File.Delete(toPath);
+        File.Move(fromPath, toPath);
+        return true;
+    }
+
+    private string SharedBlobAbsolutePath(string scope, string key)
+    {
+        var scopeDir = Path.GetFullPath(Path.Combine(rootDir, "shared-fs", EncodePathSegment(scope)));
+        var relativeKey = key.Replace('\\', '/').TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
+        var resolved = Path.GetFullPath(Path.Combine(scopeDir, relativeKey));
+        if (!resolved.StartsWith(scopeDir + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+            && !string.Equals(resolved, scopeDir, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"Shared blob key '{key}' escapes its scope directory.");
+        }
+
+        return resolved;
     }
 
     public string JournalAppendJson(string scope, string payloadJson)
