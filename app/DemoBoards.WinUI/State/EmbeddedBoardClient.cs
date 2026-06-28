@@ -709,7 +709,7 @@ public sealed class EmbeddedBoardClient
 
     private static JsonObject ParseBoardRecord(string boardId, string? currentRawBoardJson, string rawUiJson, string rawMetadataJson)
     {
-        JsonObject board = JsonNode.Parse(currentRawBoardJson ?? string.Empty) as JsonObject ?? new JsonObject();
+        JsonObject board = NormalizeBoardRecordForSave(JsonNode.Parse(currentRawBoardJson ?? string.Empty) as JsonObject ?? new JsonObject());
         JsonNode? ui = JsonNode.Parse(string.IsNullOrWhiteSpace(rawUiJson) ? "{}" : rawUiJson);
         JsonNode? metadata = JsonNode.Parse(string.IsNullOrWhiteSpace(rawMetadataJson) ? "{}" : rawMetadataJson);
         if (ui is not JsonObject uiObject)
@@ -726,6 +726,62 @@ public sealed class EmbeddedBoardClient
         board["ui"] = uiObject;
         board["metadata"] = metadataObject;
         return board;
+    }
+
+    private static JsonObject NormalizeBoardRecordForSave(JsonObject source)
+    {
+        var record = new JsonObject();
+
+        CopyTrimmedStringIfPresent(source, record, "label");
+        CopyTrimmedStringIfPresent(source, record, "ai");
+        CopyTrimmedStringIfPresent(source, record, "aiWorkspaceTemplate");
+        CopyTrimmedStringIfPresent(source, record, "cardsTemplate");
+        CopyTrimmedStringIfPresent(source, record, "refsTemplate");
+        CopyTrimmedStringIfPresent(source, record, "uiTemplate");
+
+        CopyObjectIfPresent(source, record, "metadata");
+        CopyObjectIfPresent(source, record, "chat");
+        CopyObjectIfPresent(source, record, "queueWakeup");
+
+        string refsTemplate = ReadTrimmedString(source, "refsTemplate");
+        if (refsTemplate.Length == 0)
+        {
+            CopyObjectIfPresent(source, record, "refs");
+        }
+
+        string uiTemplate = ReadTrimmedString(source, "uiTemplate");
+        if (uiTemplate.Length == 0)
+        {
+            CopyObjectIfPresent(source, record, "ui");
+        }
+
+        return record;
+    }
+
+    private static void CopyTrimmedStringIfPresent(JsonObject source, JsonObject target, string propertyName)
+    {
+        string value = ReadTrimmedString(source, propertyName);
+        if (value.Length > 0)
+        {
+            target[propertyName] = value;
+        }
+    }
+
+    private static void CopyObjectIfPresent(JsonObject source, JsonObject target, string propertyName)
+    {
+        if (source[propertyName] is JsonObject obj && obj.Count > 0)
+        {
+            target[propertyName] = obj.DeepClone();
+        }
+    }
+
+    private static string ReadTrimmedString(JsonObject source, string propertyName)
+    {
+        return source[propertyName] is JsonValue value
+            && value.TryGetValue(out string? stringValue)
+            && !string.IsNullOrWhiteSpace(stringValue)
+                ? stringValue.Trim()
+                : string.Empty;
     }
 
     private static void EnsureSuccessPayload(JsonElement root, string fallbackMessage)
