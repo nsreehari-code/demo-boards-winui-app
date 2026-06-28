@@ -211,13 +211,16 @@ public sealed class EmbeddedBoardClient
             return null;
         }
 
-        JsonElement layout = default;
+        string rawLayoutJson = "null";
         if (!string.IsNullOrWhiteSpace(layoutPayload))
         {
             using JsonDocument layoutDocument = JsonDocument.Parse(layoutPayload);
             JsonElement layoutRoot = layoutDocument.RootElement;
             EnsureSuccessPayload(layoutRoot, "get-layout failed");
-            layout = TryGetNestedProperty(layoutRoot, "data", "layout");
+            JsonElement layout = TryGetNestedProperty(layoutRoot, "data", "layout");
+            rawLayoutJson = layout.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null
+                ? "null"
+                : layout.GetRawText();
         }
 
         JsonElement ui = board.TryGetProperty("ui", out JsonElement uiElement) && uiElement.ValueKind == JsonValueKind.Object
@@ -230,7 +233,7 @@ public sealed class EmbeddedBoardClient
         return new ManagedBoardConfigState(
             ui.ValueKind == JsonValueKind.Object ? ui.GetRawText() : "{}",
             metadata.ValueKind == JsonValueKind.Object ? metadata.GetRawText() : "{}",
-            layout.ValueKind == JsonValueKind.Undefined || layout.ValueKind == JsonValueKind.Null ? "null" : layout.GetRawText(),
+            rawLayoutJson,
             board.GetRawText());
     }
 
@@ -536,7 +539,7 @@ public sealed class EmbeddedBoardClient
         EnsureSuccessPayload(document.RootElement, "refresh-board failed");
     }
 
-    public Task SaveLayoutAsync(string boardId, BoardCanvasLayoutState layoutState)
+    public Task SaveLayoutAsync(string boardId, BoardCanvasLayoutState layoutState, string? mode = null)
     {
         string normalizedBoardId = boardId?.Trim() ?? string.Empty;
         if (normalizedBoardId.Length == 0)
@@ -544,10 +547,12 @@ public sealed class EmbeddedBoardClient
             return Task.CompletedTask;
         }
 
-        return PostManageBoardsAsync("save-layout", new
+        string normalizedMode = mode?.Trim() ?? string.Empty;
+
+        var args = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
-            boardId = normalizedBoardId,
-            layout = new
+            ["boardId"] = normalizedBoardId,
+            ["layout"] = new
             {
                 canvas = new
                 {
@@ -562,7 +567,13 @@ public sealed class EmbeddedBoardClient
                         : new { x = layoutState.Viewport.X, y = layoutState.Viewport.Y, zoom = layoutState.Viewport.Zoom }
                 }
             }
-        });
+        };
+        if (normalizedMode.Length > 0)
+        {
+            args["mode"] = normalizedMode;
+        }
+
+        return PostManageBoardsAsync("save-layout", args);
     }
 
     private Task PostMcpActionsAsync(string tool, object args)

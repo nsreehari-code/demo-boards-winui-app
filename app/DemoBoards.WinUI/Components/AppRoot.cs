@@ -25,11 +25,14 @@ public sealed class AppRoot : HookComponent<AppRootProps>
         AppTheme theme = AppTheme.FromResources();
         BoardStore boardStore = UseBoardStoreSubscription(includeUiState: true);
         EmbeddedBoardClient boardClient = UseEmbeddedClient();
+        ManageBoards manageBoards = UseManageBoards();
         BoardInfoState runningBoardInfo = boardStore.GetBoardInfo();
         string runningBoardId = runningBoardInfo.BoardId;
+        BoardState board = UseBoardState(runningBoardId);
+        BoardVisuals visualsHook = UseBoardVisuals(runningBoardId);
         string runningServerUrl = NormalizeServerOrigin(boardClient.LiveBoardStateServerBaseUri.AbsoluteUri);
-        var (activeBoardId, _) = UseGlobalState<string>(GlobalStateKeys.BoardId, runningBoardId);
-        var (activeServerUrl, _) = UseGlobalState<string>(GlobalStateKeys.ServerUrl, boardClient.LiveBoardStateServerBaseUri.AbsoluteUri);
+        var (activeBoardId, setActiveBoardId) = UseGlobalState<string>(GlobalStateKeys.BoardId, runningBoardId);
+        var (activeServerUrl, setActiveServerUrl) = UseGlobalState<string>(GlobalStateKeys.ServerUrl, boardClient.LiveBoardStateServerBaseUri.AbsoluteUri);
 
         var (loading, setLoading) = UseState(true);
         var (startupMessage, setStartupMessage) = UseState("Preparing board surface...");
@@ -49,8 +52,8 @@ public sealed class AppRoot : HookComponent<AppRootProps>
         }, runningBoardId, runningBoardInfo.ClientId, runningServerUrl);
 
         UseEffect(
-            () => App.Current.ApplyThemePack(BoardTheme.ResolveThemePackIdFromUiJson(boardStore.State.ManagedBoardConfig?.RawUiJson)),
-            boardStore.State.ManagedBoardConfig?.RawUiJson ?? string.Empty);
+            () => App.Current.ApplyThemePack(visualsHook.Visuals.Theme),
+            visualsHook.Visuals.Theme);
 
         UseEffect(() =>
         {
@@ -97,7 +100,11 @@ public sealed class AppRoot : HookComponent<AppRootProps>
 
         var sections = new List<Element>
         {
-            BuildTopBar(boardStore, boardClient, configOpen, setConfigOpen, theme),
+            BuildTopBar(
+                boardStore,
+                board,
+                visualsHook,
+                theme),
         };
 
         if (loading)
@@ -122,12 +129,20 @@ public sealed class AppRoot : HookComponent<AppRootProps>
                 Title: configOpen ? "Close board settings" : "Board settings",
                 Icon: "bi-gear-fill",
                 IconToggled: "bi-x-lg",
-                Children: Component<ReactorAppConfigModalComponent, ReactorAppConfigModalProps>(
-                    new ReactorAppConfigModalProps(
-                        boardStore.GetBoardInfo().BoardId,
-                        boardStore.State.ManagedBoardConfig,
-                        () => setConfigOpen(false),
-                        onRunTests))));
+                Children: Component<BoardConfigPane, BoardConfigPaneProps>(
+                    new BoardConfigPaneProps(
+                        BoardId: boardStore.GetBoardInfo().BoardId,
+                        CloseAction: () => setConfigOpen(false),
+                        BoardClient: boardClient,
+                        ManageBoards: manageBoards,
+                        ActiveBoardId: activeBoardId,
+                        SetActiveBoardId: setActiveBoardId,
+                        ActiveServerUrl: activeServerUrl,
+                        SetActiveServerUrl: setActiveServerUrl,
+                        InitialServerUrl: App.Current.HostConfig.Frontend.InitialServerUrl,
+                        LiveRuntimeServerUrl: boardClient.LiveBoardStateServerBaseUri.AbsoluteUri,
+                        SetManagedBoardConfig: boardStore.SetManagedBoardConfig,
+                        OnRunTests: onRunTests))));
 
         Element? overlay = null;
 
@@ -161,7 +176,11 @@ public sealed class AppRoot : HookComponent<AppRootProps>
                 .Provide(AppThemeContext.Current, theme);
     }
 
-            private static Element BuildTopBar(BoardStore boardStore, EmbeddedBoardClient boardClient, bool configOpen, Action<bool> setConfigOpen, AppTheme theme)
+    private static Element BuildTopBar(
+        BoardStore boardStore,
+        BoardState board,
+        BoardVisuals visualsHook,
+        AppTheme theme)
     {
         (string title, string subtitle) = ResolvePageTitleAndSubtitle(boardStore.State.ManagedBoardConfig, boardStore.GetBoardInfo().BoardId);
         double refreshIntervalMs = ResolveRefreshAllIntervalMs(boardStore.State.ManagedBoardConfig);
@@ -169,7 +188,12 @@ public sealed class AppRoot : HookComponent<AppRootProps>
         Element refreshButton = Component<TimerButton, TimerButtonProps>(
             new TimerButtonProps(
                 Duration: refreshIntervalMs,
-                OnClick: () => RefreshBoardAsync(boardClient),
+                OnClick: async () =>
+                {
+                    await visualsHook.Actions.FlushLayout().ConfigureAwait(false);
+                    await board.BoardActions.RefreshAll().ConfigureAwait(false);
+                },
+                Disabled: !board.HasRefreshableCards,
                 Children: state => HStack(8,
                     TextBlock(state.Pending ? "Refreshing..." : FormatCountdown(state.RemainingMs))
                         .Foreground(theme.TextPrimary))));
@@ -192,7 +216,7 @@ public sealed class AppRoot : HookComponent<AppRootProps>
             .HorizontalAlignment(HorizontalAlignment.Stretch);
     }
 
-            private static Element BuildStartupBanner(string startupMessage, AppTheme theme)
+    private static Element BuildStartupBanner(string startupMessage, AppTheme theme)
     {
         return Border(
                 HStack(10,
@@ -215,22 +239,15 @@ public sealed class AppRoot : HookComponent<AppRootProps>
             setStartupMessage("Loading board configuration...");
             ManagedBoardConfigState? managedConfig = await boardClient.GetManagedBoardConfigAsync(boardStore.GetBoardInfo().BoardId);
             boardStore.SetManagedBoardConfig(managedConfig);
-            App.Current.ApplyThemePack(BoardTheme.ResolveThemePackIdFromUiJson(managedConfig?.RawUiJson));
         }
         catch
         {
             boardStore.SetManagedBoardConfig(null);
-            App.Current.ApplyThemePack(BoardTheme.DefaultThemePackId);
         }
         finally
         {
             setLoading(false);
         }
-    }
-
-    private static async Task RefreshBoardAsync(EmbeddedBoardClient boardClient)
-    {
-        await boardClient.RefreshBoardAsync();
     }
 
     private static string NormalizeServerOrigin(string? serverOrigin)

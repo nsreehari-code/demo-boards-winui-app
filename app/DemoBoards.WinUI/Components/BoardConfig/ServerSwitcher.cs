@@ -1,10 +1,8 @@
 using System;
 using System.Net.Http;
 using DemoBoards_WinUI.Assets;
-using DemoBoards_WinUI.Config;
 using DemoBoards_WinUI.Controls.Shared;
 using DemoBoards_WinUI.Hooks;
-using DemoBoards_WinUI.State;
 using Microsoft.UI;
 using Microsoft.UI.Reactor;
 using Microsoft.UI.Reactor.Core;
@@ -14,30 +12,25 @@ using static Microsoft.UI.Reactor.Factories;
 
 namespace DemoBoards_WinUI.Controls.Registry.BoardConfig;
 
-public sealed record ServerSwitcherProps(string InitialServerUrl);
+public sealed record ServerSwitcherProps(string ServerUrl, Action<string> OnChangeServerUrl, string LiveRuntimeServerUrl);
 
 public sealed class ServerSwitcher : HookComponent<ServerSwitcherProps>
 {
     public override Element Render()
     {
         AppTheme theme = UseContext(AppThemeContext.Current);
-        EmbeddedBoardClient boardClient = UseEmbeddedClient();
-        var (serverUrl, setServerUrl) = UseGlobalState<string>(
-            GlobalStateKeys.ServerUrl,
-            Props.InitialServerUrl,
-            WinUiServerUrlStore.SaveOverride);
 
         var (healthError, setHealthError) = UseState(string.Empty);
         var (isChecking, setIsChecking) = UseState(false);
         var (isReachable, setIsReachable) = UseState(false);
         var (normalizedServerUrl, setNormalizedServerUrl) = UseState(string.Empty);
 
-        string liveRuntimeServerUrl = NormalizeForDisplay(boardClient.LiveBoardStateServerBaseUri.AbsoluteUri);
+        string liveRuntimeServerUrl = NormalizeForDisplay(Props.LiveRuntimeServerUrl);
 
         UseEffect(() =>
         {
             bool cancelled = false;
-            string candidate = (serverUrl ?? string.Empty).Trim();
+            string candidate = (Props.ServerUrl ?? string.Empty).Trim();
 
             if (candidate.Length == 0)
             {
@@ -106,7 +99,7 @@ public sealed class ServerSwitcher : HookComponent<ServerSwitcherProps>
 
             ProbeHealthz();
             return () => cancelled = true;
-        }, serverUrl);
+        }, Props.ServerUrl);
 
         bool restartRequired = normalizedServerUrl.Length > 0
             && !string.Equals(normalizedServerUrl, liveRuntimeServerUrl, StringComparison.OrdinalIgnoreCase);
@@ -117,7 +110,7 @@ public sealed class ServerSwitcher : HookComponent<ServerSwitcherProps>
             VStack(4,
                 TextBlock("Server").Bold().Opacity(0.82),
                 HStack(8,
-                    TextBox(serverUrl, setServerUrl)
+                    TextBox(Props.ServerUrl, Props.OnChangeServerUrl)
                         .AutomationName("Server URL")
                         .Set(textBox => textBox.TextWrapping = TextWrapping.Wrap)
                         .Flex(grow: 1),

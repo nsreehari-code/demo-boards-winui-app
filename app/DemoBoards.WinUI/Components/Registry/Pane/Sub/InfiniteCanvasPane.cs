@@ -59,11 +59,12 @@ public sealed class InfiniteCanvasPane : HookComponent<InfiniteCanvasPaneProps>
         // Card-tier registry must be live before any node routes through CardRenderer.
         RegistryBootstrap.EnsureRegistered();
 
-        var (selectedToken, setSelectedToken) = UseState<string?>(null);
-        BoardCanvasLayoutState layoutState = UseBoardLayoutState();
-        BoardLayoutActions actions = UseBoardLayoutActions();
-
         string boardId = Props.BoardId;
+        var (selectedToken, setSelectedToken) = UseState<string?>(null);
+        BoardVisuals visualsHook = UseBoardVisuals(boardId);
+        BoardVisualState visuals = visualsHook.Visuals;
+        BoardCanvasLayoutState layoutState = visuals.LayoutState;
+        BoardLayoutActions actions = visualsHook.Actions;
         IReadOnlyList<string> cardIds = Props.CardIds;
         IReadOnlyDictionary<string, BoardCard> cardContents = Props.CardContents;
         IReadOnlyDictionary<string, string> dataObjects = Props.DataObjects

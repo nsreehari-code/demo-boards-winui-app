@@ -24,120 +24,45 @@ public static class EditPageDetailsConstants
 /// Props match frontend exactly: boardId, transportMode, loadBoard, onSave (input-only callbacks).
 /// </summary>
 public sealed record EditPageDetailsProps(
-    string BoardId = "",
-    int TransportMode = 0,
-    Func<string, System.Threading.Tasks.Task<object?>>? LoadBoard = null,
-    Func<string, IReadOnlyDictionary<string, object?>, System.Threading.Tasks.Task<object?>>? OnSave = null);
+    string PageTitle = "",
+    string PageSubtitle = "",
+    string RefreshIntervalMinutes = "60",
+    string CurrentUiTemplate = "default",
+    IReadOnlyList<string>? UiTemplateOptions = null,
+    bool Saving = false,
+    string ErrorMessage = "",
+    string SuccessMessage = "",
+    Action<IReadOnlyDictionary<string, object?>>? OnSave = null);
 
 public sealed class EditPageDetails : Component<EditPageDetailsProps>
 {
-    /// <summary>
-    /// Mirrors frontend's toPageDetailsDraft function.
-    /// Extracts board metadata into form field values.
-    /// </summary>
-    public static IReadOnlyDictionary<string, object?> ExtractPageDetailsDraft(object? board)
+    public static IReadOnlyDictionary<string, object?> CreateDraft(
+        string? pageTitle,
+        string? pageSubtitle,
+        string? refreshIntervalMinutes,
+        string? currentUiTemplate)
     {
-        var draft = new Dictionary<string, object?>
+        return new Dictionary<string, object?>
         {
-            ["pageTitle"] = "",
-            ["pageSubtitle"] = "",
-            ["refreshAllIntervalMinutes"] = "60",
-            ["uiTemplate"] = "default"
+            ["pageTitle"] = pageTitle?.Trim() ?? string.Empty,
+            ["pageSubtitle"] = pageSubtitle?.Trim() ?? string.Empty,
+            ["refreshAllIntervalMinutes"] = string.IsNullOrWhiteSpace(refreshIntervalMinutes) ? "60" : refreshIntervalMinutes.Trim(),
+            ["uiTemplate"] = string.IsNullOrWhiteSpace(currentUiTemplate) ? "default" : currentUiTemplate
         };
-
-        if (board is IReadOnlyDictionary<string, object?> boardDict)
-        {
-            // Extract from metadata
-            if (boardDict.TryGetValue("metadata", out var metaObj) && metaObj is IReadOnlyDictionary<string, object?> metadata)
-            {
-                if (metadata.TryGetValue("pageTitle", out var pt) && pt is string pageTitle && !string.IsNullOrWhiteSpace(pageTitle))
-                {
-                    draft["pageTitle"] = pageTitle.Trim();
-                }
-                if (metadata.TryGetValue("pageSubtitle", out var ps))
-                {
-                    draft["pageSubtitle"] = ps?.ToString() ?? "";
-                }
-                
-                // Convert refreshAllIntervalSeconds to refreshAllIntervalMinutes
-                if (metadata.TryGetValue("refreshAllIntervalSeconds", out var refSec) &&
-                    int.TryParse(refSec?.ToString(), out int seconds) && seconds > 0)
-                {
-                    int minutes = Math.Max(1, (int)Math.Round(seconds / 60.0));
-                    draft["refreshAllIntervalMinutes"] = minutes.ToString();
-                }
-            }
-
-            // Fall back to board label for pageTitle if metadata didn't have it
-            if (string.IsNullOrEmpty(draft["pageTitle"]?.ToString()) && 
-                boardDict.TryGetValue("label", out var label) && label is string boardLabel)
-            {
-                draft["pageTitle"] = boardLabel.Trim();
-            }
-
-            // Extract uiTemplate
-            if (boardDict.TryGetValue("uiTemplate", out var ut))
-            {
-                draft["uiTemplate"] = ut?.ToString() ?? "default";
-            }
-        }
-
-        return draft;
     }
 
     public override Element Render()
     {
         AppTheme theme = UseContext(AppThemeContext.Current);
         var (draft, setDraft) = UseState<IReadOnlyDictionary<string, object?>>(
-            ExtractPageDetailsDraft(null));
+            CreateDraft(Props.PageTitle, Props.PageSubtitle, Props.RefreshIntervalMinutes, Props.CurrentUiTemplate));
 
-        var (loading, setLoading) = UseState(false);
-        var (saving, setSaving) = UseState(false);
-        var (errorMessage, setErrorMessage) = UseState("");
-        var (successMessage, setSuccessMessage) = UseState("");
-
-        // Mirrors frontend's useEffect for loading board data
         UseEffect(() =>
         {
-            if (Props.TransportMode != EditPageDetailsConstants.BOARD_TRANSPORT_MODE_SERVER_URL || string.IsNullOrEmpty(Props.BoardId) || Props.LoadBoard == null)
-            {
-                setDraft(ExtractPageDetailsDraft(null));
-                setLoading(false);
-                setErrorMessage("");
-                setSuccessMessage("");
-                return null;
-            }
+            setDraft(CreateDraft(Props.PageTitle, Props.PageSubtitle, Props.RefreshIntervalMinutes, Props.CurrentUiTemplate));
+            return static () => { };
+        }, $"{Props.PageTitle}:{Props.PageSubtitle}:{Props.RefreshIntervalMinutes}:{Props.CurrentUiTemplate}");
 
-            setLoading(true);
-            setErrorMessage("");
-            setSuccessMessage("");
-
-            // Fire async load
-            var boardId = Props.BoardId;
-            var loadFunc = Props.LoadBoard;
-            
-            #pragma warning disable CS4014
-            loadFunc(boardId).ContinueWith(task =>
-            {
-                if (task.IsCompletedSuccessfully)
-                {
-                    setDraft(ExtractPageDetailsDraft(task.Result));
-                }
-                else if (task.IsFaulted && task.Exception != null)
-                {
-                    setErrorMessage(task.Exception.InnerException?.Message ?? "Failed to load board");
-                    setDraft(ExtractPageDetailsDraft(null));
-                }
-                setLoading(false);
-            });
-            #pragma warning restore CS4014
-
-            return null;
-        }, $"{Props.BoardId}:{Props.TransportMode}:{Props.LoadBoard?.GetHashCode() ?? 0}");
-
-        bool fieldsDisabled = loading || Props.TransportMode != EditPageDetailsConstants.BOARD_TRANSPORT_MODE_SERVER_URL || string.IsNullOrEmpty(Props.BoardId);
-
-        // Memoize field spec
         var fieldSpec = UseMemo(() =>
         {
             var spec = new Dictionary<string, object?>
@@ -149,108 +74,97 @@ public sealed class EditPageDetails : Component<EditPageDetailsProps>
                         ["pageTitle"] = new Dictionary<string, object?>
                         {
                             ["title"] = "Page Title",
-                            ["placeholder"] = "Live",
-                            ["disabled"] = fieldsDisabled
+                            ["placeholder"] = "Live"
                         },
                         ["pageSubtitle"] = new Dictionary<string, object?>
                         {
                             ["title"] = "Page Subtitle",
-                            ["placeholder"] = "Live operational intelligence for agent workflows",
-                            ["disabled"] = fieldsDisabled
+                            ["placeholder"] = "Live operational intelligence for agent workflows"
                         },
                         ["refreshAllIntervalMinutes"] = new Dictionary<string, object?>
                         {
                             ["title"] = "Refresh Interval (minutes)",
                             ["type"] = "integer",
                             ["minimum"] = 1,
-                            ["placeholder"] = "30",
-                            ["disabled"] = fieldsDisabled
+                            ["placeholder"] = "30"
+                        },
+                        ["uiTemplate"] = new Dictionary<string, object?>
+                        {
+                            ["title"] = "UI Template",
+                            ["placeholder"] = "default",
+                            ["options"] = BuildOptions(Props.UiTemplateOptions)
                         }
                     },
-                    ["required"] = new[] { "pageTitle", "pageSubtitle", "refreshAllIntervalMinutes" }
+                    ["required"] = new[] { "pageTitle", "pageSubtitle", "refreshAllIntervalMinutes", "uiTemplate" }
                 }
             };
             return spec;
-        }, fieldsDisabled);
+        }, Props.UiTemplateOptions?.Count ?? 0);
 
         var sections = new List<Element>
         {
-            TextBlock("Edit Page Details")
+            TextBlock("Page Details")
                 .FontSize(16)
-                .Bold()
+                .Bold(),
+            TextBlock("Edit the page title, subtitle, refresh cadence, and UI template without raw JSON editing.")
+                .FontSize(12)
+                .Opacity(0.68)
         };
 
-        if (loading)
-        {
-            sections.Add(TextBlock("Loading board configuration...")
-                .FontSize(12)
-                .Opacity(0.6));
-        }
-        else if (fieldsDisabled)
-        {
-            sections.Add(TextBlock("Board not available in this mode")
-                .FontSize(12)
-                .Opacity(0.6)
-                .Foreground(theme.StatusWarning));
-        }
-        else
-        {
-            sections.Add(
-                Component<Form, FormProps>(new FormProps(
-                    Spec: fieldSpec,
-                    BaseValues: draft,
-                    OnSave: values =>
+        sections.Add(
+            Component<Form, FormProps>(new FormProps(
+                Spec: fieldSpec,
+                BaseValues: draft,
+                OnSave: values =>
+                {
+                    var nextValues = new Dictionary<string, object?>
                     {
-                        if (Props.OnSave != null)
-                        {
-                            setSaving(true);
-                            setErrorMessage("");
-                            setSuccessMessage("");
-                            
-                            // Prepare values for save
-                            var nextValues = new Dictionary<string, object?>
-                            {
-                                ["pageTitle"] = values.TryGetValue("pageTitle", out var pt) ? pt?.ToString()?.Trim() : "",
-                                ["pageSubtitle"] = values.TryGetValue("pageSubtitle", out var ps) ? ps?.ToString()?.Trim() : "",
-                                ["refreshAllIntervalMinutes"] = values.TryGetValue("refreshAllIntervalMinutes", out var rm) ? rm?.ToString()?.Trim() : "",
-                                ["uiTemplate"] = values.TryGetValue("uiTemplate", out var ut) ? ut?.ToString()?.Trim() : ""
-                            };
+                        ["pageTitle"] = values.TryGetValue("pageTitle", out var pt) ? pt?.ToString()?.Trim() : string.Empty,
+                        ["pageSubtitle"] = values.TryGetValue("pageSubtitle", out var ps) ? ps?.ToString()?.Trim() : string.Empty,
+                        ["refreshAllIntervalMinutes"] = values.TryGetValue("refreshAllIntervalMinutes", out var rm) ? rm?.ToString()?.Trim() : string.Empty,
+                        ["uiTemplate"] = values.TryGetValue("uiTemplate", out var ut) ? ut?.ToString()?.Trim() : "default"
+                    };
 
-                            var boardId = Props.BoardId;
-                            var saveFunc = Props.OnSave;
+                    setDraft(nextValues);
+                    Props.OnSave?.Invoke(nextValues);
+                },
+                SubmitLabel: "Save",
+                Submitting: Props.Saving,
+                CanSubmit: Props.OnSave is not null,
+                Error: string.IsNullOrWhiteSpace(Props.ErrorMessage) ? string.Empty : $"Save failed: {Props.ErrorMessage}"
+            )));
 
-                            #pragma warning disable CS4014
-                            saveFunc(boardId, nextValues).ContinueWith(task =>
-                            {
-                                if (task.IsCompletedSuccessfully)
-                                {
-                                    setDraft(ExtractPageDetailsDraft(task.Result));
-                                    setSuccessMessage("Saved.");
-                                }
-                                else if (task.IsFaulted && task.Exception != null)
-                                {
-                                    setErrorMessage(task.Exception.InnerException?.Message ?? "Save failed");
-                                }
-                                setSaving(false);
-                            });
-                            #pragma warning restore CS4014
-                        }
-                    },
-                    OnCancel: () => setDraft(ExtractPageDetailsDraft(draft)),
-                    SubmitLabel: "Save",
-                    Submitting: saving,
-                    Error: errorMessage
-                )));
+        if (Props.UiTemplateOptions is { Count: > 0 })
+        {
+            sections.Add(TextBlock($"Available UI templates: {string.Join(", ", Props.UiTemplateOptions)}")
+                .FontSize(12)
+                .Opacity(0.68));
         }
 
-        if (!string.IsNullOrEmpty(successMessage))
+        if (!string.IsNullOrEmpty(Props.SuccessMessage))
         {
-            sections.Add(TextBlock(successMessage)
+            sections.Add(TextBlock(Props.SuccessMessage)
                 .FontSize(12)
                 .Foreground(theme.StatusSuccess));
         }
 
         return VStack(12, sections.ToArray())
             .Set(stack => stack.Padding = new(12));
+    }
+
+    private static object?[] BuildOptions(IReadOnlyList<string>? options)
+    {
+        if (options is not { Count: > 0 })
+        {
+            return Array.Empty<object?>();
+        }
+
+        return options
+            .Select(option => (object?)new Dictionary<string, object?>
+            {
+                ["value"] = option,
+                ["label"] = option,
+            })
+            .ToArray();
     }
 }

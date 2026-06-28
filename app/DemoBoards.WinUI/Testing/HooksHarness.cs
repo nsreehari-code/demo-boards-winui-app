@@ -294,19 +294,19 @@ internal static class HooksHarness
             return data is JsonObject obj && obj["rows"] is JsonArray rows && rows.Count == 2;
         }));
 
-        // ---- ParseObjectOrEmpty / ParseObjectOrNull (managed config) ------------
-        checks.Add(("ParseObjectOrEmpty parses a JSON object", () =>
-            HookComponent<InfiniteCanvasProps>.ParseObjectOrEmpty("{\"a\":1}")["a"]?.GetValue<int>() == 1));
+        // ---- ParseManagedBoardObjectOrEmpty / ParseManagedBoardObjectOrNull -----
+        checks.Add(("ParseManagedBoardObjectOrEmpty parses a JSON object", () =>
+            HookComponent<InfiniteCanvasProps>.ParseManagedBoardObjectOrEmpty("{\"a\":1}")["a"]?.GetValue<int>() == 1));
 
-        checks.Add(("ParseObjectOrEmpty returns an empty object for null/invalid/non-object", () =>
-            HookComponent<InfiniteCanvasProps>.ParseObjectOrEmpty(null).Count == 0
-            && HookComponent<InfiniteCanvasProps>.ParseObjectOrEmpty("nope").Count == 0
-            && HookComponent<InfiniteCanvasProps>.ParseObjectOrEmpty("[1,2]").Count == 0));
+        checks.Add(("ParseManagedBoardObjectOrEmpty returns an empty object for null/invalid/non-object", () =>
+            HookComponent<InfiniteCanvasProps>.ParseManagedBoardObjectOrEmpty(null).Count == 0
+            && HookComponent<InfiniteCanvasProps>.ParseManagedBoardObjectOrEmpty("nope").Count == 0
+            && HookComponent<InfiniteCanvasProps>.ParseManagedBoardObjectOrEmpty("[1,2]").Count == 0));
 
-        checks.Add(("ParseObjectOrNull returns null for non-object payloads", () =>
-            HookComponent<InfiniteCanvasProps>.ParseObjectOrNull("[1,2]") is null
-            && HookComponent<InfiniteCanvasProps>.ParseObjectOrNull("  ") is null
-            && HookComponent<InfiniteCanvasProps>.ParseObjectOrNull("{\"a\":1}") is JsonObject));
+        checks.Add(("ParseManagedBoardObjectOrNull returns null for non-object payloads", () =>
+            HookComponent<InfiniteCanvasProps>.ParseManagedBoardObjectOrNull("[1,2]") is null
+            && HookComponent<InfiniteCanvasProps>.ParseManagedBoardObjectOrNull("  ") is null
+            && HookComponent<InfiniteCanvasProps>.ParseManagedBoardObjectOrNull("{\"a\":1}") is JsonObject));
 
         // ---- ComponentRegistry + NodeResolver (registry.js / NodeRenderer.jsx) ---
         Func<NodeProps, Element> stub = _ => null!;

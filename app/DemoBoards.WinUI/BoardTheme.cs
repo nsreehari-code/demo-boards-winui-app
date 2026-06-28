@@ -22,24 +22,22 @@ internal static class BoardTheme
         return normalized == SignalRoomThemePackId ? SignalRoomThemePackId : DefaultThemePackId;
     }
 
-    public static string ResolveThemePackIdFromUiJson(string? rawUiJson)
+    public static string ResolveThemePackIdFromLayoutJson(string? rawLayoutJson)
     {
-        if (string.IsNullOrWhiteSpace(rawUiJson))
+        if (string.IsNullOrWhiteSpace(rawLayoutJson))
         {
             return DefaultThemePackId;
         }
 
         try
         {
-            using JsonDocument document = JsonDocument.Parse(rawUiJson);
+            using JsonDocument document = JsonDocument.Parse(rawLayoutJson);
             JsonElement root = document.RootElement;
             if (root.ValueKind == JsonValueKind.Object
                 && root.TryGetProperty("theme", out JsonElement theme)
-                && theme.ValueKind == JsonValueKind.Object
-                && theme.TryGetProperty("id", out JsonElement id)
-                && id.ValueKind == JsonValueKind.String)
+                && theme.ValueKind == JsonValueKind.String)
             {
-                return NormalizeThemePackId(id.GetString());
+                return NormalizeThemePackId(theme.GetString());
             }
         }
         catch

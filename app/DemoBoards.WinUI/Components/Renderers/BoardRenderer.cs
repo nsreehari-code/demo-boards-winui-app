@@ -30,7 +30,7 @@ public sealed record BoardRendererProps(string BoardId);
 /// </summary>
 public sealed class BoardRenderer : HookComponent<BoardRendererProps>
 {
-    /// <summary>Mirrors <c>useManagedBoardConfig</c>'s <c>DEFAULT_PANE_KIND</c>.</summary>
+    /// <summary>Fallback centre pane kind when the visuals layout blob does not specify one.</summary>
     private const string DefaultPaneKind = "infinite-canvas";
 
     public override Element Render()
@@ -40,11 +40,11 @@ public sealed class BoardRenderer : HookComponent<BoardRendererProps>
         RegistryBootstrap.EnsureRegistered();
 
         string boardId = Props.BoardId;
-        ManagedBoardConfigResult managed = UseManagedBoardConfig(boardId);
-        JsonObject? uiConfig = managed.Config?.Ui;
+        BoardVisuals visualsHook = UseBoardVisuals(boardId);
+        BoardVisualState visuals = visualsHook.Visuals;
+        JsonObject uiConfig = visuals.Ui;
         string? uiConfigJson = uiConfig?.ToJsonString();
-        ManagedBoardLayout? boardLayout = managed.Config?.Layout;
-        string centrePaneKind = boardLayout?.Kind ?? DefaultPaneKind;
+        string centrePaneKind = visuals.CentrePaneKind ?? DefaultPaneKind;
 
         IReadOnlyList<Func<BoardCardState, bool>> ingestFilters =
             AdaptFilters(CardPresentationConfig.ResolvePaneFilters("gandalf", uiConfigJson));

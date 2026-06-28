@@ -23,7 +23,6 @@ public sealed record BoardSwitcherProps(
     Action? OnSwitch = null,
     bool SelectDisabled = false,
     bool Loading = false,
-    string Error = "",
     string? LayoutKind = null,
     Action? OnToggleLayout = null,
     bool LayoutToggleDisabled = false,
@@ -140,12 +139,7 @@ public sealed class BoardSwitcher : Component<BoardSwitcherProps>
                     OnChange: Props.OnChange
                 )).Flex(grow: 1),
                 HStack(4, buttonElements.ToArray()).Flex(shrink: 0)
-            ),
-            string.IsNullOrWhiteSpace(Props.Error)
-                ? TextBlock(string.Empty).Set(text => text.Visibility = Microsoft.UI.Xaml.Visibility.Collapsed)
-                : TextBlock(Props.Error)
-                    .Opacity(0.78)
-                    .Set(text => text.TextWrapping = Microsoft.UI.Xaml.TextWrapping.WrapWholeWords)
+            )
         ).Flex(grow: 1);
     }
 }

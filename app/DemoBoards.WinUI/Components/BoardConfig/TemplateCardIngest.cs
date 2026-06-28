@@ -61,7 +61,7 @@ public sealed class TemplateCardIngest : Component<TemplateCardIngestProps>
                     Title: Props.ErrorMessage ?? "Select a bundled sample board file",
                     OnChange: Props.OnSelect
                 )).Flex(grow: 1),
-                Button(Props.Preparing ? "Preparing…" : Props.Ingesting ? "Ingesting…" : "Ingest Cards", Props.OnIngest)
+                Button(Props.Preparing ? "Preparing…" : Props.Ingesting ? "Ingesting…" : "Ingest Cards from Template", Props.OnIngest)
                     .IsEnabled(!(Props.Ingesting || Props.Preparing || Props.Disabled || string.IsNullOrEmpty(Props.SelectedKey) || Props.Loading || !hasEntries))
                     .AutomationName("Ingest template cards into board")
                     .SubtleButton()

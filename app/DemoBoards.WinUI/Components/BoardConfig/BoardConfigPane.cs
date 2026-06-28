@@ -19,16 +19,43 @@ using static Microsoft.UI.Reactor.Factories;
 
 namespace DemoBoards_WinUI.Controls;
 
-public sealed record ReactorAppConfigModalProps(string BoardId, ManagedBoardConfigState? Config, Action CloseAction, Action? OnRunTests = null);
+public sealed record BoardConfigPaneProps(
+    string BoardId,
+    Action CloseAction,
+    EmbeddedBoardClient BoardClient,
+    ManageBoards ManageBoards,
+    string ActiveBoardId,
+    Action<string> SetActiveBoardId,
+    string ActiveServerUrl,
+    Action<string> SetActiveServerUrl,
+    string InitialServerUrl,
+    string LiveRuntimeServerUrl,
+    Action<ManagedBoardConfigState?> SetManagedBoardConfig,
+    Action? OnRunTests = null);
 
-public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppConfigModalProps>
+public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
 {
+    private sealed record TemplatePreviewState(
+        string TemplateLabel,
+        IReadOnlyList<object?> CardsToReplace,
+        IReadOnlyList<object?> CardsToAdd,
+        IReadOnlyList<object?> InvalidCards,
+        string PayloadJson);
+
     private static readonly JsonSerializerOptions PrettyJsonOptions = new() { WriteIndented = true };
     private const int DefaultRefreshAllIntervalSeconds = 30 * 60;
 
     public override Element Render()
     {
         AppTheme theme = UseContext(AppThemeContext.Current);
+        BoardConfig? boardConfig = UseBoardConfig(Props.BoardId);
+        BoardVisuals visualsHook = UseBoardVisuals(Props.BoardId);
+
+        string rawBoardJson = boardConfig?.Board?.ToJsonString(PrettyJsonOptions) ?? "{}";
+        string rawUiJson = visualsHook.Visuals.Ui.ToJsonString(PrettyJsonOptions);
+        string rawMetadataJson = boardConfig?.Metadata.ToJsonString(PrettyJsonOptions) ?? "{}";
+        string rawLayoutJson = visualsHook.Visuals.LayoutBlob.ToJsonString(PrettyJsonOptions);
+        PageDetailsState pageDetails = PageDetailsState.FromRaw(Props.BoardId, rawBoardJson, rawMetadataJson);
 
         Element SectionCard(Element content) => Border(content)
             .Padding(14)
@@ -50,18 +77,8 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
                 .Opacity(0.88)
                 .Set(text => text.TextWrapping = TextWrapping.WrapWholeWords);
 
-        var (rawBoardJson, setRawBoardJson) = UseState("{}");
-        var (rawUiJson, setRawUiJson) = UseState("{}");
-        var (rawMetadataJson, setRawMetadataJson) = UseState("{}");
-        var (rawLayoutJson, setRawLayoutJson) = UseState("null");
-
-        var (pageTitle, setPageTitle) = UseState(string.Empty);
-        var (pageSubtitle, setPageSubtitle) = UseState(string.Empty);
-        var (refreshIntervalMinutes, setRefreshIntervalMinutes) = UseState(Math.Max(1, DefaultRefreshAllIntervalSeconds / 60).ToString());
-        var (themePackId, setThemePackId) = UseState(BoardTheme.DefaultThemePackId);
-        var (uiTemplate, setUiTemplate) = UseState("default");
-
         var (pageStatus, setPageStatus) = UseState(StatusMessage.Empty);
+        var (themeStatus, setThemeStatus) = UseState(StatusMessage.Empty);
         var (hostStatus, setHostStatus) = UseState(StatusMessage.Empty);
         var (importExportStatus, setImportExportStatus) = UseState(StatusMessage.Empty);
         var (templateStatus, setTemplateStatus) = UseState(StatusMessage.Empty);
@@ -75,8 +92,7 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
 
         var (templateEntries, setTemplateEntries) = UseState<IReadOnlyList<SampleTemplateEntry>>(Array.Empty<SampleTemplateEntry>());
         var (selectedTemplateKey, setSelectedTemplateKey) = UseState(string.Empty);
-        var (pendingTemplatePayloadJson, setPendingTemplatePayloadJson) = UseState(string.Empty);
-        var (templatePreviewText, setTemplatePreviewText) = UseState(string.Empty);
+        var (templatePreview, setTemplatePreview) = UseState<TemplatePreviewState?>(null);
         var (templateHelpText, setTemplateHelpText) = UseState(string.Empty);
 
         var (assistantNames, setAssistantNames) = UseState<IReadOnlyList<string>>(new[] { "copilot", "foundry" });
@@ -85,17 +101,9 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
         var (refsTemplateNames, setRefsTemplateNames) = UseState<IReadOnlyList<string>>(Array.Empty<string>());
 
         var (showAddBoardForm, setShowAddBoardForm) = UseState(false);
-        var (addBoardId, setAddBoardId) = UseState(string.Empty);
-        var (addBoardLabel, setAddBoardLabel) = UseState(string.Empty);
-        var (addBoardPageTitle, setAddBoardPageTitle) = UseState(string.Empty);
-        var (addBoardPageSubtitle, setAddBoardPageSubtitle) = UseState(string.Empty);
-        var (addBoardAi, setAddBoardAi) = UseState("copilot");
-        var (addBoardAiWorkspaceTemplate, setAddBoardAiWorkspaceTemplate) = UseState("default");
-        var (addBoardUiTemplate, setAddBoardUiTemplate) = UseState("default");
-        var (addBoardRefsTemplate, setAddBoardRefsTemplate) = UseState("localfs-default");
-        var (addBoardTemplateKey, setAddBoardTemplateKey) = UseState(string.Empty);
 
         var (saving, setSaving) = UseState(false);
+        var (savingTheme, setSavingTheme) = UseState(false);
         var (importing, setImporting) = UseState(false);
         var (exporting, setExporting) = UseState(false);
         var (refreshingWorkspace, setRefreshingWorkspace) = UseState(false);
@@ -104,51 +112,20 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
         var (previewingHostConfig, setPreviewingHostConfig) = UseState(false);
         var (addingBoard, setAddingBoard) = UseState(false);
 
-        // Get the embedded board client via hook instead of App.Current
-        EmbeddedBoardClient boardClient = UseEmbeddedClient();
-        var (activeServerUrl, _) = UseGlobalState<string>(GlobalStateKeys.ServerUrl, App.Current.HostConfig.Frontend.InitialServerUrl, WinUiServerUrlStore.SaveOverride);
-
         UseEffect(() =>
         {
-            string nextRawBoardJson = Props.Config?.RawBoardJson ?? "{}";
-            string nextRawUiJson = Props.Config?.RawUiJson ?? "{}";
-            string nextRawMetadataJson = Props.Config?.RawMetadataJson ?? "{}";
-            string nextRawLayoutJson = string.IsNullOrWhiteSpace(Props.Config?.RawLayoutJson) ? "null" : Props.Config!.RawLayoutJson;
-
-            setRawBoardJson(nextRawBoardJson);
-            setRawUiJson(nextRawUiJson);
-            setRawMetadataJson(nextRawMetadataJson);
-            setRawLayoutJson(nextRawLayoutJson);
-
-            PageDetailsDraft draft = ResolvePageDetailsDraft(Props.BoardId, nextRawBoardJson, nextRawUiJson, nextRawMetadataJson);
-            setPageTitle(draft.PageTitle);
-            setPageSubtitle(draft.PageSubtitle);
-            setRefreshIntervalMinutes(draft.RefreshIntervalMinutes);
-            setThemePackId(draft.ThemePackId);
-            setUiTemplate(draft.UiTemplate);
-
             setPageStatus(StatusMessage.Empty);
+            setThemeStatus(StatusMessage.Empty);
             setHostStatus(StatusMessage.Empty);
             setImportExportStatus(StatusMessage.Empty);
             setTemplateStatus(StatusMessage.Empty);
             setAddBoardStatus(StatusMessage.Empty);
-            setTemplatePreviewText(string.Empty);
-            setPendingTemplatePayloadJson(string.Empty);
+            setTemplatePreview(null);
             setShowHostPreview(false);
             setEffectiveBoardConfigPreviewText(string.Empty);
 
-            setAddBoardId(string.Empty);
-            setAddBoardLabel(string.Empty);
-            setAddBoardPageTitle(string.Empty);
-            setAddBoardPageSubtitle(string.Empty);
-            setAddBoardAi("copilot");
-            setAddBoardAiWorkspaceTemplate("default");
-            setAddBoardUiTemplate("default");
-            setAddBoardRefsTemplate("localfs-default");
-            setAddBoardTemplateKey(string.Empty);
-
             _ = LoadCatalogAndTemplatesAsync(
-                boardClient,
+                Props.BoardClient,
                 setAssistantNames,
                 setAiWorkspaceTemplateNames,
                 setUiTemplateNames,
@@ -158,21 +135,12 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
                 setTemplateEntries,
                 setSelectedTemplateKey,
                 setTemplateHelpText,
-                setThemePackId,
-                setUiTemplate,
-                setAddBoardAi,
-                setAddBoardAiWorkspaceTemplate,
-                setAddBoardUiTemplate,
-                setAddBoardRefsTemplate,
                 setHostStatus,
-                setTemplateStatus,
-                draft.ThemePackId,
-                draft.UiTemplate);
-        }, Props.BoardId, Props.Config?.RawBoardJson ?? string.Empty, Props.Config?.RawUiJson ?? string.Empty, Props.Config?.RawMetadataJson ?? string.Empty, Props.Config?.RawLayoutJson ?? string.Empty, activeServerUrl);
+                setTemplateStatus);
+            }, Props.BoardId, rawBoardJson, rawMetadataJson, rawLayoutJson);
 
-        ManageBoards manageBoards = UseManageBoards();
-        var (activeBoardId, setActiveBoardId) = UseGlobalState<string>(GlobalStateKeys.BoardId, Props.BoardId, WinUiBoardIdStore.SaveOverride);
-        var (pendingBoardId, setPendingBoardId) = UseState(activeBoardId);
+            ManageBoards manageBoards = Props.ManageBoards;
+            var (pendingBoardId, setPendingBoardId) = UseState(Props.ActiveBoardId);
 
         var boardOptions = manageBoards.ManagedBoards
             .Select(entry => (object?)new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -185,12 +153,57 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
         void SwitchBoard()
         {
             string target = pendingBoardId?.Trim() ?? string.Empty;
-            if (string.IsNullOrEmpty(target) || string.Equals(target, activeBoardId, StringComparison.Ordinal))
+            if (string.IsNullOrEmpty(target) || string.Equals(target, Props.ActiveBoardId, StringComparison.Ordinal))
             {
                 return;
             }
 
-            setActiveBoardId(target);
+            Props.SetActiveBoardId(target);
+        }
+
+        IReadOnlyList<object?> templateEntryOptions = templateEntries
+            .Select(entry => (object?)new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["key"] = entry.Key,
+                ["label"] = string.IsNullOrWhiteSpace(entry.Label) ? entry.Key : entry.Label,
+            })
+            .ToList();
+
+        void CloseAddBoardPane()
+        {
+            if (!addingBoard)
+            {
+                setShowAddBoardForm(false);
+                setAddBoardStatus(StatusMessage.Empty);
+            }
+        }
+
+        Action<IReadOnlyDictionary<string, object?>> submitAddBoard = values =>
+        {
+            if (addingBoard)
+            {
+                return;
+            }
+
+            _ = AddBoardAsync(
+                Props.BoardClient,
+                values,
+                setAddingBoard,
+                setAddBoardStatus,
+                () =>
+                {
+                    setShowAddBoardForm(false);
+                    setAddBoardStatus(StatusMessage.Success("Board created."));
+                });
+        };
+
+        void CloseTemplatePreviewPane()
+        {
+            if (!applyingTemplate)
+            {
+                setTemplatePreview(null);
+                setTemplateStatus(StatusMessage.Empty);
+            }
         }
 
         var sections = new List<Element>();
@@ -212,77 +225,93 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
                 Component<BoardSwitcher, BoardSwitcherProps>(new BoardSwitcherProps(
                     Value: pendingBoardId,
                     Options: boardOptions,
-                    CurrentBoardId: activeBoardId,
+                    CurrentBoardId: Props.ActiveBoardId,
                     OnChange: setPendingBoardId,
                     OnSwitch: SwitchBoard,
                     SelectDisabled: manageBoards.LoadingManagedBoards,
-                    Loading: manageBoards.LoadingManagedBoards,
-                        Error: manageBoards.ManageBoardsError))
-                        .WithKey($"{activeBoardId}|{activeServerUrl}")));
+                    Loading: manageBoards.LoadingManagedBoards))
+                        .WithKey($"{Props.ActiveBoardId}|{Props.ActiveServerUrl}")));
 
         sections.Add(
             SectionCard(
-                Component<ServerSwitcher, ServerSwitcherProps>(
-                    new ServerSwitcherProps(App.Current.HostConfig.Frontend.InitialServerUrl))));
+                VStack(10,
+                    Component<ServerSwitcher, ServerSwitcherProps>(
+                        new ServerSwitcherProps(Props.ActiveServerUrl, Props.SetActiveServerUrl, Props.LiveRuntimeServerUrl)),
+                    string.IsNullOrWhiteSpace(manageBoards.ManageBoardsError)
+                        ? (Element)TextBlock(string.Empty).Set(text => text.Visibility = Visibility.Collapsed)
+                        : TextBlock($"Board list error: {manageBoards.ManageBoardsError}")
+                            .Opacity(0.78)
+                            .Set(text => text.TextWrapping = TextWrapping.WrapWholeWords))));
 
         sections.Add(
             SectionCard(
                 VStack(10,
                     LabelValue("Board", string.IsNullOrWhiteSpace(Props.BoardId) ? "Board id unavailable." : Props.BoardId),
                     HStack(8,
-                        Button(showAddBoardForm ? "Hide new board form" : "New board", () =>
+                        Button("New board", () =>
                         {
-                            setShowAddBoardForm(!showAddBoardForm);
+                            setShowAddBoardForm(true);
                             setAddBoardStatus(StatusMessage.Empty);
-                        }).AutomationName(showAddBoardForm ? "Hide new board form" : "Open new board form").SubtleButton(),
+                        }).AutomationName("Open new board form").SubtleButton(),
                         Button("Run tests", Props.OnRunTests ?? (() => { })).AutomationName("Run smoke tests").SubtleButton()))));
 
         sections.Add(
             SectionCard(
-                VStack(10,
-                    HStack(8,
-                        TextBlock("Page Details").FontSize(18).Bold().Flex(grow: 1),
-                        Button(saving ? "Saving..." : "Save", () =>
+                Component<EditPageDetails, EditPageDetailsProps>(new EditPageDetailsProps(
+                    PageTitle: pageDetails.PageTitle,
+                    PageSubtitle: pageDetails.PageSubtitle,
+                    RefreshIntervalMinutes: pageDetails.RefreshIntervalMinutes,
+                    CurrentUiTemplate: pageDetails.UiTemplate,
+                    UiTemplateOptions: uiTemplateNames,
+                    Saving: saving,
+                    ErrorMessage: pageStatus.Kind == StatusKind.Error ? pageStatus.Message : string.Empty,
+                    SuccessMessage: pageStatus.Kind == StatusKind.Success ? pageStatus.Message : string.Empty,
+                    OnSave: values =>
+                    {
+                        if (!saving)
                         {
-                            if (!saving)
-                            {
-                                _ = SavePageDetailsAsync(
-                                    boardClient,
-                                    Props.BoardId,
-                                    rawBoardJson,
-                                    rawUiJson,
-                                    rawMetadataJson,
-                                    rawLayoutJson,
-                                    pageTitle,
-                                    pageSubtitle,
-                                    refreshIntervalMinutes,
-                                    themePackId,
-                                    uiTemplate,
-                                    showHostPreview,
-                                    setSaving,
-                                    setPageStatus,
-                                    setRawBoardJson,
-                                    setRawUiJson,
-                                    setRawMetadataJson,
-                                    setRawLayoutJson,
-                                    setPageTitle,
-                                    setPageSubtitle,
-                                    setRefreshIntervalMinutes,
-                                    setThemePackId,
-                                    setUiTemplate,
-                                    setEffectiveBoardConfigPreviewText,
-                                    setHostStatus);
-                            }
-                        }).AutomationName("Save page details").AccentButton()),
-                    HintText("Edit the page title, subtitle, refresh cadence, theme pack, and UI template without raw JSON editing."),
-                    FieldEditor("Page title", pageTitle, setPageTitle),
-                    FieldEditor("Page subtitle", pageSubtitle, setPageSubtitle),
-                    FieldEditor("Refresh interval (minutes)", refreshIntervalMinutes, setRefreshIntervalMinutes),
-                    FieldEditor("Theme pack", themePackId, setThemePackId),
-                    HintText($"Available theme packs: {string.Join(", ", BoardTheme.ThemePackIds)}"),
-                    FieldEditor("UI template", uiTemplate, setUiTemplate),
-                    HintText(BuildOptionsHint("Available UI templates", uiTemplateNames)),
-                    StatusBlock(pageStatus))));
+                            _ = SavePageDetailsAsync(
+                                Props.BoardClient,
+                                Props.BoardId,
+                                rawBoardJson,
+                                rawUiJson,
+                                rawMetadataJson,
+                                rawLayoutJson,
+                                ReadString(values, "pageTitle"),
+                                ReadString(values, "pageSubtitle"),
+                                ReadString(values, "refreshAllIntervalMinutes"),
+                                ReadString(values, "uiTemplate"),
+                                showHostPreview,
+                                setSaving,
+                                setPageStatus,
+                                Props.SetManagedBoardConfig,
+                                setEffectiveBoardConfigPreviewText,
+                                setHostStatus);
+                        }
+                    }))));
+
+        sections.Add(
+            SectionCard(
+                Component<ThemeVisualSettings, ThemeVisualSettingsProps>(new ThemeVisualSettingsProps(
+                    ThemePackId: visualsHook.Visuals.Theme,
+                    ThemePackOptions: BoardTheme.ThemePackIds,
+                    Saving: savingTheme,
+                    ErrorMessage: themeStatus.Kind == StatusKind.Error ? themeStatus.Message : string.Empty,
+                    SuccessMessage: themeStatus.Kind == StatusKind.Success ? themeStatus.Message : string.Empty,
+                    OnSave: themePackId =>
+                    {
+                        if (!savingTheme)
+                        {
+                            _ = SaveThemeAsync(
+                                Props.BoardClient,
+                                Props.BoardId,
+                                visualsHook.ShallowMerge,
+                                themePackId,
+                                setSavingTheme,
+                                setThemeStatus,
+                                Props.SetManagedBoardConfig);
+                        }
+                    }))));
 
         sections.Add(
             SectionCard(
@@ -296,7 +325,7 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
                             if (!previewingHostConfig)
                             {
                                 _ = PreviewEffectiveBoardConfigAsync(
-                                    boardClient,
+                                    Props.BoardClient,
                                     Props.BoardId,
                                     rawBoardJson,
                                     setPreviewingHostConfig,
@@ -322,8 +351,6 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
         sections.Add(
             SectionCard(
                 VStack(10,
-                    TextBlock("Board Import / Export").FontSize(18).Bold(),
-                    HintText("Move runtime dumps in and out, or refresh the workspace bootstrap state."),
                     confirmRuntimeImport
                         ? (Element)Component<ChallengeConfirmModal, ChallengeConfirmModalProps>(
                             new ChallengeConfirmModalProps(
@@ -334,19 +361,11 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
                                     {
                                         setConfirmRuntimeImport(false);
                                         _ = ImportBoardAsync(
-                                            boardClient,
+                                            Props.BoardClient,
                                             Props.BoardId,
                                             setImporting,
                                             setImportExportStatus,
-                                            setRawBoardJson,
-                                            setRawUiJson,
-                                            setRawMetadataJson,
-                                            setRawLayoutJson,
-                                            setPageTitle,
-                                            setPageSubtitle,
-                                            setRefreshIntervalMinutes,
-                                            setThemePackId,
-                                            setUiTemplate,
+                                            Props.SetManagedBoardConfig,
                                             showHostPreview,
                                             setEffectiveBoardConfigPreviewText,
                                             setHostStatus);
@@ -361,27 +380,27 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
                                 },
                                 importing))
                         : TextBlock(string.Empty).Set(text => text.Visibility = Visibility.Collapsed),
-                    HStack(8,
-                        Button(importing ? "Importing..." : "Import board", () =>
+                    Component<BoardImportExport, BoardImportExportProps>(new BoardImportExportProps(
+                        OnImport: () =>
                         {
                             if (!importing)
                             {
                                 setConfirmRuntimeImport(true);
                             }
-                        }).AutomationName("Import board dump").SubtleButton(),
-                        Button(exporting ? "Exporting..." : "Export board", () =>
+                        },
+                        OnExport: () =>
                         {
                             if (!exporting)
                             {
-                                _ = ExportBoardAsync(boardClient, Props.BoardId, setExporting, setImportExportStatus);
+                                _ = ExportBoardAsync(Props.BoardClient, Props.BoardId, setExporting, setImportExportStatus);
                             }
-                        }).AutomationName("Export board dump").SubtleButton(),
-                        Button(refreshingWorkspace ? "Refreshing..." : "Refresh workspace bootstrap", () =>
+                        },
+                        OnRefreshBootstrap: () =>
                         {
                             if (!refreshingWorkspace)
                             {
                                 _ = RefreshBoardWorkspaceAsync(
-                                    boardClient,
+                                    Props.BoardClient,
                                     Props.BoardId,
                                     rawBoardJson,
                                     showHostPreview,
@@ -390,91 +409,112 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
                                     setEffectiveBoardConfigPreviewText,
                                     setHostStatus);
                             }
-                        }).AutomationName("Refresh workspace bootstrap").SubtleButton()),
+                        },
+                        Importing: importing,
+                        Exporting: exporting,
+                        Refreshing: refreshingWorkspace,
+                        Disabled: string.IsNullOrWhiteSpace(Props.BoardId))),
                     StatusBlock(importExportStatus))));
 
         sections.Add(
             SectionCard(
                 VStack(10,
-                    TextBlock("Template Card Ingest").FontSize(18).Bold(),
-                    HintText("Preview the card delta first, then ingest into the current board when the result looks right."),
-                    FieldEditor("Template key", selectedTemplateKey, setSelectedTemplateKey),
-                    HintText(BuildTemplateCatalogHint(templateEntries)),
-                    HStack(8,
-                        Button(previewingTemplate ? "Preparing preview..." : "Preview ingest", () =>
+                    Component<TemplateCardIngest, TemplateCardIngestProps>(new TemplateCardIngestProps(
+                        Entries: templateEntryOptions,
+                        SelectedKey: selectedTemplateKey,
+                        OnSelect: setSelectedTemplateKey,
+                        OnIngest: () =>
                         {
                             if (!previewingTemplate)
                             {
                                 _ = PreviewTemplateAsync(
-                                    boardClient,
+                                    Props.BoardClient,
                                     Props.BoardId,
                                     selectedTemplateKey,
                                     setPreviewingTemplate,
                                     setTemplateStatus,
-                                    setPendingTemplatePayloadJson,
-                                    setTemplatePreviewText);
+                                    setTemplatePreview);
                             }
-                        }).AutomationName("Preview template ingest").SubtleButton(),
-                        Button(applyingTemplate ? "Ingesting..." : "Ingest template", () =>
-                        {
-                            if (!applyingTemplate)
-                            {
-                                _ = ApplyTemplateAsync(
-                                    boardClient,
-                                    Props.BoardId,
-                                    pendingTemplatePayloadJson,
-                                    setApplyingTemplate,
-                                    setTemplateStatus);
-                            }
-                        }).AutomationName("Apply template ingest").SubtleButton()),
+                        },
+                        Loading: false,
+                        Ingesting: applyingTemplate,
+                        Preparing: previewingTemplate,
+                        ErrorMessage: templateHelpText,
+                        Disabled: string.IsNullOrWhiteSpace(Props.BoardId))),
                     HintText(templateHelpText),
                     StatusBlock(templateStatus),
-                    BuildCodeBlock(templatePreviewText, minHeight: 180))));
+                    HintText(BuildTemplateCatalogHint(templateEntries)))));
 
         if (showAddBoardForm)
         {
-            sections.Insert(2,
-                SectionCard(
-                    VStack(10,
-                        HStack(8,
-                            TextBlock("Add Board").FontSize(18).Bold().Flex(grow: 1),
-                            Button("Cancel", () => setShowAddBoardForm(false)).AutomationName("Cancel add board").SubtleButton(),
-                            Button(addingBoard ? "Adding..." : "Add board", () =>
-                            {
-                                if (!addingBoard)
-                                {
-                                    _ = AddBoardAsync(
-                                        boardClient,
-                                        addBoardId,
-                                        addBoardLabel,
-                                        addBoardPageTitle,
-                                        addBoardPageSubtitle,
-                                        addBoardAi,
-                                        addBoardAiWorkspaceTemplate,
-                                        addBoardUiTemplate,
-                                        addBoardRefsTemplate,
-                                        addBoardTemplateKey,
-                                        setAddingBoard,
-                                        setAddBoardStatus,
-                                        () => setShowAddBoardForm(false));
-                                }
-                            }).AutomationName("Add board").AccentButton()),
+            return ScrollViewer(
+                Component<ConfigSubPane, ConfigSubPaneProps>(new ConfigSubPaneProps(
+                    Title: "Add board",
+                    OnBack: CloseAddBoardPane,
+                    Children:
+                    [
                         HintText("Create a new managed board and optionally seed it from a template."),
-                        FieldEditor("Board id", addBoardId, setAddBoardId),
-                        FieldEditor("Label", addBoardLabel, setAddBoardLabel),
-                        FieldEditor("Page title", addBoardPageTitle, setAddBoardPageTitle),
-                        FieldEditor("Page subtitle", addBoardPageSubtitle, setAddBoardPageSubtitle),
-                        FieldEditor("AI", addBoardAi, setAddBoardAi),
+                        Component<AddBoard, AddBoardProps>(new AddBoardProps(
+                            OnClose: CloseAddBoardPane,
+                            OnSubmit: values =>
+                            {
+                                submitAddBoard(values);
+                                return Task.CompletedTask;
+                            },
+                            TemplateOptions: templateEntryOptions,
+                            LoadingTemplates: false,
+                            Submitting: addingBoard,
+                            ErrorMessage: addBoardStatus.Kind == StatusKind.Error ? addBoardStatus.Message : string.Empty)),
                         HintText(BuildOptionsHint("Available AI names", assistantNames)),
-                        FieldEditor("AI workspace template", addBoardAiWorkspaceTemplate, setAddBoardAiWorkspaceTemplate),
                         HintText(BuildOptionsHint("Available AI workspace templates", aiWorkspaceTemplateNames)),
-                        FieldEditor("UI template", addBoardUiTemplate, setAddBoardUiTemplate),
                         HintText(BuildOptionsHint("Available UI templates", uiTemplateNames)),
-                        FieldEditor("Refs template", addBoardRefsTemplate, setAddBoardRefsTemplate),
                         HintText(BuildOptionsHint("Available refs templates", refsTemplateNames)),
-                        FieldEditor("Optional card template", addBoardTemplateKey, setAddBoardTemplateKey),
                         HintText(templateHelpText),
-                        StatusBlock(addBoardStatus))));
+                        addBoardStatus.Kind == StatusKind.Success
+                            ? StatusBlock(addBoardStatus)
+                            : TextBlock(string.Empty).Set(text => text.Visibility = Visibility.Collapsed)
+                    ])))
+                .Set(scrollViewer =>
+                {
+                    scrollViewer.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
+                    scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+                });
+        }
+
+        if (templatePreview is not null)
+        {
+            return ScrollViewer(
+                Component<ConfigSubPane, ConfigSubPaneProps>(new ConfigSubPaneProps(
+                    Title: "Ingest Cards from Template",
+                    OnBack: CloseTemplatePreviewPane,
+                    Children:
+                    [
+                        Component<TemplateIngestPreview, TemplateIngestPreviewProps>(new TemplateIngestPreviewProps(
+                            TemplateLabel: templatePreview.TemplateLabel,
+                            CardsToReplace: templatePreview.CardsToReplace,
+                            CardsToAdd: templatePreview.CardsToAdd,
+                            InvalidCards: templatePreview.InvalidCards,
+                            Ingesting: applyingTemplate,
+                            OnCancel: CloseTemplatePreviewPane,
+                            OnConfirm: () =>
+                            {
+                                if (!applyingTemplate)
+                                {
+                                    _ = ApplyTemplateAsync(
+                                        Props.BoardClient,
+                                        Props.BoardId,
+                                        templatePreview.PayloadJson,
+                                        setApplyingTemplate,
+                                        setTemplateStatus,
+                                        () => setTemplatePreview(null));
+                                }
+                            }))
+                    ])))
+                .Set(scrollViewer =>
+                {
+                    scrollViewer.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
+                    scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+                });
         }
 
         return ScrollViewer(VStack(14, sections.ToArray()))
@@ -496,16 +536,8 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
         Action<IReadOnlyList<SampleTemplateEntry>> setTemplateEntries,
         Action<string> setSelectedTemplateKey,
         Action<string> setTemplateHelpText,
-        Action<string> setThemePackId,
-        Action<string> setUiTemplate,
-        Action<string> setAddBoardAi,
-        Action<string> setAddBoardAiWorkspaceTemplate,
-        Action<string> setAddBoardUiTemplate,
-        Action<string> setAddBoardRefsTemplate,
         Action<StatusMessage> setHostStatus,
-        Action<StatusMessage> setTemplateStatus,
-        string currentThemePackId,
-        string currentUiTemplate)
+        Action<StatusMessage> setTemplateStatus)
     {
         try
         {
@@ -524,13 +556,6 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
                 $"Templates config: {hostTemplateCatalog.TemplatesConfigPath}{Environment.NewLine}" +
                 $"Workspace setup script: {hostTemplateCatalog.SetupSingleAiWorkspaceScriptPath}");
             setHostConfigPreviewText(PrettyJson(hostTemplateCatalog.RawHostSummaryJson));
-
-            setThemePackId(ValueOrFallback(currentThemePackId, BoardTheme.DefaultThemePackId));
-            setUiTemplate(ValueOrFallback(currentUiTemplate, "default"));
-            setAddBoardAi("copilot");
-            setAddBoardAiWorkspaceTemplate("default");
-            setAddBoardUiTemplate("default");
-            setAddBoardRefsTemplate("localfs-default");
             setHostStatus(StatusMessage.Empty);
         }
         catch (Exception ex)
@@ -573,20 +598,11 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
         string pageTitle,
         string pageSubtitle,
         string refreshIntervalMinutes,
-        string themePackId,
         string uiTemplate,
         bool refreshPreview,
         Action<bool> setSaving,
         Action<StatusMessage> setPageStatus,
-        Action<string> setRawBoardJson,
-        Action<string> setRawUiJson,
-        Action<string> setRawMetadataJson,
-        Action<string> setRawLayoutJson,
-        Action<string> setPageTitle,
-        Action<string> setPageSubtitle,
-        Action<string> setRefreshIntervalMinutes,
-        Action<string> setThemePackId,
-        Action<string> setUiTemplate,
+        Action<ManagedBoardConfigState?> setManagedBoardConfig,
         Action<string> setEffectiveBoardConfigPreviewText,
         Action<StatusMessage> setHostStatus)
     {
@@ -599,7 +615,6 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
         string normalizedTitle = pageTitle.Trim();
         string normalizedSubtitle = pageSubtitle.Trim();
         string normalizedRefresh = refreshIntervalMinutes.Trim();
-        string normalizedThemePackId = ValueOrFallback(themePackId, BoardTheme.DefaultThemePackId);
         string normalizedUiTemplate = ValueOrFallback(uiTemplate, "default");
 
         if (normalizedTitle.Length == 0 || normalizedSubtitle.Length == 0 || normalizedRefresh.Length == 0 || normalizedUiTemplate.Length == 0)
@@ -618,30 +633,22 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
         setPageStatus(StatusMessage.Info("Saving page details..."));
         try
         {
-            App app = App.Current;
-            string updatedRawUiJson = MergeThemePackIntoUiJson(rawUiJson, normalizedThemePackId);
-            string updatedRawMetadataJson = BuildUpdatedMetadataJson(rawMetadataJson, normalizedTitle, normalizedSubtitle, refreshMinutes);
-            string updatedBoardRecordJson = BuildUpdatedBoardRecordJson(rawBoardJson, normalizedUiTemplate);
+            PageDetailsState nextDetails = new(
+                normalizedTitle,
+                normalizedSubtitle,
+                Math.Max(1, refreshMinutes).ToString(),
+                normalizedUiTemplate);
+            string updatedRawMetadataJson = nextDetails.ApplyMetadata(rawMetadataJson);
+            string updatedBoardRecordJson = nextDetails.ApplyBoard(rawBoardJson);
 
             ManagedBoardConfigState saved = await boardClient.SaveManagedBoardConfigAsync(
                 boardId,
-                updatedRawUiJson,
+                rawUiJson,
                 updatedRawMetadataJson,
                 rawLayoutJson,
                 updatedBoardRecordJson);
 
-            setRawBoardJson(saved.RawBoardJson);
-            setRawUiJson(saved.RawUiJson);
-            setRawMetadataJson(saved.RawMetadataJson);
-            setRawLayoutJson(saved.RawLayoutJson);
-            app.BoardStore.SetManagedBoardConfig(saved);
-
-            PageDetailsDraft draft = ResolvePageDetailsDraft(boardId, saved.RawBoardJson, saved.RawUiJson, saved.RawMetadataJson);
-            setPageTitle(draft.PageTitle);
-            setPageSubtitle(draft.PageSubtitle);
-            setRefreshIntervalMinutes(draft.RefreshIntervalMinutes);
-            setThemePackId(draft.ThemePackId);
-            setUiTemplate(draft.UiTemplate);
+            setManagedBoardConfig(saved);
 
             if (refreshPreview)
             {
@@ -658,6 +665,45 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
         finally
         {
             setSaving(false);
+        }
+    }
+
+    private static async Task SaveThemeAsync(
+        EmbeddedBoardClient boardClient,
+        string boardId,
+        Func<string, JsonNode?, Task<JsonObject?>> shallowMerge,
+        string themePackId,
+        Action<bool> setSavingTheme,
+        Action<StatusMessage> setThemeStatus,
+        Action<ManagedBoardConfigState?> setManagedBoardConfig)
+    {
+        if (string.IsNullOrWhiteSpace(boardId))
+        {
+            setThemeStatus(StatusMessage.Error("Board id unavailable."));
+            return;
+        }
+
+        setSavingTheme(true);
+        setThemeStatus(StatusMessage.Info("Saving theme..."));
+        try
+        {
+            string normalizedThemePackId = BoardTheme.NormalizeThemePackId(themePackId);
+            await shallowMerge("theme", JsonValue.Create(normalizedThemePackId));
+            ManagedBoardConfigState? saved = await boardClient.GetManagedBoardConfigAsync(boardId);
+            if (saved is not null)
+            {
+                setManagedBoardConfig(saved);
+            }
+
+            setThemeStatus(StatusMessage.Success("Saved."));
+        }
+        catch (Exception ex)
+        {
+            setThemeStatus(StatusMessage.Error(ex.Message));
+        }
+        finally
+        {
+            setSavingTheme(false);
         }
     }
 
@@ -694,15 +740,7 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
         string boardId,
         Action<bool> setImporting,
         Action<StatusMessage> setImportExportStatus,
-        Action<string> setRawBoardJson,
-        Action<string> setRawUiJson,
-        Action<string> setRawMetadataJson,
-        Action<string> setRawLayoutJson,
-        Action<string> setPageTitle,
-        Action<string> setPageSubtitle,
-        Action<string> setRefreshIntervalMinutes,
-        Action<string> setThemePackId,
-        Action<string> setUiTemplate,
+        Action<ManagedBoardConfigState?> setManagedBoardConfig,
         bool refreshPreview,
         Action<string> setEffectiveBoardConfigPreviewText,
         Action<StatusMessage> setHostStatus)
@@ -724,23 +762,11 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
                 return;
             }
 
-            App app = App.Current;
             await boardClient.ApplyImportBoardAsync(boardId, json, "replace", applyBoardMetadata: true);
             ManagedBoardConfigState? saved = await boardClient.GetManagedBoardConfigAsync(boardId);
             if (saved is not null)
             {
-                setRawBoardJson(saved.RawBoardJson);
-                setRawUiJson(saved.RawUiJson);
-                setRawMetadataJson(saved.RawMetadataJson);
-                setRawLayoutJson(saved.RawLayoutJson);
-                app.BoardStore.SetManagedBoardConfig(saved);
-
-                PageDetailsDraft draft = ResolvePageDetailsDraft(boardId, saved.RawBoardJson, saved.RawUiJson, saved.RawMetadataJson);
-                setPageTitle(draft.PageTitle);
-                setPageSubtitle(draft.PageSubtitle);
-                setRefreshIntervalMinutes(draft.RefreshIntervalMinutes);
-                setThemePackId(draft.ThemePackId);
-                setUiTemplate(draft.UiTemplate);
+                setManagedBoardConfig(saved);
 
                 if (refreshPreview)
                 {
@@ -837,8 +863,7 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
         string templateKey,
         Action<bool> setPreviewingTemplate,
         Action<StatusMessage> setTemplateStatus,
-        Action<string> setPendingTemplatePayloadJson,
-        Action<string> setTemplatePreviewText)
+        Action<TemplatePreviewState?> setTemplatePreview)
     {
         if (string.IsNullOrWhiteSpace(boardId) || string.IsNullOrWhiteSpace(templateKey))
         {
@@ -852,14 +877,22 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
         {
             SampleTemplateEnvelope template = await boardClient.GetSampleTemplateAsync(templateKey);
             BoardImportPreview preview = await boardClient.PreviewImportBoardAsync(boardId, template.RawPayloadJson, "ingest");
-            setPendingTemplatePayloadJson(template.RawPayloadJson);
-            setTemplatePreviewText(BuildTemplatePreviewText(template, preview));
+            setTemplatePreview(new TemplatePreviewState(
+                string.IsNullOrWhiteSpace(template.Label) ? template.Key : template.Label,
+                preview.ReplaceIds.Select(id => (object?)new Dictionary<string, object?> { ["id"] = id, ["title"] = string.Empty }).ToList(),
+                preview.AddIds.Select(id => (object?)new Dictionary<string, object?> { ["id"] = id, ["title"] = string.Empty }).ToList(),
+                preview.InvalidCards.Select(card => (object?)new Dictionary<string, object?>
+                {
+                    ["id"] = card.Id,
+                    ["title"] = card.Title,
+                    ["issues"] = card.Issues.ToArray()
+                }).ToList(),
+                template.RawPayloadJson));
             setTemplateStatus(StatusMessage.Success("Template preview ready."));
         }
         catch (Exception ex)
         {
-            setPendingTemplatePayloadJson(string.Empty);
-            setTemplatePreviewText(string.Empty);
+            setTemplatePreview(null);
             setTemplateStatus(StatusMessage.Error(ex.Message));
         }
         finally
@@ -873,7 +906,8 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
         string boardId,
         string pendingTemplatePayloadJson,
         Action<bool> setApplyingTemplate,
-        Action<StatusMessage> setTemplateStatus)
+        Action<StatusMessage> setTemplateStatus,
+        Action? onSuccess = null)
     {
         if (string.IsNullOrWhiteSpace(boardId) || string.IsNullOrWhiteSpace(pendingTemplatePayloadJson))
         {
@@ -887,6 +921,7 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
         {
             await boardClient.ApplyImportBoardAsync(boardId, pendingTemplatePayloadJson, "ingest", applyBoardMetadata: false);
             await boardClient.RefreshBoardAsync();
+            onSuccess?.Invoke();
             setTemplateStatus(StatusMessage.Success("Template cards ingested."));
         }
         catch (Exception ex)
@@ -901,15 +936,7 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
 
     private static async Task AddBoardAsync(
         EmbeddedBoardClient boardClient,
-        string boardId,
-        string label,
-        string pageTitle,
-        string pageSubtitle,
-        string ai,
-        string aiWorkspaceTemplate,
-        string uiTemplate,
-        string refsTemplate,
-        string templateKey,
+        IReadOnlyDictionary<string, object?> values,
         Action<bool> setAddingBoard,
         Action<StatusMessage> setAddBoardStatus,
         Action onSuccess)
@@ -918,6 +945,16 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
         setAddBoardStatus(StatusMessage.Info("Adding board..."));
         try
         {
+            string boardId = ReadString(values, "boardId");
+            string label = ReadString(values, "label");
+            string pageTitle = ReadString(values, "pageTitle");
+            string pageSubtitle = ReadString(values, "pageSubtitle");
+            string ai = ReadString(values, "ai");
+            string aiWorkspaceTemplate = ReadString(values, "aiWorkspaceTemplate");
+            string uiTemplate = ReadString(values, "uiTemplate");
+            string refsTemplate = ReadString(values, "refsTemplate");
+            string templateKey = ReadString(values, "templateKey");
+
             var request = new ManagedBoardCreateRequest(
                 boardId,
                 label,
@@ -937,7 +974,6 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
             }
 
             await boardClient.SetupBoardWorkspaceAsync(created.Id);
-            setAddBoardStatus(StatusMessage.Success("Board created."));
             onSuccess();
         }
         catch (Exception ex)
@@ -994,6 +1030,13 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
             : $"{label}: {string.Join(", ", options)}";
     }
 
+    private static string ReadString(IReadOnlyDictionary<string, object?> values, string key)
+    {
+        return values.TryGetValue(key, out object? value)
+            ? value?.ToString()?.Trim() ?? string.Empty
+            : string.Empty;
+    }
+
     private static string BuildTemplateCatalogHint(IReadOnlyList<SampleTemplateEntry> templates)
     {
         if (templates.Count == 0)
@@ -1023,32 +1066,6 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
         {
             return raw;
         }
-    }
-
-    private static string MergeThemePackIntoUiJson(string rawUiJson, string? themePackId)
-    {
-        string normalizedThemePackId = BoardTheme.NormalizeThemePackId(themePackId);
-        JsonObject ui = ParseObject(rawUiJson);
-        JsonObject theme = ui["theme"] as JsonObject ?? new JsonObject();
-        theme["id"] = normalizedThemePackId;
-        ui["theme"] = theme;
-        return ui.ToJsonString(PrettyJsonOptions);
-    }
-
-    private static string BuildUpdatedMetadataJson(string currentRawMetadataJson, string pageTitle, string pageSubtitle, int refreshMinutes)
-    {
-        JsonObject metadata = ParseObject(currentRawMetadataJson);
-        metadata["pageTitle"] = pageTitle;
-        metadata["pageSubtitle"] = pageSubtitle;
-        metadata["refreshAllIntervalSeconds"] = Math.Max(1, refreshMinutes) * 60;
-        return metadata.ToJsonString(PrettyJsonOptions);
-    }
-
-    private static string BuildUpdatedBoardRecordJson(string currentRawBoardJson, string uiTemplate)
-    {
-        JsonObject board = ParseObject(currentRawBoardJson);
-        board["uiTemplate"] = uiTemplate;
-        return board.ToJsonString(PrettyJsonOptions);
     }
 
     private static JsonObject ParseObject(string? rawJson)
@@ -1110,97 +1127,80 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
         return string.Join(Environment.NewLine, lines);
     }
 
-    private static PageDetailsDraft ResolvePageDetailsDraft(string boardId, string rawBoardJson, string rawUiJson, string rawMetadataJson)
-    {
-        string title = ResolveMetadataString(rawMetadataJson, "pageTitle", string.IsNullOrWhiteSpace(boardId) ? "Demo Boards" : boardId);
-        string subtitle = ResolveMetadataString(rawMetadataJson, "pageSubtitle", "Embedded board workspace");
-        string refreshMinutes = ResolveRefreshIntervalMinutes(rawMetadataJson);
-        string theme = BoardTheme.ResolveThemePackIdFromUiJson(rawUiJson);
-        string template = ResolveUiTemplate(rawBoardJson);
-        return new PageDetailsDraft(title, subtitle, refreshMinutes, theme, template);
-    }
-
-    private static string ResolveMetadataString(string rawMetadataJson, string propertyName, string fallback)
-    {
-        try
-        {
-            using JsonDocument document = JsonDocument.Parse(rawMetadataJson);
-            JsonElement root = document.RootElement;
-            if (root.TryGetProperty(propertyName, out JsonElement value)
-                && value.ValueKind == JsonValueKind.String
-                && !string.IsNullOrWhiteSpace(value.GetString()))
-            {
-                return value.GetString()!;
-            }
-        }
-        catch
-        {
-        }
-
-        return fallback;
-    }
-
-    private static string ResolveRefreshIntervalMinutes(string rawMetadataJson)
-    {
-        try
-        {
-            using JsonDocument document = JsonDocument.Parse(rawMetadataJson);
-            JsonElement root = document.RootElement;
-
-            if (root.TryGetProperty("refreshAllIntervalSeconds", out JsonElement secondsElement)
-                && secondsElement.ValueKind == JsonValueKind.Number
-                && secondsElement.TryGetInt32(out int seconds)
-                && seconds > 0)
-            {
-                return Math.Max(1, seconds / 60).ToString();
-            }
-
-            if (root.TryGetProperty("refreshAllIntervalMs", out JsonElement millisecondsElement)
-                && millisecondsElement.ValueKind == JsonValueKind.Number
-                && millisecondsElement.TryGetInt32(out int milliseconds)
-                && milliseconds > 0)
-            {
-                return Math.Max(1, milliseconds / 60000).ToString();
-            }
-        }
-        catch
-        {
-        }
-
-        return Math.Max(1, DefaultRefreshAllIntervalSeconds / 60).ToString();
-    }
-
-    private static string ResolveUiTemplate(string rawBoardJson)
-    {
-        try
-        {
-            using JsonDocument document = JsonDocument.Parse(rawBoardJson);
-            JsonElement root = document.RootElement;
-            if (root.TryGetProperty("uiTemplate", out JsonElement value)
-                && value.ValueKind == JsonValueKind.String
-                && !string.IsNullOrWhiteSpace(value.GetString()))
-            {
-                return value.GetString()!;
-            }
-        }
-        catch
-        {
-        }
-
-        return "default";
-    }
-
     private static string ValueOrFallback(string? value, string fallback)
     {
         return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
     }
 
-    private sealed record PageDetailsDraft(
+    private sealed record PageDetailsState(
         string PageTitle,
         string PageSubtitle,
         string RefreshIntervalMinutes,
-        string ThemePackId,
-        string UiTemplate);
+        string UiTemplate)
+    {
+        public static PageDetailsState FromRaw(string boardId, string rawBoardJson, string rawMetadataJson)
+        {
+            JsonObject metadata = ParseObject(rawMetadataJson);
+            JsonObject board = ParseObject(rawBoardJson);
+
+            string fallbackTitle = string.IsNullOrWhiteSpace(boardId) ? "Demo Boards" : boardId;
+            string title = ReadString(metadata, "pageTitle", fallbackTitle);
+            string subtitle = ReadString(metadata, "pageSubtitle", "Embedded board workspace");
+            string refreshMinutes = ReadRefreshMinutes(metadata);
+            string uiTemplate = ReadString(board, "uiTemplate", "default");
+
+            return new PageDetailsState(title, subtitle, refreshMinutes, uiTemplate);
+        }
+
+        public string ApplyMetadata(string currentRawMetadataJson)
+        {
+            JsonObject metadata = ParseObject(currentRawMetadataJson);
+            metadata["pageTitle"] = PageTitle;
+            metadata["pageSubtitle"] = PageSubtitle;
+            metadata["refreshAllIntervalSeconds"] = Math.Max(1, ParsePositiveIntOrDefault(RefreshIntervalMinutes, DefaultRefreshAllIntervalSeconds / 60)) * 60;
+            return metadata.ToJsonString(PrettyJsonOptions);
+        }
+
+        public string ApplyBoard(string currentRawBoardJson)
+        {
+            JsonObject board = ParseObject(currentRawBoardJson);
+            board["uiTemplate"] = UiTemplate;
+            return board.ToJsonString(PrettyJsonOptions);
+        }
+
+        private static string ReadString(JsonObject source, string propertyName, string fallback)
+        {
+            return source[propertyName] is JsonValue value
+                && value.TryGetValue(out string? stringValue)
+                && !string.IsNullOrWhiteSpace(stringValue)
+                    ? stringValue.Trim()
+                    : fallback;
+        }
+
+        private static string ReadRefreshMinutes(JsonObject metadata)
+        {
+            if (metadata["refreshAllIntervalSeconds"] is JsonValue secondsValue
+                && secondsValue.TryGetValue(out int seconds)
+                && seconds > 0)
+            {
+                return Math.Max(1, seconds / 60).ToString();
+            }
+
+            if (metadata["refreshAllIntervalMs"] is JsonValue millisecondsValue
+                && millisecondsValue.TryGetValue(out int milliseconds)
+                && milliseconds > 0)
+            {
+                return Math.Max(1, milliseconds / 60000).ToString();
+            }
+
+            return Math.Max(1, DefaultRefreshAllIntervalSeconds / 60).ToString();
+        }
+
+        private static int ParsePositiveIntOrDefault(string value, int fallback)
+        {
+            return int.TryParse(value, out int parsed) && parsed > 0 ? parsed : fallback;
+        }
+    }
 
     private enum StatusKind
     {
