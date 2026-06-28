@@ -41,12 +41,20 @@ public sealed class AddBoard : Component<AddBoardProps>
             {
                 if (opt is IDictionary<string, object?> optDict)
                 {
-                    templateSelectOptions.Add(new { value = optDict.TryGetValue("key", out var k) ? k : "", label = optDict.TryGetValue("label", out var l) ? l : "" });
+                    templateSelectOptions.Add(new Dictionary<string, object?>
+                    {
+                        ["value"] = optDict.TryGetValue("key", out var k) ? k : "",
+                        ["label"] = optDict.TryGetValue("label", out var l) ? l : "",
+                    });
                 }
                 else if (opt is System.Collections.Generic.KeyValuePair<string, object?> kvp)
                 {
                     // Handle if passed as kvp
-                    templateSelectOptions.Add(new { value = kvp.Key, label = kvp.Value });
+                    templateSelectOptions.Add(new Dictionary<string, object?>
+                    {
+                        ["value"] = kvp.Key,
+                        ["label"] = kvp.Value,
+                    });
                 }
             }
 
@@ -170,7 +178,11 @@ public sealed class AddBoard : Component<AddBoardProps>
                 optDict.TryGetValue("key", out var key) &&
                 optDict.TryGetValue("label", out var label))
             {
-                result.Add(new { value = key, label = label });
+                result.Add(new Dictionary<string, object?>
+                {
+                    ["value"] = key,
+                    ["label"] = label,
+                });
             }
         }
         return result.ToArray();

@@ -70,7 +70,11 @@ public sealed class BoardSwitcher : Component<BoardSwitcherProps>
             {
                 optLabel += " (current)";
             }
-            selectOptions.Add(new { value = optId, label = optLabel });
+            selectOptions.Add(new Dictionary<string, object?>
+            {
+                ["value"] = optId,
+                ["label"] = optLabel,
+            });
         }
 
         var buttonElements = new List<Element>();

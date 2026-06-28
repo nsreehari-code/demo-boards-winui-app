@@ -36,9 +36,10 @@ public sealed class TemplateCardIngest : Component<TemplateCardIngestProps>
         {
             if (e is IDictionary<string, object?> entryDict)
             {
-                selectOptions.Add(new { 
-                    value = entryDict.TryGetValue("key", out var k) ? k : "",
-                    label = entryDict.TryGetValue("label", out var l) ? l : ""
+                selectOptions.Add(new Dictionary<string, object?>
+                {
+                    ["value"] = entryDict.TryGetValue("key", out var k) ? k : "",
+                    ["label"] = entryDict.TryGetValue("label", out var l) ? l : "",
                 });
             }
         }
