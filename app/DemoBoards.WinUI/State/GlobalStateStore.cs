@@ -8,6 +8,9 @@ public static class GlobalStateKeys
 {
     /// <summary>The active board id (WinUI analog of the frontend's <c>DEFAULT_BOARD_ID</c>).</summary>
     public const string BoardId = "board.id";
+
+    /// <summary>The active hosted server URL backing the current board session.</summary>
+    public const string ServerUrl = "board.serverUrl";
 }
 
 /// <summary>Event payload describing which <see cref="GlobalStateStore"/> key changed.</summary>

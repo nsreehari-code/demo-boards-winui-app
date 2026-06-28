@@ -8,6 +8,7 @@
     <RootNamespace>ValidatorHarness</RootNamespace>
     <AssemblyName>ValidatorHarness</AssemblyName>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <EnableDeprecatedRuntimeHostHarnesses Condition="'$(EnableDeprecatedRuntimeHostHarnesses)' == ''">false</EnableDeprecatedRuntimeHostHarnesses>
   </PropertyGroup>
 
   <!--
@@ -19,18 +20,27 @@
     <PackageReference Include="Microsoft.ClearScript.V8.Native.win-x64" Version="7.*" />
   </ItemGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\..\DemoBoards.RuntimeHost\DemoBoards.RuntimeHost.csproj" />
+  <ItemGroup Condition="'$(EnableDeprecatedRuntimeHostHarnesses)' == 'true'">
+    <ProjectReference Include="..\..\deprecated.DemoBoards.RuntimeHost\deprecated.DemoBoards.RuntimeHost.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(EnableDeprecatedRuntimeHostHarnesses)' != 'true'">
+    <Compile Remove="Program.cs" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(EnableDeprecatedRuntimeHostHarnesses)' == 'true'">
+    <Compile Remove="Program.Stub.cs" />
   </ItemGroup>
 
   <!--
     JsonataSync loads js/compute-jsonata.js from AppContext.BaseDirectory, so the
     very same vendored bundle the app/frontend use is copied into the output. This
     is what makes the parity assertion meaningful (identical JSONata engine).
-    Path is relative to ai-tool-evolver/ (four levels up from this project).
+    The bundle comes from the installed yaml-flow package under demo-boards-ns-code,
+    not from a checked-out sibling yaml-flow repo.
   -->
   <ItemGroup>
-    <None Include="..\..\..\..\yaml-flow\browser\compute-jsonata.js"
+    <None Include="..\..\..\..\demo-boards-ns-code\node_modules\yaml-flow\browser\compute-jsonata.js"
           Link="js\compute-jsonata.js"
           CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

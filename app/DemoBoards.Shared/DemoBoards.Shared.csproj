@@ -5,7 +5,7 @@
     Holds the plain-data -> typed-record converters (FromData) and the loosely
     typed map readers (BoardData) so they can be unit-tested without a WinUI
     host. Targets plain net10.0 (no -windows, no UI/V8 deps) so a console test
-    harness can reference it directly. Consumed by DemoBoards.RuntimeHost,
+    harness can reference it directly. Consumed by deprecated.DemoBoards.RuntimeHost,
     DemoBoards.WinUI, and the converter parity harness.
 
     The root namespace intentionally stays DemoBoards_WinUI.Controls.Shared so

@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using DemoBoards.RuntimeHost;
 using DemoBoards_WinUI.Config;
+using DemoBoards_WinUI.SseReducer;
 
 namespace DemoBoards_WinUI.State;
 
@@ -76,8 +77,8 @@ public sealed record BoardStoreChangedEventArgs(
 
 /// <summary>
 /// WinUI equivalent of the frontend external-store + selector layer in
-/// useSseSlices/useBoardState/useCardState. It is reducer-fed by the embedded
-/// runtime service rather than HTTP SSE, but the dataflow shape is the same:
+/// useSseSlices/useBoardState/useCardState. It is reducer-fed by the hosted
+/// board-state service rather than direct in-proc runtime callbacks, but the dataflow shape is the same:
 /// one shared board store with explicit slices and selector-style accessors.
 /// </summary>
 public sealed class BoardStore : IDisposable
@@ -86,20 +87,20 @@ public sealed class BoardStore : IDisposable
         string.Equals(Environment.GetEnvironmentVariable("DEMOBOARDS_LOG_CANONICAL_SLICE_CHANGES"), "1", StringComparison.Ordinal)
         || string.Equals(Environment.GetEnvironmentVariable("DEMOBOARDS_LOG_CANONICAL_SLICE_CHANGES"), "true", StringComparison.OrdinalIgnoreCase);
 
-    private readonly DemoBoardsRuntimeService runtimeService;
+    private readonly HostedBoardStateService boardStateService;
     private readonly WinUiBoardServerConstants boardServerConstants;
     private BoardStoreState state;
     private BoardUiState uiState = BoardUiState.Empty;
 
-    public BoardStore(DemoBoardsRuntimeService runtimeService, WinUiBoardServerConstants boardServerConstants)
+    public BoardStore(HostedBoardStateService boardStateService, WinUiBoardServerConstants boardServerConstants)
     {
-        this.runtimeService = runtimeService;
+        this.boardStateService = boardStateService;
         this.boardServerConstants = boardServerConstants;
 
         state = EmptyState();
-        state = ApplyCanonicalSlices(state, runtimeService.GetBoardCanonicalState());
+        state = ApplyCanonicalSlices(state, boardStateService.CurrentCanonicalState);
 
-        runtimeService.BoardCanonicalStateChanged += HandleCanonicalStateChanged;
+        boardStateService.BoardCanonicalStateChanged += HandleCanonicalStateChanged;
     }
 
     public event EventHandler<BoardStoreChangedEventArgs>? StateChanged;
@@ -110,7 +111,7 @@ public sealed class BoardStore : IDisposable
 
     public BoardInfoState GetBoardInfo()
     {
-        return new(state.BoardId, "embedded-v8");
+        return new(state.BoardId, boardStateService.ClientId);
     }
 
     public BoardCanvasLayoutState GetCanvasLayout()
@@ -1760,7 +1761,7 @@ public sealed class BoardStore : IDisposable
 
     public void Dispose()
     {
-        runtimeService.BoardCanonicalStateChanged -= HandleCanonicalStateChanged;
+        boardStateService.BoardCanonicalStateChanged -= HandleCanonicalStateChanged;
     }
 
     private interface IBoardStoreAction;

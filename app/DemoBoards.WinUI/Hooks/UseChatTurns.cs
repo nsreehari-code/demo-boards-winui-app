@@ -46,12 +46,14 @@ public abstract partial class HookComponent<TProps>
     protected ChatTurns? UseChatTurns(string boardId, string cardId)
     {
         ChatState? chat = UseChatState(boardId, cardId);
-        EmbeddedBoardClient client = App.Current.BoardClient;
+        EmbeddedBoardClient client = UseEmbeddedClient();
 
         Func<string, int, Task<IReadOnlyList<IReadOnlyDictionary<string, object?>>>> loadPreviousTurns =
             UseMemo<Func<string, int, Task<IReadOnlyList<IReadOnlyDictionary<string, object?>>>>>(
                 () => (beforeTurnId, turns) => FetchChatMessagesBeforeTurnAsync(client, cardId, beforeTurnId, turns),
-                cardId);
+                cardId,
+                chat?.BoardSseClientId ?? string.Empty,
+                client.LiveBoardStateServerBaseUri.AbsoluteUri);
 
         return UseMemo<ChatTurns?>(
             () => chat is null ? null : new ChatTurns(chat, loadPreviousTurns),

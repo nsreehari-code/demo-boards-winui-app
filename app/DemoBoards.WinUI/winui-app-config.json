@@ -2,6 +2,7 @@
   "repoRoot": "${repoRoot}",
   "frontend": {
     "defaultBoardId": "live-test-frontend",
+    "serverUrl": "http://localhost:7799",
     "boardServerConstants": {
       "agentOutputChannel": "agent-output",
       "agentToolsChannel": "agent-tools"
@@ -17,7 +18,6 @@
   },
   "backend": {
     "nsCodeRepoRoot": "${repoRoot}/demo-boards-ns-code",
-    "hostInvocationRunnerPath": "${repoRoot}/demo-boards-winui-app/app/DemoBoards.RuntimeHost/node/host-invocation-runner.mjs",
     "agentfacePort": 7799,
     "requireFixedAgentfacePort": true,
     "hostConfigPath": "${nsCodeRepoRoot}/demo-board/server/hosted-board-runtime/hosted-board-runtime.localfs.config.json",

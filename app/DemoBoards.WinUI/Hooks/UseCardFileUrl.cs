@@ -20,7 +20,7 @@ public abstract partial class HookComponent<TProps>
     /// <summary>Port of <c>useCardFileUrl</c>: the attachment's download URL, or '' when unknown/invalid.</summary>
     protected string UseCardFileUrl(string boardId, string cardId, int index, IReadOnlyDictionary<string, object?>? file)
     {
-        EmbeddedBoardClient client = App.Current.BoardClient;
+        EmbeddedBoardClient client = UseEmbeddedClient();
         string storedName = file is null ? string.Empty : BoardData.Str(file, "stored_name") ?? string.Empty;
 
         // Synchronous initial resolve, matching the frontend's resolveCardFileUrl fast path.
@@ -37,7 +37,8 @@ public abstract partial class HookComponent<TProps>
             boardId,
             cardId,
             index,
-            storedName);
+            storedName,
+            client.ServerBaseUri.AbsoluteUri);
 
         return href;
     }

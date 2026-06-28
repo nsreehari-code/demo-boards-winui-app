@@ -45,6 +45,7 @@ public static class HostIconSources
     public const string Compass = "ms-appx:///Assets/Icons/compass.svg";
     public const string Diagram3 = "ms-appx:///Assets/Icons/diagram-3.svg";
     public const string BoundingBox = "ms-appx:///Assets/Icons/bounding-box.svg";
+    public const string Check2Circle = "ms-appx:///Assets/Icons/check2-circle.svg";
     public const string ExclamationTriangleFill = "ms-appx:///Assets/Icons/exclamation-triangle-fill.svg";
     public const string Flask = "ms-appx:///Assets/Icons/flask.svg";
     public const string BrightnessHigh = "ms-appx:///Assets/Icons/brightness-high.svg";

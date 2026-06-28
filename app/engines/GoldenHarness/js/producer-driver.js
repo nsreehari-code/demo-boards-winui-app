@@ -82,6 +82,95 @@ function createSyntheticResponse() {
   };
 }
 
+function toBase64Url(raw) {
+  var utf8 = new TextEncoder().encode(String(raw));
+  if (globalThis.Buffer && typeof globalThis.Buffer.from === 'function') {
+    return globalThis.Buffer.from(utf8).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+  }
+  if (typeof btoa === 'function') {
+    var binary = '';
+    for (var i = 0; i < utf8.length; i += 1) {
+      binary += String.fromCharCode(utf8[i]);
+    }
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+  }
+  throw new Error('No base64 encoder available in this runtime');
+}
+
+function fromBase64Url(input) {
+  var base64 = String(input || '').replace(/-/g, '+').replace(/_/g, '/');
+  while (base64.length % 4 !== 0) {
+    base64 += '=';
+  }
+  if (globalThis.Buffer && typeof globalThis.Buffer.from === 'function') {
+    return globalThis.Buffer.from(base64, 'base64').toString('utf8');
+  }
+  if (typeof atob === 'function') {
+    var binary = atob(base64);
+    var bytes = new Uint8Array(binary.length);
+    for (var i = 0; i < binary.length; i += 1) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return new TextDecoder().decode(bytes);
+  }
+  throw new Error('No base64 decoder available in this runtime');
+}
+
+function serializeRef(ref) {
+  return 'b64:' + toBase64Url(JSON.stringify(ref));
+}
+
+function parseRef(ref) {
+  if (ref && typeof ref === 'object' && !Array.isArray(ref)
+    && typeof ref.kind === 'string' && typeof ref.value === 'string') {
+    return { kind: ref.kind, value: ref.value };
+  }
+  if (typeof ref !== 'string') {
+    return null;
+  }
+  var trimmed = ref.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (trimmed[0] === '{') {
+    try {
+      var parsedJson = JSON.parse(trimmed);
+      if (parsedJson && typeof parsedJson === 'object' && !Array.isArray(parsedJson)
+        && typeof parsedJson.kind === 'string' && typeof parsedJson.value === 'string') {
+        return { kind: parsedJson.kind, value: parsedJson.value };
+      }
+    } catch (e) {}
+    return null;
+  }
+  if (!trimmed.startsWith('b64:')) {
+    return null;
+  }
+  try {
+    var decoded = JSON.parse(fromBase64Url(trimmed.slice(4)));
+    if (decoded && typeof decoded === 'object' && !Array.isArray(decoded)
+      && typeof decoded.kind === 'string' && typeof decoded.value === 'string') {
+      return { kind: decoded.kind, value: decoded.value };
+    }
+  } catch (e) {}
+  return null;
+}
+
+function normalizeSerializedRef(ref) {
+  if (typeof ref === 'string' && ref.trim()) {
+    return ref.trim();
+  }
+  var parsed = parseRef(ref);
+  return parsed ? serializeRef(parsed) : '';
+}
+
+function appendPathSegment(basePath, segment) {
+  var normalizedBase = String(basePath || '').replace(/[\\/]+$/, '');
+  if (!normalizedBase) {
+    return String(segment || '');
+  }
+  return normalizedBase + '/' + String(segment || '').replace(/^[\\/]+/, '');
+}
+
 function createParsedUrl(pathAndQuery) {
   var parts = String(pathAndQuery || '').split('?');
   var pathname = parts[0] || '/';
@@ -203,8 +292,68 @@ function createManagedBoardsApi() {
       },
     },
   });
+  function resolveBoardConfig(boardId, record) {
+    if (typeof bridge.ResolveBoardConfig !== 'function') {
+      return record || null;
+    }
+    var raw = bridge.ResolveBoardConfig(String(boardId || ''), JSON.stringify(record || {}));
+    var parsed = raw && String(raw).trim() ? JSON.parse(raw) : null;
+    if (parsed && typeof parsed === 'object' && parsed.resolvedBoardConfig && typeof parsed.resolvedBoardConfig === 'object') {
+      return parsed.resolvedBoardConfig;
+    }
+    return parsed || record || null;
+  }
+  function hydrateBoard(board) {
+    if (!board || typeof board !== 'object') {
+      return null;
+    }
+    var boardId = typeof board.id === 'string' ? board.id.trim() : '';
+    return resolveBoardConfig(boardId, board);
+  }
+  var hydratedLifecycle = {
+    list: function () {
+      return Promise.resolve(lifecycle.list()).then(function (boards) {
+        return (Array.isArray(boards) ? boards : []).map(hydrateBoard).filter(Boolean);
+      });
+    },
+    get: function (boardId) {
+      return Promise.resolve(lifecycle.get(boardId)).then(hydrateBoard);
+    },
+    has: function (boardId) {
+      return lifecycle.has(boardId);
+    },
+    provision: function (boardId, record, options) {
+      return Promise.resolve(lifecycle.provision(boardId, record, options)).then(hydrateBoard);
+    },
+    saveMeta: function (boardId, metadata) {
+      return Promise.resolve(lifecycle.saveMeta(boardId, metadata)).then(hydrateBoard);
+    },
+    saveRecord: function (boardId, record) {
+      return Promise.resolve(lifecycle.saveRecord(boardId, record)).then(hydrateBoard);
+    },
+    deprecate: function (boardId) {
+      return Promise.resolve(lifecycle.deprecate(boardId)).then(function (archived) {
+        if (!archived || typeof archived !== 'object') {
+          return archived;
+        }
+        if (archived.board && typeof archived.board === 'object') {
+          return Object.assign({}, archived, { board: hydrateBoard(archived.board) });
+        }
+        return archived;
+      });
+    },
+    getLayout: typeof lifecycle.getLayout === 'function'
+      ? function (boardId) { return lifecycle.getLayout(boardId); }
+      : undefined,
+    saveLayout: typeof lifecycle.saveLayout === 'function'
+      ? function (boardId, layout) { return lifecycle.saveLayout(boardId, layout); }
+      : undefined,
+    removeLayout: typeof lifecycle.removeLayout === 'function'
+      ? function (boardId) { return lifecycle.removeLayout(boardId); }
+      : undefined,
+  };
   return shared.createManagedBoardsApi({
-    lifecycle: lifecycle,
+    lifecycle: hydratedLifecycle,
     hostBridge: bridge,
     getActiveBoardId: function () {
       return globalThis.__winuiBoardId || '';
@@ -212,17 +361,7 @@ function createManagedBoardsApi() {
     invokeRuntimeRoute: function (method, path, bodyText) {
       return winuiHandleRuntimeApi(method, path, bodyText, '{}');
     },
-    resolveBoardConfig: function (boardId, record) {
-      if (typeof bridge.ResolveBoardConfig !== 'function') {
-        return null;
-      }
-      var raw = bridge.ResolveBoardConfig(String(boardId || ''), JSON.stringify(record || {}));
-      var parsed = raw && String(raw).trim() ? JSON.parse(raw) : null;
-      if (parsed && typeof parsed === 'object' && parsed.resolvedBoardConfig && typeof parsed.resolvedBoardConfig === 'object') {
-        return parsed.resolvedBoardConfig;
-      }
-      return parsed;
-    },
+    resolveBoardConfig: resolveBoardConfig,
     ensureWorkspace: function (board) {
       if (typeof bridge.SetupBoardWorkspace !== 'function') {
         return;
@@ -289,9 +428,83 @@ async function bootstrapRuntime(runtime) {
     var syn = createSyntheticResponse();
     await runtime.handleRuntimeApi(req, syn.res, parsedOneShotUrl);
   }
+  await drainRuntimeQueueLanes(runtime);
+}
+
+function attachRuntimeQueueLaneState(runtime, boardId, bundle) {
+  if (!runtime || typeof runtime !== 'object') {
+    return runtime;
+  }
+  runtime.__winuiQueueBoardId = String(boardId || '');
+  runtime.__winuiQueueBundle = bundle || null;
+  return runtime;
+}
+
+function ensureRuntimeQueueLaneRegistry(runtime) {
+  if (!runtime || typeof runtime !== 'object') {
+    return null;
+  }
+  if (runtime.__winuiQueueLaneRegistry) {
+    return runtime.__winuiQueueLaneRegistry;
+  }
+  var boardId = typeof runtime.__winuiQueueBoardId === 'string' ? runtime.__winuiQueueBoardId : '';
+  var bundle = runtime.__winuiQueueBundle;
+  if (!boardId || !bundle || !bundle.boardAdapter) {
+    return null;
+  }
+  if (!globalThis.ServerRuntimeControlface
+    || typeof ServerRuntimeControlface.createHostedBoardQueueLaneRegistry !== 'function'
+    || typeof ServerRuntimeControlface.drainQueueLaneToIdle !== 'function') {
+    throw new Error('ServerRuntimeControlface queue lane helpers are required');
+  }
+  runtime.__winuiQueueLaneRegistry = ServerRuntimeControlface.createHostedBoardQueueLaneRegistry({
+    boardId: boardId,
+    queueStoreRef: bundle.refs.queueStoreRef,
+    runtime: runtime,
+    boardAdapter: bundle.boardAdapter,
+    logger: { info: function () {}, warn: function () {}, error: function () {} },
+    executeTaskExecutorRequest: async function (args, request) {
+      await bundle.boardAdapter.dispatchExecution(request.ref, args || {});
+    },
+  });
+  return runtime.__winuiQueueLaneRegistry;
+}
+
+async function drainRuntimeQueueLanes(runtime) {
+  var registry = ensureRuntimeQueueLaneRegistry(runtime);
+  if (registry && Array.isArray(registry.lanes)) {
+    for (var i = 0; i < registry.lanes.length; i += 1) {
+      await ServerRuntimeControlface.drainQueueLaneToIdle(registry.lanes[i]);
+    }
+    return;
+  }
   if (typeof runtime.__drainProcessAccumulatedLane === 'function') {
     await runtime.__drainProcessAccumulatedLane();
   }
+}
+
+async function winuiPumpRuntimeQueues(boardId) {
+  var runtimes = [];
+  if (boardId != null && String(boardId || '').trim()) {
+    runtimes.push(getWinuiRuntime(boardId));
+  } else {
+    var registry = getWinuiRuntimeRegistry();
+    if (registry && typeof registry.forEach === 'function') {
+      registry.forEach(function (runtime) {
+        if (runtime) {
+          runtimes.push(runtime);
+        }
+      });
+    }
+    if (runtimes.length === 0 && globalThis.__winuiRuntime) {
+      runtimes.push(globalThis.__winuiRuntime);
+    }
+  }
+
+  for (var i = 0; i < runtimes.length; i += 1) {
+    await drainRuntimeQueueLanes(runtimes[i]);
+  }
+  return JSON.stringify({ ok: true });
 }
 
 function createRuntimeOptions(boardId, bundle, invocationAdapter, extras) {
@@ -364,18 +577,37 @@ async function runProducerPayload(boardId, cardsJson) {
   return JSON.stringify(canonical(payload), null, 2) + '\n';
 }
 
-function createHostRefs(boardId) {
+function createHostRefs(boardId, boardConfig) {
+  var resolvedRefs = boardConfig && boardConfig.refs && typeof boardConfig.refs === 'object' && !Array.isArray(boardConfig.refs)
+    ? boardConfig.refs
+    : null;
   var root = 'boards:' + boardId;
   return {
-    baseRef: { kind: 'local-storage', value: root },
-    boardRuntimeStoreRef: root + ':runtime-board',
-    cardStoreRef: root + ':cards',
-    outputsStoreRef: root + ':runtime-out',
-    queueStoreRef: root + ':runtime',
-    scratchStoreRef: root + ':scratch',
-    chatStoreRef: root + ':chat',
-    artifactsStoreRef: root + ':files',
-    fetchedSourcesStoreRef: root + ':sources',
+    baseRef: parseRef(resolvedRefs?.baseRef) || { kind: 'local-storage', value: root },
+    boardRuntimeStoreRef: normalizeSerializedRef(resolvedRefs?.boardRuntimeStoreRef)
+      ? normalizeSerializedRef(resolvedRefs?.boardRuntimeStoreRef)
+      : root + ':runtime-board',
+    cardStoreRef: normalizeSerializedRef(resolvedRefs?.cardStoreRef)
+      ? normalizeSerializedRef(resolvedRefs?.cardStoreRef)
+      : root + ':cards',
+    outputsStoreRef: normalizeSerializedRef(resolvedRefs?.outputsStoreRef)
+      ? normalizeSerializedRef(resolvedRefs?.outputsStoreRef)
+      : root + ':runtime-out',
+    queueStoreRef: normalizeSerializedRef(resolvedRefs?.queueStoreRef)
+      ? normalizeSerializedRef(resolvedRefs?.queueStoreRef)
+      : root + ':runtime',
+    scratchStoreRef: normalizeSerializedRef(resolvedRefs?.scratchStoreRef)
+      ? normalizeSerializedRef(resolvedRefs?.scratchStoreRef)
+      : root + ':scratch',
+    chatStoreRef: normalizeSerializedRef(resolvedRefs?.chatStoreRef)
+      ? normalizeSerializedRef(resolvedRefs?.chatStoreRef)
+      : root + ':chat',
+    artifactsStoreRef: normalizeSerializedRef(resolvedRefs?.artifactsStoreRef)
+      ? normalizeSerializedRef(resolvedRefs?.artifactsStoreRef)
+      : root + ':files',
+    fetchedSourcesStoreRef: normalizeSerializedRef(resolvedRefs?.fetchedSourcesStoreRef)
+      ? normalizeSerializedRef(resolvedRefs?.fetchedSourcesStoreRef)
+      : root + ':sources',
   };
 }
 
@@ -387,12 +619,12 @@ function createDeterministicIdGenerator() {
   };
 }
 
-function createHostBridgeBundle(boardId) {
+function createHostBridgeBundle(boardId, boardConfig) {
   if (!globalThis.HostStorageBridge) {
     throw new Error('HostStorageBridge is required for the embedded-host producer path');
   }
 
-  var refs = createHostRefs(boardId);
+  var refs = createHostRefs(boardId, boardConfig);
   var nextId = createDeterministicIdGenerator();
 
   function parseJsonOrNull(raw) {
@@ -490,6 +722,17 @@ function createHostBridgeBundle(boardId) {
         return JSON.parse(HostStorageBridge.QueuePeekStagedJson(scope, prefix || null));
       },
     };
+  }
+
+  function createQueueStorageForRef(ref, lane) {
+    var parsedRef = parseRef(ref);
+    if (parsedRef && parsedRef.kind === 'fs-path') {
+      return createQueueStorage(serializeRef({
+        kind: 'fs-path',
+        value: appendPathSegment(parsedRef.value, lane),
+      }));
+    }
+    return createQueueStorage(String(ref || '') + ':queue:' + lane);
   }
 
   function createChatStorage(scope) {
@@ -614,7 +857,7 @@ function createHostBridgeBundle(boardId) {
         return createBlobStorage(ref);
       },
       chatStorageForRef: function (ref) { return createChatStorage(ref); },
-      queueStorageForRef: function (ref, lane) { return createQueueStorage(ref + ':queue:' + lane); },
+      queueStorageForRef: function (ref, lane) { return createQueueStorageForRef(ref, lane); },
       scratchStorage: function () { return createScratchStorage(refs.scratchStoreRef); },
       scratchStorageForRef: function (ref) { return createScratchStorage(ref); },
       archiveFactory: function () { return createArchiveFactory(refs.baseRef.value + ':archive'); },
@@ -715,7 +958,7 @@ function createHostInvocationAdapter() {
 function createHostTaskExecutorRef(boardId) {
   return {
     meta: 'task-executor',
-    howToRun: 'embedded-host',
+    howToRun: 'queue-storage',
     whatToRun: {
       kind: 'embedded-host',
       value: 'board-worker',
@@ -760,9 +1003,9 @@ function createHostChatFlowRunner() {
 
 async function buildHostBackedProducerPayload(boardId, cards) {
   const bundle = createHostBridgeBundle(boardId);
-  const runtime = ServerRuntimeControlface.createSingleBoardServerRuntime(
+  const runtime = attachRuntimeQueueLaneState(ServerRuntimeControlface.createSingleBoardServerRuntime(
     createRuntimeOptions(boardId, bundle, createHostInvocationAdapter())
-  );
+  ), boardId, bundle);
 
   const seed = await runtime.cardStore.set({ body: cards });
   if (!seed || seed.status !== 'success') {
@@ -826,7 +1069,9 @@ async function initWinuiRuntime(boardId, cardsJson) {
 
   await winuiEnsureBoardSeeded(boardId);
 
-  return JSON.stringify(canonical(await runtime.buildPublishedRuntimePayload()), null, 2) + '\n';
+  globalThis.__winuiRuntime = await ensureWinuiRuntime(boardId);
+
+  return JSON.stringify(canonical(await globalThis.__winuiRuntime.buildPublishedRuntimePayload()), null, 2) + '\n';
 }
 
 // Warm-start bootstrap parity with the hosted controlface server: the initial board's
@@ -897,9 +1142,39 @@ function getWinuiRuntimeRegistry() {
   return globalThis.__winuiRuntimes;
 }
 
-async function buildWinuiRuntime(boardId, cards) {
+function getResolvedBoardRuntimeConfig(boardId) {
+  var normalizedBoardId = String(boardId || '');
+  if (!normalizedBoardId) {
+    return null;
+  }
+  var bridge = getHostControlfaceBridge();
+  if (typeof bridge.HasBoardContainerRecord !== 'function') {
+    return null;
+  }
+  try {
+    if (!bridge.HasBoardContainerRecord(normalizedBoardId)) {
+      return null;
+    }
+    var existingRaw = bridge.GetBoardContainerRecordJson(normalizedBoardId);
+    var existingRecord = existingRaw && String(existingRaw).trim() ? JSON.parse(existingRaw) : null;
+    return existingRecord ? resolveBoardConfig(normalizedBoardId, existingRecord) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function runtimeNeedsResolvedRefs(runtime, boardConfig) {
+  if (!runtime || !boardConfig || !boardConfig.refs || typeof boardConfig.refs !== 'object') {
+    return false;
+  }
+  var expectedQueueStoreRef = normalizeSerializedRef(boardConfig.refs.queueStoreRef);
+  var currentQueueStoreRef = normalizeSerializedRef(runtime.__winuiQueueBundle?.refs?.queueStoreRef);
+  return !!expectedQueueStoreRef && expectedQueueStoreRef !== currentQueueStoreRef;
+}
+
+async function buildWinuiRuntime(boardId, cards, boardConfig) {
   const normalizedBoardId = String(boardId || '');
-  const bundle = createHostBridgeBundle(normalizedBoardId);
+  const bundle = createHostBridgeBundle(normalizedBoardId, boardConfig || null);
 
   if (globalThis.HostNotifier) {
     bundle.boardAdapter.publishBoardChangeNotifications = function (notifications) {
@@ -910,9 +1185,9 @@ async function buildWinuiRuntime(boardId, cards) {
     };
   }
 
-  const runtime = ServerRuntimeControlface.createSingleBoardServerRuntime(
+  const runtime = attachRuntimeQueueLaneState(ServerRuntimeControlface.createSingleBoardServerRuntime(
     createRuntimeOptions(normalizedBoardId, bundle, createHostInvocationAdapter())
-  );
+  ), normalizedBoardId, bundle);
 
   const seed = await runtime.cardStore.set({ body: Array.isArray(cards) ? cards : [] });
   if (!seed || seed.status !== 'success') {
@@ -930,14 +1205,30 @@ async function buildWinuiRuntime(boardId, cards) {
 async function ensureWinuiRuntime(boardId) {
   const normalizedBoardId = String(boardId || '');
   const registry = getWinuiRuntimeRegistry();
+  const resolvedBoardConfig = getResolvedBoardRuntimeConfig(normalizedBoardId);
   if (registry.has(normalizedBoardId)) {
-    return registry.get(normalizedBoardId);
+    const existingRuntime = registry.get(normalizedBoardId);
+    if (!runtimeNeedsResolvedRefs(existingRuntime, resolvedBoardConfig)) {
+      return existingRuntime;
+    }
+    const reboundRuntime = await buildWinuiRuntime(normalizedBoardId, [], resolvedBoardConfig);
+    if (normalizedBoardId === globalThis.__winuiBoardId) {
+      globalThis.__winuiRuntime = reboundRuntime;
+    }
+    registry.set(normalizedBoardId, reboundRuntime);
+    return reboundRuntime;
   }
   if (normalizedBoardId && normalizedBoardId === globalThis.__winuiBoardId && globalThis.__winuiRuntime) {
-    registry.set(normalizedBoardId, globalThis.__winuiRuntime);
-    return globalThis.__winuiRuntime;
+    if (!runtimeNeedsResolvedRefs(globalThis.__winuiRuntime, resolvedBoardConfig)) {
+      registry.set(normalizedBoardId, globalThis.__winuiRuntime);
+      return globalThis.__winuiRuntime;
+    }
   }
-  return await buildWinuiRuntime(normalizedBoardId, []);
+  const runtime = await buildWinuiRuntime(normalizedBoardId, [], resolvedBoardConfig);
+  if (normalizedBoardId === globalThis.__winuiBoardId) {
+    globalThis.__winuiRuntime = runtime;
+  }
+  return runtime;
 }
 
 // invokeRuntimeTool adapter: routes a control-plane/runtime tool call directly into a
@@ -956,9 +1247,7 @@ async function invokeWinuiRuntimeTool(runtime, boardId, routeKind, payload) {
   const response = createSyntheticResponse();
 
   await runtime.handleRuntimeApi(request, response.res, parsedUrl);
-  if (typeof runtime.__drainProcessAccumulatedLane === 'function') {
-    await runtime.__drainProcessAccumulatedLane();
-  }
+  await drainRuntimeQueueLanes(runtime);
 
   const statusCode = response.statusCode();
   const bodyText = response.body();
@@ -1049,9 +1338,7 @@ async function winuiHandleRuntimeApi(method, path, bodyText, requestHeadersJson)
   const response = createSyntheticResponse();
 
   await runtime.handleRuntimeApi(request, response.res, parsedUrl);
-  if (typeof runtime.__drainProcessAccumulatedLane === 'function') {
-    await runtime.__drainProcessAccumulatedLane();
-  }
+  await drainRuntimeQueueLanes(runtime);
 
   return JSON.stringify({
     statusCode: response.statusCode(),

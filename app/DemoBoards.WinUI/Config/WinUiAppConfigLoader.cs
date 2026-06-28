@@ -48,8 +48,6 @@ public static class WinUiAppConfigLoader
         WinUiBackendAppConfig backendDefaults = WinUiBackendAppConfig.CreateDefault(configuredRepoRoot, nsCodeRepoRoot, baseDirectory);
         WinUiBackendAppConfig backendConfig = new(
             nsCodeRepoRoot,
-            RuntimeAssetResolver.ResolvePathTemplate(backend["hostInvocationRunnerPath"]?.GetValue<string>(), configuredRepoRoot, baseDirectory, nsCodeRepoRoot)
-                ?? backendDefaults.HostInvocationRunnerPath,
             ReadPositiveInt(backend, "agentfacePort", backendDefaults.AgentfacePort),
             ReadBool(backend, "requireFixedAgentfacePort", backendDefaults.RequireFixedAgentfacePort),
             RuntimeAssetResolver.ResolvePathTemplate(backend["hostConfigPath"]?.GetValue<string>(), configuredRepoRoot, baseDirectory, nsCodeRepoRoot)
@@ -66,18 +64,18 @@ public static class WinUiAppConfigLoader
                 ?? backendDefaults.AssistantRegistryPath);
 
         EnsureDirectoryExists(backendConfig.NsCodeRepoRoot, "backend.nsCodeRepoRoot");
-        EnsureFileExists(backendConfig.HostInvocationRunnerPath, "backend.hostInvocationRunnerPath");
 
         WinUiBoardServerConstants serverConstants = new(
             ReadRequiredString(boardServerConstants, "agentOutputChannel", WinUiBoardServerConstants.Default.AgentOutputChannel),
             ReadRequiredString(boardServerConstants, "agentToolsChannel", WinUiBoardServerConstants.Default.AgentToolsChannel));
 
         string defaultBoardId = ReadRequiredString(frontend, "defaultBoardId", WinUiFrontendAppConfig.Default.DefaultBoardId);
+        string initialServerUrl = ReadRequiredString(frontend, "serverUrl", $"http://localhost:{backendConfig.AgentfacePort}");
 
         return new WinUiAppConfig(
             appConfigPath,
             configuredRepoRoot,
-            new WinUiFrontendAppConfig(canvasLayout, serverConstants, defaultBoardId),
+            new WinUiFrontendAppConfig(canvasLayout, serverConstants, defaultBoardId, initialServerUrl),
             backendConfig);
     }
 

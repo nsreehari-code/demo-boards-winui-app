@@ -1,9 +1,10 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <AssemblyName>deprecated.DemoBoards.RuntimeHost</AssemblyName>
   </PropertyGroup>
 
   <ItemGroup>
@@ -31,16 +32,16 @@
         <None Include="..\..\..\demo-boards-ns-code\demo-board\server\hosted-board-runtime\host-shared\agentface-embedded-shared.js"
           Link="js\agentface-embedded-shared.js"
           CopyToOutputDirectory="PreserveNewest" />
-      <None Include="..\..\..\yaml-flow\browser\compute-jsonata.js"
+      <None Include="..\..\..\demo-boards-ns-code\node_modules\yaml-flow\browser\compute-jsonata.js"
           Link="js\compute-jsonata.js"
           CopyToOutputDirectory="PreserveNewest" />
-        <None Include="..\..\..\yaml-flow\browser\board-sse-state.js"
+        <None Include="..\..\..\demo-boards-ns-code\node_modules\yaml-flow\browser\board-sse-state.js"
           Link="js\board-sse-state.js"
           CopyToOutputDirectory="PreserveNewest" />
         <None Include="js\board-sse-reducer-host.js"
           Link="js\board-sse-reducer-host.js"
           CopyToOutputDirectory="PreserveNewest" />
-      <None Include="..\..\..\yaml-flow\browser\server-runtime-controlface.js"
+        <None Include="..\..\..\demo-boards-ns-code\node_modules\yaml-flow\browser\server-runtime-controlface.js"
           Link="js\server-runtime-controlface.js"
           CopyToOutputDirectory="PreserveNewest" />
         <None Include="..\..\..\demo-boards-ns-code\demo-board\server\hosted-board-runtime\sample-card-templates\*.json"

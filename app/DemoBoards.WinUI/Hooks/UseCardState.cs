@@ -54,7 +54,7 @@ public abstract partial class HookComponent<TProps>
     protected CardState? UseCardState(string boardId, string cardId)
     {
         BoardStore store = UseBoardStoreSubscription(includeUiState: false);
-        EmbeddedBoardClient client = App.Current.BoardClient;
+        EmbeddedBoardClient client = UseEmbeddedClient();
         BoardInfoState boardInfo = store.GetBoardInfo();
         string? boardSseClientId = string.IsNullOrEmpty(boardInfo.ClientId) ? null : boardInfo.ClientId;
         BoardCardState? cardState = string.IsNullOrEmpty(cardId) ? null : store.GetCardState(cardId);
@@ -71,7 +71,8 @@ public abstract partial class HookComponent<TProps>
             cardId,
             canRefresh,
             cardContentSignature,
-            requiresSignature);
+            requiresSignature,
+            client.ServerBaseUri.AbsoluteUri);
 
         if (cardState is null || string.IsNullOrEmpty(cardId))
         {

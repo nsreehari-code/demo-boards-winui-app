@@ -32,19 +32,22 @@ public abstract partial class HookComponent<TProps>
     /// </summary>
     protected BoardStore UseBoardStoreSubscription(bool includeUiState = true)
     {
-        BoardStore store = App.Current.BoardStore;
+        App app = App.Current;
+        BoardStore store = app.BoardStore;
         var (_, setRevision) = UseState(string.Empty);
 
         UseEffect(() =>
         {
             EventHandler<BoardStoreChangedEventArgs> onStateChanged = (_, _) => setRevision(Guid.NewGuid().ToString("N"));
             EventHandler<BoardUiState> onUiStateChanged = (_, _) => setRevision(Guid.NewGuid().ToString("N"));
+            EventHandler<BoardSessionChangedEventArgs> onSessionChanged = (_, _) => setRevision(Guid.NewGuid().ToString("N"));
 
             store.StateChanged += onStateChanged;
             if (includeUiState)
             {
                 store.UiStateChanged += onUiStateChanged;
             }
+            app.SessionChanged += onSessionChanged;
 
             return () =>
             {
@@ -53,6 +56,8 @@ public abstract partial class HookComponent<TProps>
                 {
                     store.UiStateChanged -= onUiStateChanged;
                 }
+
+                app.SessionChanged -= onSessionChanged;
             };
         });
 

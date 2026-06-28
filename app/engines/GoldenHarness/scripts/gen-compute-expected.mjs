@@ -1,6 +1,6 @@
 // Generate the cross-engine compute oracle.
 //
-// Loads the SAME vendored jsonata bundle (yaml-flow/browser/compute-jsonata.js)
+// Loads the SAME vendored jsonata bundle (demo-boards-ns-code/node_modules/yaml-flow/browser/compute-jsonata.js)
 // the embedded V8 harness loads, evaluates every case in Node's V8, and writes
 // the serialized results to compute-cases.expected.json. The C# harness then
 // evaluates the same cases in ClearScript V8 and asserts byte-identical results,
@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..', '..', '..', '..'); // -> ai-tool-evolver/
-const bundlePath = path.join(repoRoot, 'yaml-flow', 'browser', 'compute-jsonata.js');
+const bundlePath = path.join(repoRoot, 'demo-boards-ns-code', 'node_modules', 'yaml-flow', 'browser', 'compute-jsonata.js');
 const casesPath = path.resolve(here, '..', 'fixtures', 'compute-cases.json');
 const expectedPath = path.resolve(here, '..', 'fixtures', 'compute-cases.expected.json');
 

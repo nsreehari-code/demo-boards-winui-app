@@ -56,7 +56,7 @@ public abstract partial class HookComponent<TProps>
     {
         BoardInfoState boardInfo = UseBoardInfo();
         string? boardSseClientId = string.IsNullOrEmpty(boardInfo.ClientId) ? null : boardInfo.ClientId;
-        EmbeddedBoardClient client = App.Current.BoardClient;
+        EmbeddedBoardClient client = UseEmbeddedClient();
 
         return UseMemo<ChatActions>(
             () => new ChatActions(
@@ -86,14 +86,15 @@ public abstract partial class HookComponent<TProps>
                 UnsubscribeChat: () =>
                     boardSseClientId is null ? Task.CompletedTask : client.UnsubscribeCardChatsAsync(cardId)),
             cardId,
-            boardSseClientId ?? string.Empty);
+            boardSseClientId ?? string.Empty,
+            client.LiveBoardStateServerBaseUri.AbsoluteUri);
     }
 
     /// <summary>Port of <c>useReducedWatchParty</c>: subscribes the agent-output/tools channels and reduces the slice.</summary>
     protected ChatWatchParty UseReducedWatchParty(string boardId, string cardId, string? boardSseClientId)
     {
         BoardWatchpartyState watchParty = UseCardWatchParty(cardId);
-        EmbeddedBoardClient client = App.Current.BoardClient;
+        EmbeddedBoardClient client = UseEmbeddedClient();
         WinUiBoardServerConstants channels = App.Current.HostConfig.Frontend.BoardServerConstants;
 
         UseEffect(

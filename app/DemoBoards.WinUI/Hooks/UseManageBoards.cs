@@ -11,9 +11,9 @@ namespace DemoBoards_WinUI.Hooks;
 //  UseManageBoards — Reactor port of useManageBoards.js
 //
 //  Drives the managed-boards admin surface (list/add/save/import/export). The web hook
-//  POSTs each subcommand to a controlface origin; the embedded app hosts that same
-//  manage-boards endpoint in-process, so every action routes through the generic
-//  EmbeddedBoardClient.ManageBoardsAsync passthrough (the WinUI analog of postManageBoards).
+//  POSTs each subcommand to a controlface origin; the WinUI port accepts that same
+//  server-origin input and routes every action through EmbeddedBoardClient.ManageBoardsAsync,
+//  which is the transport seam mirroring postManageBoards.
 //  State (boards / loading / error) lives in hook UseState, and the list auto-loads on
 //  mount after a short delay, exactly like the web effect.
 // =====================================================================================
@@ -61,7 +61,9 @@ public abstract partial class HookComponent<TProps>
     protected ManageBoards UseManageBoards(ManageBoardsOptions? options = null)
     {
         ManageBoardsOptions opts = options ?? new ManageBoardsOptions();
-        EmbeddedBoardClient client = App.Current.BoardClient;
+        EmbeddedBoardClient client = UseEmbeddedClient();
+        var (serverUrl, _) = UseGlobalState<string>(GlobalStateKeys.ServerUrl, App.Current.HostConfig.Frontend.InitialServerUrl);
+        string normalizedServerUrl = serverUrl?.Trim() ?? string.Empty;
 
         var (boards, setBoards) = UseState<IReadOnlyList<ManagedBoardEntry>>(Array.Empty<ManagedBoardEntry>());
         var (loading, setLoading) = UseState(false);
@@ -273,7 +275,7 @@ public abstract partial class HookComponent<TProps>
 
             _ = AutoLoad();
             return () => { cancelled = true; };
-        }, opts.Enabled, opts.ReloadDelayMs);
+        }, opts.Enabled, opts.ReloadDelayMs, normalizedServerUrl);
 
         var actions = new ManageBoardsActions(
             ListBoards,

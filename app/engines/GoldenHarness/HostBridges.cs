@@ -160,6 +160,11 @@ public sealed class HostStorageBridge
 
     public string QueueEnqueueJson(string scope, string bodyJson, string? dedupKey)
     {
+        if (TryGetFsQueueRoot(scope, out var fsQueueRoot))
+        {
+            return FsQueueEnqueueJson(fsQueueRoot, bodyJson, dedupKey);
+        }
+
         if (!string.IsNullOrEmpty(dedupKey) && FindQueueMessageByDedup(scope, dedupKey) is not null)
         {
             return "null";
@@ -172,6 +177,11 @@ public sealed class HostStorageBridge
 
     public string QueueLeaseJson(string scope, string optsJson)
     {
+        if (TryGetFsQueueRoot(scope, out var fsQueueRoot))
+        {
+            return FsQueueLeaseJson(fsQueueRoot, optsJson);
+        }
+
         var opts = JsonNode.Parse(optsJson)?.AsObject();
         var max = Math.Max(1, opts?["max"]?.GetValue<int?>() ?? 1);
         var visibilityMs = Math.Max(1, opts?["visibilityMs"]?.GetValue<int?>() ?? 30000);
@@ -193,6 +203,11 @@ public sealed class HostStorageBridge
 
     public bool QueueAck(string scope, string messageId, string leaseToken)
     {
+        if (TryGetFsQueueRoot(scope, out var fsQueueRoot))
+        {
+            return FsQueueAck(fsQueueRoot, messageId, leaseToken);
+        }
+
         var node = ReadQueueNode(scope, "leased", messageId);
         if (!LeaseMatches(node, leaseToken)) return false;
         DeleteQueueNode(scope, "leased", messageId);
@@ -201,6 +216,11 @@ public sealed class HostStorageBridge
 
     public bool QueueNack(string scope, string messageId, string leaseToken, bool dead, string? reason)
     {
+        if (TryGetFsQueueRoot(scope, out var fsQueueRoot))
+        {
+            return FsQueueNack(fsQueueRoot, messageId, leaseToken, dead, reason);
+        }
+
         var node = ReadQueueNode(scope, "leased", messageId);
         if (!LeaseMatches(node, leaseToken)) return false;
 
@@ -220,16 +240,31 @@ public sealed class HostStorageBridge
 
     public string QueuePeekActiveJson(string scope, string? prefix)
     {
+        if (TryGetFsQueueRoot(scope, out var fsQueueRoot))
+        {
+            return FsQueuePeekJson(fsQueueRoot, "active", prefix);
+        }
+
         return QueuePeekJson(scope, "active", prefix);
     }
 
     public string QueuePeekDeadLetterJson(string scope, string? prefix)
     {
+        if (TryGetFsQueueRoot(scope, out var fsQueueRoot))
+        {
+            return FsQueuePeekJson(fsQueueRoot, "dead", prefix);
+        }
+
         return QueuePeekJson(scope, "dead", prefix);
     }
 
     public string QueueStageJson(string scope, string bodyJson, string? dedupKey)
     {
+        if (TryGetFsQueueRoot(scope, out var fsQueueRoot))
+        {
+            return FsQueueStageJson(fsQueueRoot, bodyJson, dedupKey);
+        }
+
         if (!string.IsNullOrEmpty(dedupKey) && FindQueueMessageByDedup(scope, dedupKey) is not null)
         {
             return "null";
@@ -242,6 +277,11 @@ public sealed class HostStorageBridge
 
     public bool QueueCommitStaged(string scope, string messageId)
     {
+        if (TryGetFsQueueRoot(scope, out var fsQueueRoot))
+        {
+            return FsQueueCommitStaged(fsQueueRoot, messageId);
+        }
+
         var node = ReadQueueNode(scope, "staged", messageId);
         if (node is null) return false;
 
@@ -254,6 +294,11 @@ public sealed class HostStorageBridge
 
     public bool QueueDiscardStaged(string scope, string messageId, string? reason)
     {
+        if (TryGetFsQueueRoot(scope, out var fsQueueRoot))
+        {
+            return FsQueueDiscardStaged(fsQueueRoot, messageId, reason);
+        }
+
         var node = ReadQueueNode(scope, "staged", messageId);
         if (node is null) return false;
 
@@ -265,6 +310,11 @@ public sealed class HostStorageBridge
 
     public string QueuePeekStagedJson(string scope, string? prefix)
     {
+        if (TryGetFsQueueRoot(scope, out var fsQueueRoot))
+        {
+            return FsQueuePeekJson(fsQueueRoot, "staged", prefix);
+        }
+
         return QueuePeekJson(scope, "staged", prefix);
     }
 
@@ -283,6 +333,292 @@ public sealed class HostStorageBridge
     {
         return node is not null && string.Equals(node["leaseToken"]?.GetValue<string>(), leaseToken, StringComparison.Ordinal);
     }
+
+    private bool TryGetFsQueueRoot(string scope, out string queueRoot)
+    {
+        queueRoot = string.Empty;
+        if (!TryParseKindValueRef(scope, out var kind, out var value)) return false;
+        if (!string.Equals(kind, "fs-path", StringComparison.Ordinal) || string.IsNullOrWhiteSpace(value)) return false;
+        queueRoot = Path.GetFullPath(value);
+        return true;
+    }
+
+    private static bool TryParseKindValueRef(string raw, out string kind, out string value)
+    {
+        kind = string.Empty;
+        value = string.Empty;
+        if (string.IsNullOrWhiteSpace(raw)) return false;
+
+        var trimmed = raw.Trim();
+        try
+        {
+            JsonNode? node;
+            if (trimmed.StartsWith("b64:", StringComparison.Ordinal))
+            {
+                var encoded = trimmed.Substring(4).Replace('-', '+').Replace('_', '/');
+                encoded = encoded.PadRight(encoded.Length + ((4 - (encoded.Length % 4)) % 4), '=');
+                var json = Encoding.UTF8.GetString(Convert.FromBase64String(encoded));
+                node = JsonNode.Parse(json);
+            }
+            else if (trimmed.StartsWith("{", StringComparison.Ordinal))
+            {
+                node = JsonNode.Parse(trimmed);
+            }
+            else
+            {
+                return false;
+            }
+
+            var obj = node?.AsObject();
+            var parsedKind = obj?["kind"]?.GetValue<string>();
+            var parsedValue = obj?["value"]?.GetValue<string>();
+            if (string.IsNullOrWhiteSpace(parsedKind) || string.IsNullOrWhiteSpace(parsedValue)) return false;
+            kind = parsedKind;
+            value = parsedValue;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private string FsQueueEnqueueJson(string queueRoot, string bodyJson, string? dedupKey)
+    {
+        if (!string.IsNullOrEmpty(dedupKey) && FindFsQueueMessageByDedup(queueRoot, dedupKey) is not null)
+        {
+            return "null";
+        }
+
+        var node = CreateQueueMessage(bodyJson, dedupKey);
+        node["activeOrderKey"] = NextFsActiveOrderKey(node["enqueuedAt"]?.GetValue<string>());
+        WriteTextAtomic(FsQueueActivePath(queueRoot, node), node.ToJsonString());
+        return node.ToJsonString();
+    }
+
+    private string FsQueueLeaseJson(string queueRoot, string optsJson)
+    {
+        ReviveExpiredFsLeases(queueRoot);
+        var opts = JsonNode.Parse(optsJson)?.AsObject();
+        var max = Math.Max(1, opts?["max"]?.GetValue<int?>() ?? 1);
+        var visibilityMs = Math.Max(1, opts?["visibilityMs"]?.GetValue<int?>() ?? 30000);
+        var leased = new JsonArray();
+
+        foreach (var path in ListFsQueueStateFiles(queueRoot, "active").Take(max))
+        {
+            var node = JsonNode.Parse(File.ReadAllText(path))?.AsObject();
+            if (node is null) continue;
+
+            var messageId = node["id"]?.GetValue<string>() ?? string.Empty;
+            var claimedPath = FsQueueLeasedPath(queueRoot, messageId);
+            try
+            {
+                if (File.Exists(claimedPath)) File.Delete(claimedPath);
+                Directory.CreateDirectory(Path.GetDirectoryName(claimedPath)!);
+                File.Move(path, claimedPath);
+            }
+            catch
+            {
+                continue;
+            }
+
+            node["attempt"] = (node["attempt"]?.GetValue<int?>() ?? 0) + 1;
+            node["leaseToken"] = NextId("lease");
+            node["leaseExpiresAt"] = DateTimeOffset.UtcNow.AddMilliseconds(visibilityMs).ToString("O", CultureInfo.InvariantCulture);
+            WriteTextAtomic(claimedPath, node.ToJsonString());
+            leased.Add(node.DeepClone());
+        }
+
+        return leased.ToJsonString();
+    }
+
+    private bool FsQueueAck(string queueRoot, string messageId, string leaseToken)
+    {
+        var path = FsQueueLeasedPath(queueRoot, messageId);
+        var node = File.Exists(path) ? JsonNode.Parse(File.ReadAllText(path))?.AsObject() : null;
+        if (!LeaseMatches(node, leaseToken)) return false;
+        var donePath = FsQueueDonePath(queueRoot, messageId);
+        Directory.CreateDirectory(Path.GetDirectoryName(donePath)!);
+        if (File.Exists(donePath)) File.Delete(donePath);
+        File.Move(path, donePath);
+        return true;
+    }
+
+    private bool FsQueueNack(string queueRoot, string messageId, string leaseToken, bool dead, string? reason)
+    {
+        var path = FsQueueLeasedPath(queueRoot, messageId);
+        var node = File.Exists(path) ? JsonNode.Parse(File.ReadAllText(path))?.AsObject() : null;
+        if (!LeaseMatches(node, leaseToken) || node is null) return false;
+
+        var nextNode = new JsonObject
+        {
+            ["id"] = node["id"]?.DeepClone(),
+            ["body"] = node["body"]?.DeepClone(),
+            ["enqueuedAt"] = node["enqueuedAt"]?.DeepClone(),
+            ["attempt"] = node["attempt"]?.DeepClone(),
+        };
+        if (node["activeOrderKey"] is not null) nextNode["activeOrderKey"] = node["activeOrderKey"]?.DeepClone();
+        if (node["dedupKey"] is not null) nextNode["dedupKey"] = node["dedupKey"]?.DeepClone();
+
+        if (dead)
+        {
+            nextNode["reason"] = reason;
+            WriteTextAtomic(FsQueueDeadPath(queueRoot, messageId), nextNode.ToJsonString());
+        }
+        else
+        {
+            WriteTextAtomic(FsQueueActivePath(queueRoot, nextNode), nextNode.ToJsonString());
+        }
+
+        File.Delete(path);
+        return true;
+    }
+
+    private string FsQueuePeekJson(string queueRoot, string state, string? prefix)
+    {
+        if (string.Equals(state, "active", StringComparison.Ordinal))
+        {
+            ReviveExpiredFsLeases(queueRoot);
+        }
+
+        var nodes = ListFsQueueStateFiles(queueRoot, state)
+            .Select(path => JsonNode.Parse(File.ReadAllText(path))?.AsObject())
+            .Where(node => node is not null)
+            .Cast<JsonObject>()
+            .Where(node => string.IsNullOrEmpty(prefix) || (node["id"]?.GetValue<string>() ?? string.Empty).StartsWith(prefix, StringComparison.Ordinal))
+            .ToList();
+        return JsonSerializer.Serialize(nodes);
+    }
+
+    private string FsQueueStageJson(string queueRoot, string bodyJson, string? dedupKey)
+    {
+        if (!string.IsNullOrEmpty(dedupKey) && FindFsQueueMessageByDedup(queueRoot, dedupKey) is not null)
+        {
+            return "null";
+        }
+
+        var node = CreateQueueMessage(bodyJson, dedupKey);
+        WriteTextAtomic(FsQueueStagedPath(queueRoot, node["id"]?.GetValue<string>() ?? string.Empty), node.ToJsonString());
+        return node.ToJsonString();
+    }
+
+    private bool FsQueueCommitStaged(string queueRoot, string messageId)
+    {
+        var path = FsQueueStagedPath(queueRoot, messageId);
+        var node = File.Exists(path) ? JsonNode.Parse(File.ReadAllText(path))?.AsObject() : null;
+        if (node is null) return false;
+
+        var enqueuedAt = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
+        node["attempt"] = 0;
+        node["enqueuedAt"] = enqueuedAt;
+        node["activeOrderKey"] = NextFsActiveOrderKey(enqueuedAt);
+        WriteTextAtomic(FsQueueActivePath(queueRoot, node), node.ToJsonString());
+        File.Delete(path);
+        return true;
+    }
+
+    private bool FsQueueDiscardStaged(string queueRoot, string messageId, string? reason)
+    {
+        var path = FsQueueStagedPath(queueRoot, messageId);
+        var node = File.Exists(path) ? JsonNode.Parse(File.ReadAllText(path))?.AsObject() : null;
+        if (node is null) return false;
+
+        var discarded = new JsonObject
+        {
+            ["id"] = node["id"]?.DeepClone(),
+            ["body"] = node["body"]?.DeepClone(),
+            ["enqueuedAt"] = node["enqueuedAt"]?.DeepClone(),
+            ["attempt"] = node["attempt"]?.DeepClone(),
+            ["reason"] = reason,
+        };
+        if (node["dedupKey"] is not null) discarded["dedupKey"] = node["dedupKey"]?.DeepClone();
+        WriteTextAtomic(FsQueueDeadPath(queueRoot, messageId), discarded.ToJsonString());
+        File.Delete(path);
+        return true;
+    }
+
+    private JsonObject? FindFsQueueMessageByDedup(string queueRoot, string dedupKey)
+    {
+        ReviveExpiredFsLeases(queueRoot);
+        foreach (var state in new[] { "active", "leased", "staged" })
+        {
+            foreach (var path in ListFsQueueStateFiles(queueRoot, state))
+            {
+                var node = JsonNode.Parse(File.ReadAllText(path))?.AsObject();
+                if (string.Equals(node?["dedupKey"]?.GetValue<string>(), dedupKey, StringComparison.Ordinal))
+                {
+                    return node;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private void ReviveExpiredFsLeases(string queueRoot)
+    {
+        foreach (var path in ListFsQueueStateFiles(queueRoot, "leased"))
+        {
+            var node = JsonNode.Parse(File.ReadAllText(path))?.AsObject();
+            var expiresAt = node?["leaseExpiresAt"]?.GetValue<string>();
+            if (string.IsNullOrWhiteSpace(expiresAt)) continue;
+            if (!DateTimeOffset.TryParse(expiresAt, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var expiry)) continue;
+            if (expiry > DateTimeOffset.UtcNow) continue;
+
+            var revived = new JsonObject
+            {
+                ["id"] = node?["id"]?.DeepClone(),
+                ["body"] = node?["body"]?.DeepClone(),
+                ["enqueuedAt"] = node?["enqueuedAt"]?.DeepClone(),
+                ["attempt"] = node?["attempt"]?.DeepClone(),
+            };
+            if (node?["activeOrderKey"] is not null) revived["activeOrderKey"] = node["activeOrderKey"]?.DeepClone();
+            if (node?["dedupKey"] is not null) revived["dedupKey"] = node["dedupKey"]?.DeepClone();
+            WriteTextAtomic(FsQueueActivePath(queueRoot, revived), revived.ToJsonString());
+            File.Delete(path);
+        }
+    }
+
+    private IEnumerable<string> ListFsQueueStateFiles(string queueRoot, string state)
+    {
+        var dir = FsQueueStateDir(queueRoot, state);
+        if (!Directory.Exists(dir)) return Array.Empty<string>();
+        return Directory.EnumerateFiles(dir, "*.json").OrderBy(path => path, StringComparer.Ordinal);
+    }
+
+    private string NextFsActiveOrderKey(string? enqueuedAt)
+    {
+        var stamp = (enqueuedAt ?? DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture)).Replace(':', '-').Replace('.', '-');
+        var seq = Interlocked.Increment(ref _idCounter).ToString("D6", CultureInfo.InvariantCulture);
+        return $"{stamp}-{seq}";
+    }
+
+    private string FsQueueActivePath(string queueRoot, JsonObject node)
+    {
+        var messageId = node["id"]?.GetValue<string>() ?? throw new InvalidOperationException("queue message missing id");
+        var orderKey = node["activeOrderKey"]?.GetValue<string>();
+        if (string.IsNullOrWhiteSpace(orderKey))
+        {
+            orderKey = NextFsActiveOrderKey(node["enqueuedAt"]?.GetValue<string>());
+            node["activeOrderKey"] = orderKey;
+        }
+        return Path.Combine(FsQueueStateDir(queueRoot, "active"), $"{orderKey}-{messageId}.json");
+    }
+
+    private string FsQueueLeasedPath(string queueRoot, string messageId)
+        => Path.Combine(FsQueueStateDir(queueRoot, "leased"), $"{messageId}.json");
+
+    private string FsQueueDonePath(string queueRoot, string messageId)
+        => Path.Combine(FsQueueStateDir(queueRoot, "done"), $"{messageId}.json");
+
+    private string FsQueueDeadPath(string queueRoot, string messageId)
+        => Path.Combine(FsQueueStateDir(queueRoot, "dead"), $"{messageId}.json");
+
+    private string FsQueueStagedPath(string queueRoot, string messageId)
+        => Path.Combine(FsQueueStateDir(queueRoot, "staged"), $"{messageId}.json");
+
+    private static string FsQueueStateDir(string queueRoot, string state)
+        => Path.Combine(queueRoot, state);
 
     private JsonObject CreateQueueMessage(string bodyJson, string? dedupKey)
     {

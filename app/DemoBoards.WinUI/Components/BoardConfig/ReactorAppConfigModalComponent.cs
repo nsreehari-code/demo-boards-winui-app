@@ -84,6 +84,7 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
 
         // Get the embedded board client via hook instead of App.Current
         EmbeddedBoardClient boardClient = UseEmbeddedClient();
+        var (activeServerUrl, _) = UseGlobalState<string>(GlobalStateKeys.ServerUrl, App.Current.HostConfig.Frontend.InitialServerUrl, WinUiServerUrlStore.SaveOverride);
 
         UseEffect(() =>
         {
@@ -145,7 +146,7 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
                 setTemplateStatus,
                 draft.ThemePackId,
                 draft.UiTemplate);
-        }, Props.BoardId, Props.Config?.RawBoardJson ?? string.Empty, Props.Config?.RawUiJson ?? string.Empty, Props.Config?.RawMetadataJson ?? string.Empty, Props.Config?.RawLayoutJson ?? string.Empty);
+        }, Props.BoardId, Props.Config?.RawBoardJson ?? string.Empty, Props.Config?.RawUiJson ?? string.Empty, Props.Config?.RawMetadataJson ?? string.Empty, Props.Config?.RawLayoutJson ?? string.Empty, activeServerUrl);
 
         ManageBoards manageBoards = UseManageBoards();
         var (activeBoardId, setActiveBoardId) = UseGlobalState<string>(GlobalStateKeys.BoardId, Props.BoardId, WinUiBoardIdStore.SaveOverride);
@@ -168,7 +169,6 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
             }
 
             setActiveBoardId(target);
-            App.Current.RequestRestart();
         }
 
         var sections = new List<Element>();
@@ -194,7 +194,14 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
                     OnChange: setPendingBoardId,
                     OnSwitch: SwitchBoard,
                     SelectDisabled: manageBoards.LoadingManagedBoards,
-                    Loading: manageBoards.LoadingManagedBoards))));
+                    Loading: manageBoards.LoadingManagedBoards,
+                        Error: manageBoards.ManageBoardsError))
+                        .WithKey($"{activeBoardId}|{activeServerUrl}")));
+
+        sections.Add(
+            SectionCard(
+                Component<ServerSwitcher, ServerSwitcherProps>(
+                    new ServerSwitcherProps(App.Current.HostConfig.Frontend.InitialServerUrl))));
 
         sections.Add(
             SectionCard(
@@ -218,6 +225,7 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
                             if (!saving)
                             {
                                 _ = SavePageDetailsAsync(
+                                    boardClient,
                                     Props.BoardId,
                                     rawBoardJson,
                                     rawUiJson,
@@ -266,6 +274,7 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
                             if (!previewingHostConfig)
                             {
                                 _ = PreviewEffectiveBoardConfigAsync(
+                                    boardClient,
                                     Props.BoardId,
                                     rawBoardJson,
                                     setPreviewingHostConfig,
@@ -303,6 +312,7 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
                                     {
                                         setConfirmRuntimeImport(false);
                                         _ = ImportBoardAsync(
+                                            boardClient,
                                             Props.BoardId,
                                             setImporting,
                                             setImportExportStatus,
@@ -341,7 +351,7 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
                         {
                             if (!exporting)
                             {
-                                _ = ExportBoardAsync(Props.BoardId, setExporting, setImportExportStatus);
+                                _ = ExportBoardAsync(boardClient, Props.BoardId, setExporting, setImportExportStatus);
                             }
                         }).AutomationName("Export board dump").SubtleButton(),
                         Button(refreshingWorkspace ? "Refreshing..." : "Refresh workspace bootstrap", () =>
@@ -349,6 +359,7 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
                             if (!refreshingWorkspace)
                             {
                                 _ = RefreshBoardWorkspaceAsync(
+                                    boardClient,
                                     Props.BoardId,
                                     rawBoardJson,
                                     showHostPreview,
@@ -373,6 +384,7 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
                             if (!previewingTemplate)
                             {
                                 _ = PreviewTemplateAsync(
+                                    boardClient,
                                     Props.BoardId,
                                     selectedTemplateKey,
                                     setPreviewingTemplate,
@@ -386,6 +398,7 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
                             if (!applyingTemplate)
                             {
                                 _ = ApplyTemplateAsync(
+                                    boardClient,
                                     Props.BoardId,
                                     pendingTemplatePayloadJson,
                                     setApplyingTemplate,
@@ -409,6 +422,7 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
                                 if (!addingBoard)
                                 {
                                     _ = AddBoardAsync(
+                                        boardClient,
                                         addBoardId,
                                         addBoardLabel,
                                         addBoardPageTitle,
@@ -528,6 +542,7 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
     }
 
     private static async Task SavePageDetailsAsync(
+        EmbeddedBoardClient boardClient,
         string boardId,
         string rawBoardJson,
         string rawUiJson,
@@ -586,7 +601,7 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
             string updatedRawMetadataJson = BuildUpdatedMetadataJson(rawMetadataJson, normalizedTitle, normalizedSubtitle, refreshMinutes);
             string updatedBoardRecordJson = BuildUpdatedBoardRecordJson(rawBoardJson, normalizedUiTemplate);
 
-            ManagedBoardConfigState saved = await app.BoardClient.SaveManagedBoardConfigAsync(
+            ManagedBoardConfigState saved = await boardClient.SaveManagedBoardConfigAsync(
                 boardId,
                 updatedRawUiJson,
                 updatedRawMetadataJson,
@@ -608,7 +623,7 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
 
             if (refreshPreview)
             {
-                setEffectiveBoardConfigPreviewText(await app.BoardClient.ResolveEffectiveBoardConfigAsync(boardId, saved.RawBoardJson));
+                setEffectiveBoardConfigPreviewText(await boardClient.ResolveEffectiveBoardConfigAsync(boardId, saved.RawBoardJson));
             }
 
             setHostStatus(StatusMessage.Empty);
@@ -625,6 +640,7 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
     }
 
     private static async Task PreviewEffectiveBoardConfigAsync(
+        EmbeddedBoardClient boardClient,
         string boardId,
         string rawBoardJson,
         Action<bool> setPreviewingHostConfig,
@@ -638,7 +654,7 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
             setShowHostPreview(true);
             setEffectiveBoardConfigPreviewText(string.IsNullOrWhiteSpace(boardId)
                 ? string.Empty
-                : await App.Current.BoardClient.ResolveEffectiveBoardConfigAsync(boardId, rawBoardJson));
+                : await boardClient.ResolveEffectiveBoardConfigAsync(boardId, rawBoardJson));
             setHostStatus(StatusMessage.Success("Effective board config preview updated."));
         }
         catch (Exception ex)
@@ -652,6 +668,7 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
     }
 
     private static async Task ImportBoardAsync(
+        EmbeddedBoardClient boardClient,
         string boardId,
         Action<bool> setImporting,
         Action<StatusMessage> setImportExportStatus,
@@ -686,8 +703,8 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
             }
 
             App app = App.Current;
-            await app.BoardClient.ApplyImportBoardAsync(boardId, json, "replace", applyBoardMetadata: true);
-            ManagedBoardConfigState? saved = await app.BoardClient.GetManagedBoardConfigAsync(boardId);
+            await boardClient.ApplyImportBoardAsync(boardId, json, "replace", applyBoardMetadata: true);
+            ManagedBoardConfigState? saved = await boardClient.GetManagedBoardConfigAsync(boardId);
             if (saved is not null)
             {
                 setRawBoardJson(saved.RawBoardJson);
@@ -705,11 +722,11 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
 
                 if (refreshPreview)
                 {
-                    setEffectiveBoardConfigPreviewText(await app.BoardClient.ResolveEffectiveBoardConfigAsync(boardId, saved.RawBoardJson));
+                    setEffectiveBoardConfigPreviewText(await boardClient.ResolveEffectiveBoardConfigAsync(boardId, saved.RawBoardJson));
                 }
             }
 
-            await app.BoardClient.RefreshBoardAsync();
+            await boardClient.RefreshBoardAsync();
             setHostStatus(StatusMessage.Empty);
             setImportExportStatus(StatusMessage.Success("Board import applied."));
         }
@@ -723,7 +740,7 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
         }
     }
 
-    private static async Task ExportBoardAsync(string boardId, Action<bool> setExporting, Action<StatusMessage> setImportExportStatus)
+    private static async Task ExportBoardAsync(EmbeddedBoardClient boardClient, string boardId, Action<bool> setExporting, Action<StatusMessage> setImportExportStatus)
     {
         if (string.IsNullOrWhiteSpace(boardId))
         {
@@ -735,7 +752,7 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
         setImportExportStatus(StatusMessage.Info("Exporting board dump..."));
         try
         {
-            string json = await App.Current.BoardClient.ExportBoardAsync(boardId);
+            string json = await boardClient.ExportBoardAsync(boardId);
             bool saved = await NativeFilePicker.SaveJsonTextAsync($"{boardId}-runtime-dump.json", json);
             setImportExportStatus(saved
                 ? StatusMessage.Success("Board export saved.")
@@ -752,6 +769,7 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
     }
 
     private static async Task RefreshBoardWorkspaceAsync(
+        EmbeddedBoardClient boardClient,
         string boardId,
         string rawBoardJson,
         bool refreshPreview,
@@ -770,13 +788,12 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
         setImportExportStatus(StatusMessage.Info("Refreshing workspace bootstrap..."));
         try
         {
-            App app = App.Current;
-            await app.BoardClient.SetupBoardWorkspaceAsync(boardId);
-            await app.BoardClient.RefreshManagedBoardAsync(boardId);
-            await app.BoardClient.RefreshBoardAsync();
+            await boardClient.SetupBoardWorkspaceAsync(boardId);
+            await boardClient.RefreshManagedBoardAsync(boardId);
+            await boardClient.RefreshBoardAsync();
             if (refreshPreview)
             {
-                setEffectiveBoardConfigPreviewText(await app.BoardClient.ResolveEffectiveBoardConfigAsync(boardId, rawBoardJson));
+                setEffectiveBoardConfigPreviewText(await boardClient.ResolveEffectiveBoardConfigAsync(boardId, rawBoardJson));
             }
 
             setHostStatus(StatusMessage.Empty);
@@ -793,6 +810,7 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
     }
 
     private static async Task PreviewTemplateAsync(
+        EmbeddedBoardClient boardClient,
         string boardId,
         string templateKey,
         Action<bool> setPreviewingTemplate,
@@ -810,9 +828,8 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
         setTemplateStatus(StatusMessage.Info("Preparing template preview..."));
         try
         {
-            App app = App.Current;
-            SampleTemplateEnvelope template = await app.BoardClient.GetSampleTemplateAsync(templateKey);
-            BoardImportPreview preview = await app.BoardClient.PreviewImportBoardAsync(boardId, template.RawPayloadJson, "ingest");
+            SampleTemplateEnvelope template = await boardClient.GetSampleTemplateAsync(templateKey);
+            BoardImportPreview preview = await boardClient.PreviewImportBoardAsync(boardId, template.RawPayloadJson, "ingest");
             setPendingTemplatePayloadJson(template.RawPayloadJson);
             setTemplatePreviewText(BuildTemplatePreviewText(template, preview));
             setTemplateStatus(StatusMessage.Success("Template preview ready."));
@@ -830,6 +847,7 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
     }
 
     private static async Task ApplyTemplateAsync(
+        EmbeddedBoardClient boardClient,
         string boardId,
         string pendingTemplatePayloadJson,
         Action<bool> setApplyingTemplate,
@@ -845,9 +863,8 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
         setTemplateStatus(StatusMessage.Info("Ingesting template cards..."));
         try
         {
-            App app = App.Current;
-            await app.BoardClient.ApplyImportBoardAsync(boardId, pendingTemplatePayloadJson, "ingest", applyBoardMetadata: false);
-            await app.BoardClient.RefreshBoardAsync();
+            await boardClient.ApplyImportBoardAsync(boardId, pendingTemplatePayloadJson, "ingest", applyBoardMetadata: false);
+            await boardClient.RefreshBoardAsync();
             setTemplateStatus(StatusMessage.Success("Template cards ingested."));
         }
         catch (Exception ex)
@@ -861,6 +878,7 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
     }
 
     private static async Task AddBoardAsync(
+        EmbeddedBoardClient boardClient,
         string boardId,
         string label,
         string pageTitle,
@@ -878,7 +896,6 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
         setAddBoardStatus(StatusMessage.Info("Adding board..."));
         try
         {
-            App app = App.Current;
             var request = new ManagedBoardCreateRequest(
                 boardId,
                 label,
@@ -890,14 +907,14 @@ public sealed class ReactorAppConfigModalComponent : HookComponent<ReactorAppCon
                 ValueOrFallback(refsTemplate, "localfs-default"),
                 templateKey.Trim());
 
-            ManagedBoardListEntry created = await app.BoardClient.AddManagedBoardAsync(request);
+            ManagedBoardListEntry created = await boardClient.AddManagedBoardAsync(request);
             if (!string.IsNullOrWhiteSpace(request.TemplateKey))
             {
-                SampleTemplateEnvelope template = await app.BoardClient.GetSampleTemplateAsync(request.TemplateKey);
-                await app.BoardClient.ApplyImportBoardAsync(created.Id, template.RawPayloadJson, "ingest", applyBoardMetadata: false);
+                SampleTemplateEnvelope template = await boardClient.GetSampleTemplateAsync(request.TemplateKey);
+                await boardClient.ApplyImportBoardAsync(created.Id, template.RawPayloadJson, "ingest", applyBoardMetadata: false);
             }
 
-            await app.BoardClient.SetupBoardWorkspaceAsync(created.Id);
+            await boardClient.SetupBoardWorkspaceAsync(created.Id);
             setAddBoardStatus(StatusMessage.Success("Board created."));
             onSuccess();
         }

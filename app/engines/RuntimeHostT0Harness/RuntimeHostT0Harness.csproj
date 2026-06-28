@@ -8,10 +8,19 @@
     <RootNamespace>RuntimeHostT0Harness</RootNamespace>
     <AssemblyName>RuntimeHostT0Harness</AssemblyName>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <EnableDeprecatedRuntimeHostHarnesses Condition="'$(EnableDeprecatedRuntimeHostHarnesses)' == ''">false</EnableDeprecatedRuntimeHostHarnesses>
   </PropertyGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\..\DemoBoards.RuntimeHost\DemoBoards.RuntimeHost.csproj" />
+  <ItemGroup Condition="'$(EnableDeprecatedRuntimeHostHarnesses)' == 'true'">
+    <ProjectReference Include="..\..\deprecated.DemoBoards.RuntimeHost\deprecated.DemoBoards.RuntimeHost.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(EnableDeprecatedRuntimeHostHarnesses)' != 'true'">
+    <Compile Remove="Program.cs" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(EnableDeprecatedRuntimeHostHarnesses)' == 'true'">
+    <Compile Remove="Program.Stub.cs" />
   </ItemGroup>
 
   <ItemGroup>

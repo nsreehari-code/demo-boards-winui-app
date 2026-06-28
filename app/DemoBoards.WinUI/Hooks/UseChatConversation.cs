@@ -76,7 +76,7 @@ public abstract partial class HookComponent<TProps>
         string? boardSseClientId = chat?.BoardSseClientId;
         Func<string, int, Task<IReadOnlyList<IReadOnlyDictionary<string, object?>>>>? onLoadPrevious =
             chat?.LoadPreviousTurns;
-        EmbeddedBoardClient client = App.Current.BoardClient;
+        EmbeddedBoardClient client = UseEmbeddedClient();
         string messagesSignature = ChatMessages.SignatureOf(messages);
 
         // Subscribe to chat SSE on mount so the runtime emits card_chats notifications.
@@ -165,7 +165,8 @@ public abstract partial class HookComponent<TProps>
                 return () => { };
             },
             boardId,
-            cardId);
+            cardId,
+            boardSseClientId ?? string.Empty);
 
         // Accumulate live messages so new turns append rather than replace (the chat view may carry only
         // the latest turn).
@@ -177,7 +178,7 @@ public abstract partial class HookComponent<TProps>
                     return () => { };
                 }
 
-                string key = $"{boardId}::{cardId}";
+                string key = $"{boardId}::{cardId}::{boardSseClientId}";
                 dispatch(prev =>
                 {
                     IReadOnlyList<LiveChatEntry> merged = liveKeyRef.Current != key
@@ -191,6 +192,7 @@ public abstract partial class HookComponent<TProps>
             historyEnabled,
             boardId,
             cardId,
+            boardSseClientId ?? string.Empty,
             messagesSignature);
 
         IReadOnlyList<IReadOnlyDictionary<string, object?>> liveForDisplay = historyEnabled

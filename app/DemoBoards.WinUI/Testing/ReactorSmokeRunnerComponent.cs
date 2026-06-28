@@ -278,7 +278,7 @@ public sealed class ReactorSmokeRunnerComponent : HookComponent<SmokeRunnerProps
             throw new FileNotFoundException("Could not locate the backend smoke runner script.", scriptPath);
         }
 
-        Uri runtimeUri = new(App.Current.RuntimeService.GetStatus().AgentfaceEndpoint);
+        Uri runtimeUri = App.Current.BoardClient.ServerBaseUri;
         ProcessStartInfo startInfo = new("node")
         {
             WorkingDirectory = Path.GetDirectoryName(scriptPath) ?? repoRoot,

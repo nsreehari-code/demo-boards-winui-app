@@ -45,7 +45,7 @@ public abstract partial class HookComponent<TProps>
     protected BoardState UseBoardState(string boardId)
     {
         BoardStore store = UseBoardStoreSubscription(includeUiState: false);
-        EmbeddedBoardClient client = App.Current.BoardClient;
+        EmbeddedBoardClient client = UseEmbeddedClient();
 
         BoardInfoState boardInfo = store.GetBoardInfo();
         BoardSummaryState boardStatus = store.State.Summary;

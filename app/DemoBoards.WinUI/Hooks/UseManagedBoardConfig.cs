@@ -35,7 +35,7 @@ public abstract partial class HookComponent<TProps>
     /// <summary>Port of <c>useManagedBoardConfig</c>: the resolved board config plus a loading flag.</summary>
     protected ManagedBoardConfigResult UseManagedBoardConfig(string boardId)
     {
-        EmbeddedBoardClient client = App.Current.BoardClient;
+        EmbeddedBoardClient client = UseEmbeddedClient();
         var (config, setConfig) = UseState<ManagedBoardConfig?>(null);
         var (loading, setLoading) = UseState(true);
 
@@ -95,7 +95,7 @@ public abstract partial class HookComponent<TProps>
 
             _ = Load();
             return () => { cancelled = true; };
-        }, boardId ?? string.Empty);
+        }, boardId ?? string.Empty, client.ServerBaseUri.AbsoluteUri);
 
         return new ManagedBoardConfigResult(config, loading);
     }

@@ -5,10 +5,64 @@ using System.Linq;
 
 namespace DemoBoards.RuntimeHost;
 
+public sealed record RuntimeStatus(
+    bool IsRunning,
+    string AgentfaceEndpoint,
+    string RootDirectory,
+    string StorageDirectory,
+    string? LastInvocationJson,
+    string? BoardSnapshotJson);
+
+public sealed record RuntimePaths(
+    string RootDir,
+    string HostStorageDir,
+    string AgentfaceSocketPath)
+{
+    public static RuntimePaths CreateDefault()
+    {
+        string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        string rootDir = Path.Combine(localAppData, "DemoBoards.WinUI", "runtime");
+        return new RuntimePaths(
+            rootDir,
+            Path.Combine(rootDir, "storage"),
+            Path.Combine(rootDir, "agentface.sock"));
+    }
+}
+
+public sealed record RuntimeHostOptions(
+    int AgentfacePort,
+    bool RequireFixedAgentfacePort,
+    string InitialBoardId,
+    int QueuePumpIntervalMs = 250,
+    string? HostConfigPath = null,
+    string? LocalFsConfigLoaderPath = null,
+    string? TemplatesConfigPath = null,
+    string? SetupSingleAiWorkspaceScriptPath = null)
+{
+    public static RuntimeHostOptions Default { get; } = new(43123, false, "winui-board");
+
+    public static RuntimeHostOptions CreateWithNsCodeDefaults(
+        int agentfacePort,
+        bool requireFixedAgentfacePort,
+        string initialBoardId,
+        string nsCodeRepoRoot)
+    {
+        string hostedRuntimeDir = Path.Combine(nsCodeRepoRoot, "demo-board", "server", "hosted-board-runtime");
+        return new RuntimeHostOptions(
+            agentfacePort,
+            requireFixedAgentfacePort,
+            initialBoardId,
+            250,
+            Path.Combine(hostedRuntimeDir, "hosted-board-runtime.localfs.config.json"),
+            Path.Combine(hostedRuntimeDir, "localfs-adapter", "load-config.js"),
+            Path.Combine(hostedRuntimeDir, "templates-config.json"),
+            Path.Combine(hostedRuntimeDir, "scripts", "setup-single-ai-workspace.js"));
+    }
+}
+
 public static class RuntimeAssetResolver
 {
     public const string NsCodeRepoRootEnvVar = "DEMOBOARDS_NSCODE_REPO_ROOT";
-    public const string HostInvocationRunnerPathEnvVar = "DEMOBOARDS_HOST_INVOCATION_RUNNER_PATH";
 
     public static string ResolveWorkspaceRootOrThrow(string startPath, string consumerLabel)
     {
@@ -41,8 +95,7 @@ public static class RuntimeAssetResolver
                 }
 
                 bool hasWinUiProject = Directory.Exists(Path.Combine(current.FullName, "app", "DemoBoards.WinUI"));
-                bool hasRuntimeHostProject = Directory.Exists(Path.Combine(current.FullName, "app", "DemoBoards.RuntimeHost"));
-                if (standaloneWinUiRoot is null && hasWinUiProject && hasRuntimeHostProject)
+                if (standaloneWinUiRoot is null && hasWinUiProject)
                 {
                     standaloneWinUiRoot = current.FullName;
                 }
@@ -93,45 +146,6 @@ public static class RuntimeAssetResolver
         throw new InvalidOperationException(
             "Unable to resolve demo-boards-ns-code repo root. "
             + "Configure backend.nsCodeRepoRoot in winui-app-config.json or set DEMOBOARDS_NSCODE_REPO_ROOT." + Environment.NewLine
-            + (checkedPaths.Length == 0 ? "No candidate paths were found." : "Checked paths:" + Environment.NewLine + checkedPaths));
-    }
-
-    public static string ResolveHostInvocationRunnerPathOrThrow(string baseDirectory, string? configuredPath = null)
-    {
-        var candidates = new List<string>();
-
-        if (!string.IsNullOrWhiteSpace(configuredPath))
-        {
-            candidates.Add(Path.GetFullPath(configuredPath));
-        }
-
-        string? configuredEnv = Environment.GetEnvironmentVariable(HostInvocationRunnerPathEnvVar);
-        if (!string.IsNullOrWhiteSpace(configuredEnv))
-        {
-            candidates.Add(Path.GetFullPath(configuredEnv));
-        }
-
-        candidates.Add(Path.Combine(baseDirectory, "node", "host-invocation-runner.mjs"));
-
-        string? workspaceRoot = ResolveWorkspaceRoot(baseDirectory);
-        if (!string.IsNullOrWhiteSpace(workspaceRoot))
-        {
-            candidates.Add(Path.Combine(workspaceRoot, "demo-boards-winui-app", "app", "DemoBoards.RuntimeHost", "node", "host-invocation-runner.mjs"));
-        }
-
-        foreach (string candidate in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
-        {
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-        }
-
-        string checkedPaths = string.Join(Environment.NewLine, candidates.Distinct(StringComparer.OrdinalIgnoreCase).Select(path => "- " + path));
-        throw new FileNotFoundException(
-            "Unable to resolve host invocation runner path. "
-            + "Configure backend.hostInvocationRunnerPath in winui-app-config.json or set DEMOBOARDS_HOST_INVOCATION_RUNNER_PATH."
-            + Environment.NewLine
             + (checkedPaths.Length == 0 ? "No candidate paths were found." : "Checked paths:" + Environment.NewLine + checkedPaths));
     }
 

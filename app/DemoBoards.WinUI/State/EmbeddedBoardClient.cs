@@ -5,58 +5,64 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using DemoBoards.RuntimeHost;
 using DemoBoards_WinUI.Config;
 
 namespace DemoBoards_WinUI.State;
 
 /// <summary>
-/// WinUI equivalent of frontend lib/client.js. For embedded desktop mode we do
-/// not need browser fetch wrappers or Redux; we need a client facade over the
-/// in-process runtime host plus the one external HTTP face (agentface).
+/// WinUI equivalent of frontend lib/client.js. It talks to the hosted board server
+/// over HTTP while the local WinUI reducer owns canonical-state accumulation.
 /// </summary>
 public sealed class EmbeddedBoardClient
 {
     private static readonly JsonSerializerOptions PrettyJsonOptions = new() { WriteIndented = true };
 
-    private readonly DemoBoardsRuntimeService runtimeService;
+    private readonly HostedBoardStateService boardStateService;
     private readonly HttpClient runtimeHttpClient;
 
-    public EmbeddedBoardClient(DemoBoardsRuntimeService runtimeService)
+    public EmbeddedBoardClient(HostedBoardStateService boardStateService)
     {
-        this.runtimeService = runtimeService;
+        this.boardStateService = boardStateService;
         runtimeHttpClient = new HttpClient
         {
-            BaseAddress = new Uri(runtimeService.GetStatus().AgentfaceEndpoint + "/")
+            BaseAddress = boardStateService.ServerBaseUri
         };
     }
 
-    public Task InitBoardAsync()
+    public Uri ServerBaseUri => ResolveCurrentServerBaseUri();
+
+    public Uri LiveBoardStateServerBaseUri => boardStateService.ServerBaseUri;
+
+    public async Task InitBoardAsync()
     {
-        return runtimeService.RefreshAsync();
+        await boardStateService.RefreshSnapshotAsync().ConfigureAwait(false);
     }
 
-    public Task RefreshBoardAsync()
+    public async Task RefreshBoardAsync()
     {
-        return runtimeService.RefreshAsync();
+        await boardStateService.ResetRuntimeFromSeedCardsAsync().ConfigureAwait(false);
     }
 
-    public Task AddCardAsync(string cardJson)
+    public async Task AddCardAsync(string cardJson)
     {
-        return runtimeService.AddCardAsync(cardJson);
+        JsonNode candidateCardContent = JsonNode.Parse(NormalizeJsonPayload(cardJson, "Card payload is required."))
+            ?? throw new InvalidOperationException("Card payload was invalid JSON.");
+        _ = await UpsertRuntimeCardAsync(candidateCardContent).ConfigureAwait(false);
+        await boardStateService.RefreshSnapshotAsync().ConfigureAwait(false);
     }
 
     public async Task<string> PostCardToAgentfaceAsync(string cardJson)
     {
-        using var response = await runtimeHttpClient.PostAsync("board/cards", new StringContent(cardJson, Encoding.UTF8, "application/json")).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        JsonNode candidateCardContent = JsonNode.Parse(NormalizeJsonPayload(cardJson, "Card payload is required."))
+            ?? throw new InvalidOperationException("Card payload was invalid JSON.");
+        JsonNode? payload = await UpsertRuntimeCardAsync(candidateCardContent).ConfigureAwait(false);
+        return payload?.ToJsonString(PrettyJsonOptions) ?? "{}";
     }
 
     public async Task<string> CallBoardMcpAsync(string tool, object? args = null)
     {
         var payload = JsonSerializer.Serialize(new { tool, args = args ?? new { } });
-        using var response = await runtimeHttpClient.PostAsync("mcp", new StringContent(payload, Encoding.UTF8, "application/json")).ConfigureAwait(false);
+        using var response = await runtimeHttpClient.PostAsync(CreateBoardRequestUri("mcp"), new StringContent(payload, Encoding.UTF8, "application/json")).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync().ConfigureAwait(false);
     }
@@ -78,22 +84,22 @@ public sealed class EmbeddedBoardClient
 
     public Task SubscribeCardChatsAsync(string cardId)
     {
-        return PostMcpControlplaneAsync("sse.subscribe-chat", new { client_id = "embedded-v8", card_id = cardId });
+        return PostMcpControlplaneAsync("sse.subscribe-chat", new { client_id = boardStateService.ClientId, card_id = cardId });
     }
 
     public Task UnsubscribeCardChatsAsync(string cardId)
     {
-        return PostMcpControlplaneAsync("sse.unsubscribe-chat", new { client_id = "embedded-v8", card_id = cardId });
+        return PostMcpControlplaneAsync("sse.unsubscribe-chat", new { client_id = boardStateService.ClientId, card_id = cardId });
     }
 
     public Task SubscribeWatchpartyAsync(string cardId, string channelName)
     {
-        return PostMcpControlplaneAsync("sse.watch-channel", new { client_id = "embedded-v8", card_id = cardId, channel_name = channelName });
+        return PostMcpControlplaneAsync("sse.watch-channel", new { client_id = boardStateService.ClientId, card_id = cardId, channel_name = channelName });
     }
 
     public Task UnsubscribeWatchpartyAsync(string cardId, string channelName)
     {
-        return PostMcpControlplaneAsync("sse.unwatch-channel", new { client_id = "embedded-v8", card_id = cardId, channel_name = channelName });
+        return PostMcpControlplaneAsync("sse.unwatch-channel", new { client_id = boardStateService.ClientId, card_id = cardId, channel_name = channelName });
     }
 
     public Task SendChatAsync(string cardId, string text, string turnId)
@@ -176,7 +182,7 @@ public sealed class EmbeddedBoardClient
         string query = string.IsNullOrWhiteSpace(storedName)
             ? string.Empty
             : $"?sn={Uri.EscapeDataString(storedName)}";
-        return new Uri(runtimeHttpClient.BaseAddress!, $"cards/{Uri.EscapeDataString(cardId)}/files/{fileIndex}{query}").ToString();
+        return CreateBoardRequestUri($"cards/{Uri.EscapeDataString(cardId)}/files/{fileIndex}{query}").ToString();
     }
 
     public async Task<ManagedBoardConfigState?> GetManagedBoardConfigAsync(string boardId)
@@ -561,31 +567,31 @@ public sealed class EmbeddedBoardClient
 
     private Task PostMcpActionsAsync(string tool, object args)
     {
-        return PostJsonAsync("mcp-actions", new { tool, args });
+        return PostBoardJsonAsync("mcp-actions", new { tool, args });
     }
 
     private Task PostMcpControlplaneAsync(string tool, object args)
     {
-        return PostJsonAsync("mcp-controlplane", new { tool, args });
+        return PostBoardJsonAsync("mcp-controlplane", new { tool, args = WithBoardId(args) });
     }
 
     private Task<string> PostMcpControlplaneWithResultAsync(string tool, object args)
     {
-        return PostJsonWithResultAsync("mcp-controlplane", new { tool, args });
+        return PostBoardJsonWithResultAsync("mcp-controlplane", new { tool, args = WithBoardId(args) });
     }
 
-    private async Task<string> PostJsonWithResultAsync(string relativePath, object payload)
+    private async Task<string> PostBoardJsonWithResultAsync(string relativePath, object payload)
     {
         string json = JsonSerializer.Serialize(payload);
-        using var response = await runtimeHttpClient.PostAsync(relativePath, new StringContent(json, Encoding.UTF8, "application/json")).ConfigureAwait(false);
+        using var response = await runtimeHttpClient.PostAsync(CreateBoardRequestUri(relativePath), new StringContent(json, Encoding.UTF8, "application/json")).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync().ConfigureAwait(false);
     }
 
-    private async Task PostJsonAsync(string relativePath, object payload)
+    private async Task PostBoardJsonAsync(string relativePath, object payload)
     {
         string json = JsonSerializer.Serialize(payload);
-        using var response = await runtimeHttpClient.PostAsync(relativePath, new StringContent(json, Encoding.UTF8, "application/json")).ConfigureAwait(false);
+        using var response = await runtimeHttpClient.PostAsync(CreateBoardRequestUri(relativePath), new StringContent(json, Encoding.UTF8, "application/json")).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         _ = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
     }
@@ -593,9 +599,66 @@ public sealed class EmbeddedBoardClient
     private async Task<string?> PostManageBoardsAsync(string subcommand, object args)
     {
         string json = JsonSerializer.Serialize(new { subcommand, args });
-        using var response = await runtimeHttpClient.PostAsync("manage-boards", new StringContent(json, Encoding.UTF8, "application/json")).ConfigureAwait(false);
+        Uri requestUri = CreateRootRequestUri("manage-boards");
+        using var response = await runtimeHttpClient.PostAsync(requestUri, new StringContent(json, Encoding.UTF8, "application/json")).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+    }
+
+    private Uri CreateBoardRequestUri(string relativePath)
+    {
+        return new Uri(ResolveCurrentServerBaseUri(), GetBoardApiPath(relativePath));
+    }
+
+    private Uri CreateRootRequestUri(string relativePath)
+    {
+        return new Uri(ResolveCurrentServerBaseUri(), relativePath);
+    }
+
+    private Uri ResolveCurrentServerBaseUri()
+    {
+        string candidate = GlobalStateStore.Current.GetOrAdd(GlobalStateKeys.ServerUrl, boardStateService.ServerBaseUri.AbsoluteUri)?.Trim() ?? string.Empty;
+        if (candidate.Length == 0)
+        {
+            return boardStateService.ServerBaseUri;
+        }
+
+        if (!Uri.TryCreate(candidate, UriKind.Absolute, out Uri? parsedUri)
+            || (parsedUri.Scheme != Uri.UriSchemeHttp && parsedUri.Scheme != Uri.UriSchemeHttps))
+        {
+            throw new InvalidOperationException("Server origin is required");
+        }
+
+        string normalized = parsedUri.GetLeftPart(UriPartial.Authority);
+        if (!normalized.EndsWith("/", StringComparison.Ordinal))
+        {
+            normalized += "/";
+        }
+
+        return new Uri(normalized, UriKind.Absolute);
+    }
+
+    private string GetBoardApiPath(string relativePath)
+    {
+        string boardId = GetActiveBoardId();
+        return $"api/boards/{Uri.EscapeDataString(boardId)}/{relativePath}";
+    }
+
+    private string GetActiveBoardId()
+    {
+        return GlobalStateStore.Current.GetOrAdd(GlobalStateKeys.BoardId, boardStateService.BoardId);
+    }
+
+    private JsonNode? WithBoardId(object args)
+    {
+        JsonNode? node = JsonSerializer.SerializeToNode(args) ?? new JsonObject();
+        if (node is not JsonObject obj)
+        {
+            obj = new JsonObject { ["value"] = node };
+        }
+
+        obj["board_id"] = GetActiveBoardId();
+        return obj;
     }
 
     private static Dictionary<string, object?> BuildHostConfigArgs()

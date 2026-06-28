@@ -8,6 +8,7 @@
     <RootNamespace>GoldenHarness</RootNamespace>
     <AssemblyName>GoldenHarness</AssemblyName>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <EnableDeprecatedRuntimeHostHarnesses Condition="'$(EnableDeprecatedRuntimeHostHarnesses)' == ''">false</EnableDeprecatedRuntimeHostHarnesses>
   </PropertyGroup>
 
   <!--
@@ -19,25 +20,33 @@
     <PackageReference Include="Microsoft.ClearScript.V8.Native.win-x64" Version="7.*" />
   </ItemGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\..\DemoBoards.RuntimeHost\DemoBoards.RuntimeHost.csproj" />
+  <ItemGroup Condition="'$(EnableDeprecatedRuntimeHostHarnesses)' == 'true'">
+    <ProjectReference Include="..\..\deprecated.DemoBoards.RuntimeHost\deprecated.DemoBoards.RuntimeHost.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(EnableDeprecatedRuntimeHostHarnesses)' != 'true'">
+    <Compile Remove="Program.cs" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(EnableDeprecatedRuntimeHostHarnesses)' == 'true'">
+    <Compile Remove="Program.Stub.cs" />
   </ItemGroup>
 
   <!--
-    The brain bundle and golden fixtures live in the sibling JS repos and are
-    copied into the output at build time so this proof never drifts from source.
-    Paths are relative to ai-tool-evolver/ (three levels up from this project).
+        The brain bundle is consumed from the installed yaml-flow package under the
+        sibling demo-boards-ns-code repo so the WinUI repo does not require a checked-out
+        yaml-flow workspace. Paths are relative to ai-tool-evolver/ (three levels up from this project).
   -->
   <ItemGroup>
     <None Include="js\golden-driver.js" CopyToOutputDirectory="PreserveNewest" />
     <None Include="js\producer-driver.js" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\..\..\..\yaml-flow\browser\board-sse-state.js"
+        <None Include="..\..\..\..\demo-boards-ns-code\node_modules\yaml-flow\browser\board-sse-state.js"
           Link="js\board-sse-state.js"
           CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\..\..\..\yaml-flow\browser\compute-jsonata.js"
+        <None Include="..\..\..\..\demo-boards-ns-code\node_modules\yaml-flow\browser\compute-jsonata.js"
           Link="js\compute-jsonata.js"
           CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\..\..\..\yaml-flow\browser\server-runtime-controlface.js"
+        <None Include="..\..\..\..\demo-boards-ns-code\node_modules\yaml-flow\browser\server-runtime-controlface.js"
           Link="js\server-runtime-controlface.js"
           CopyToOutputDirectory="PreserveNewest" />
     <None Include="fixtures\compute-cases.json" CopyToOutputDirectory="PreserveNewest" />

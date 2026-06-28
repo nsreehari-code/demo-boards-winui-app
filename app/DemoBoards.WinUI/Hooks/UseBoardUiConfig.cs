@@ -24,7 +24,7 @@ public abstract partial class HookComponent<TProps>
     /// </summary>
     protected string? UseBoardUiConfig(string boardId)
     {
-        EmbeddedBoardClient client = App.Current.BoardClient;
+        EmbeddedBoardClient client = UseEmbeddedClient();
         var (uiConfig, setUiConfig) = UseState<string?>(null);
 
         UseEffect(() =>
@@ -61,7 +61,7 @@ public abstract partial class HookComponent<TProps>
 
             _ = Load();
             return () => { cancelled = true; };
-        }, boardId ?? string.Empty);
+        }, boardId ?? string.Empty, client.ServerBaseUri.AbsoluteUri);
 
         return uiConfig;
     }

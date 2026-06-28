@@ -28,7 +28,7 @@ public abstract partial class HookComponent<TProps>
     /// <summary>Port of <c>useRuntimeCards</c>: the stable runtime-card action callbacks.</summary>
     protected RuntimeCards UseRuntimeCards(string boardId)
     {
-        EmbeddedBoardClient client = App.Current.BoardClient;
+        EmbeddedBoardClient client = UseEmbeddedClient();
 
         // useMemo parity: the frontend memoises runtimeCardActions on boardId so the callbacks
         // are stable across renders that don't change the board.
@@ -39,7 +39,8 @@ public abstract partial class HookComponent<TProps>
                     UnwrapRuntimeCardPayload(await client.UpsertRuntimeCardAsync(candidate).ConfigureAwait(false), "upsertRuntimeCard"),
                 RemoveRuntimeCard: async cardId =>
                     UnwrapRuntimeCardPayload(await client.RemoveRuntimeCardAsync(cardId).ConfigureAwait(false), "removeRuntimeCard"))),
-            boardId);
+            boardId,
+            client.ServerBaseUri.AbsoluteUri);
     }
 
     /// <summary>Port of <c>useRuntimeCards</c>'s <c>unwrapPayload</c>: success → data, fail → throw, else → payload.</summary>

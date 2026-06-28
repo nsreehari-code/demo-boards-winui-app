@@ -16,7 +16,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const harnessRoot = path.resolve(here, '..');
 // ai-tool-evolver/  (sibling repos live here)
 const repoRoot = path.resolve(harnessRoot, '..', '..', '..');
-const browserDir = path.join(repoRoot, 'yaml-flow', 'browser');
+const browserDir = path.join(repoRoot, 'demo-boards-ns-code', 'node_modules', 'yaml-flow', 'browser');
 
 // ---- Map-backed in-memory Web Storage shim (the Node-side localStorage) ------
 function createMemoryLocalStorage() {

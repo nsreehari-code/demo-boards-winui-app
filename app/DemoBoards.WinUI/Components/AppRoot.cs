@@ -24,6 +24,11 @@ public sealed class AppRoot : HookComponent<AppRootProps>
     {
         BoardStore boardStore = UseBoardStoreSubscription(includeUiState: true);
         EmbeddedBoardClient boardClient = UseEmbeddedClient();
+        BoardInfoState runningBoardInfo = boardStore.GetBoardInfo();
+        string runningBoardId = runningBoardInfo.BoardId;
+        string runningServerUrl = NormalizeServerOrigin(boardClient.LiveBoardStateServerBaseUri.AbsoluteUri);
+        var (activeBoardId, _) = UseGlobalState<string>(GlobalStateKeys.BoardId, runningBoardId);
+        var (activeServerUrl, _) = UseGlobalState<string>(GlobalStateKeys.ServerUrl, boardClient.LiveBoardStateServerBaseUri.AbsoluteUri);
 
         var (loading, setLoading) = UseState(true);
         var (startupMessage, setStartupMessage) = UseState("Preparing board surface...");
@@ -39,16 +44,60 @@ public sealed class AppRoot : HookComponent<AppRootProps>
 
         UseEffect(() =>
         {
+            setLoading(true);
             _ = InitializeShellAsync(boardStore, boardClient, setStartupMessage, setLoading);
-        });
+        }, runningBoardId, runningBoardInfo.ClientId, runningServerUrl);
 
         UseEffect(
             () => App.Current.ApplyThemePack(BoardTheme.ResolveThemePackIdFromUiJson(boardStore.State.ManagedBoardConfig?.RawUiJson)),
             boardStore.State.ManagedBoardConfig?.RawUiJson ?? string.Empty);
 
+        UseEffect(() =>
+        {
+            string targetBoardId = (activeBoardId ?? string.Empty).Trim();
+            string targetServerUrl = NormalizeServerOrigin(activeServerUrl);
+
+            if (targetBoardId.Length == 0 || targetServerUrl.Length == 0)
+            {
+                return () => { };
+            }
+
+            if (!string.Equals(runningBoardId, targetBoardId, StringComparison.Ordinal)
+                || !string.Equals(runningServerUrl, targetServerUrl, StringComparison.OrdinalIgnoreCase))
+            {
+                bool cancelled = false;
+
+                setLoading(true);
+                setStartupMessage("Rebinding board session...");
+
+                async Task RebindAsync()
+                {
+                    try
+                    {
+                        await App.Current.RebindBoardSessionAsync(targetServerUrl, targetBoardId).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        if (cancelled)
+                        {
+                            return;
+                        }
+
+                        setStartupMessage($"Failed to rebind board session: {ex.Message}");
+                        setLoading(false);
+                    }
+                }
+
+                _ = RebindAsync();
+                return () => { cancelled = true; };
+            }
+
+            return () => { };
+        }, activeBoardId, activeServerUrl, runningBoardId, runningServerUrl);
+
         var sections = new List<Element>
         {
-            BuildTopBar(boardStore, refreshingBoard, setRefreshingBoard, configOpen, setConfigOpen),
+            BuildTopBar(boardStore, boardClient, refreshingBoard, setRefreshingBoard, configOpen, setConfigOpen),
         };
 
         if (loading)
@@ -103,7 +152,7 @@ public sealed class AppRoot : HookComponent<AppRootProps>
             .Provide(AppThemeContext.Current, AppTheme.FromResources());
     }
 
-    private static Element BuildTopBar(BoardStore boardStore, bool refreshingBoard, Action<bool> setRefreshingBoard, bool configOpen, Action<bool> setConfigOpen)
+    private static Element BuildTopBar(BoardStore boardStore, EmbeddedBoardClient boardClient, bool refreshingBoard, Action<bool> setRefreshingBoard, bool configOpen, Action<bool> setConfigOpen)
     {
         (string title, string subtitle) = ResolvePageTitleAndSubtitle(boardStore.State.ManagedBoardConfig, boardStore.GetBoardInfo().BoardId);
 
@@ -115,7 +164,7 @@ public sealed class AppRoot : HookComponent<AppRootProps>
             }
 
             setRefreshingBoard(true);
-            _ = RefreshBoardAsync(setRefreshingBoard);
+            _ = RefreshBoardAsync(boardClient, setRefreshingBoard);
         })
         .AutomationName("Refresh board")
         .SubtleButton();
@@ -174,16 +223,23 @@ public sealed class AppRoot : HookComponent<AppRootProps>
         }
     }
 
-    private static async Task RefreshBoardAsync(Action<bool> setRefreshingBoard)
+    private static async Task RefreshBoardAsync(EmbeddedBoardClient boardClient, Action<bool> setRefreshingBoard)
     {
         try
         {
-            await App.Current.BoardClient.RefreshBoardAsync();
+            await boardClient.RefreshBoardAsync();
         }
         finally
         {
             setRefreshingBoard(false);
         }
+    }
+
+    private static string NormalizeServerOrigin(string? serverOrigin)
+    {
+        return string.IsNullOrWhiteSpace(serverOrigin)
+            ? string.Empty
+            : serverOrigin.Trim().TrimEnd('/');
     }
 
     private static (string Title, string Subtitle) ResolvePageTitleAndSubtitle(ManagedBoardConfigState? config, string boardId)

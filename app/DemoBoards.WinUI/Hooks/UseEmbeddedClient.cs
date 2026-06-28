@@ -31,7 +31,17 @@ public abstract partial class HookComponent<TProps>
     /// </exception>
     protected EmbeddedBoardClient UseEmbeddedClient()
     {
-        EmbeddedBoardClient? client = App.Current?.BoardClient;
+        App app = App.Current;
+        var (_, setRevision) = UseState(string.Empty);
+
+        UseEffect(() =>
+        {
+            EventHandler<BoardSessionChangedEventArgs> onSessionChanged = (_, _) => setRevision(Guid.NewGuid().ToString("N"));
+            app.SessionChanged += onSessionChanged;
+            return () => app.SessionChanged -= onSessionChanged;
+        });
+
+        EmbeddedBoardClient? client = app.BoardClient;
         if (client is null)
         {
             throw new InvalidOperationException(

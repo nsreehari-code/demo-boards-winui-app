@@ -29,6 +29,9 @@
     <Content Include="Assets\AppIcon.ico" />
     <Content Include="Assets\Wide310x150Logo.scale-200.png" />
     <Content Include="Assets\Icons\*.svg" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\..\demo-boards-ns-code\node_modules\yaml-flow\browser\compute-jsonata.js" CopyToOutputDirectory="PreserveNewest" Link="Lib\compute-jsonata.js" />
+    <Content Include="..\..\..\demo-boards-ns-code\node_modules\yaml-flow\browser\board-sse-state.js" CopyToOutputDirectory="PreserveNewest" Link="SseReducer\board-sse-state.js" />
+    <Content Include="SseReducer\board-sse-reducer-host.js" CopyToOutputDirectory="PreserveNewest" Link="SseReducer\board-sse-reducer-host.js" />
     <Content Include="node\winui-host-config-runner.mjs" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="winui-app-config.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
@@ -56,13 +59,14 @@
   -->
   <ItemGroup>
     <PackageReference Include="Markdig" Version="0.37.0" />
+    <PackageReference Include="Microsoft.ClearScript.V8" Version="7.*" />
+    <PackageReference Include="Microsoft.ClearScript.V8.Native.win-x64" Version="7.*" />
     <PackageReference Include="Microsoft.UI.Reactor" Version="0.1.0-preview.4" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.1839" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.2.0" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools.WinApp" Version="0.3.2" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\DemoBoards.RuntimeHost\DemoBoards.RuntimeHost.csproj" />
     <ProjectReference Include="..\DemoBoards.Shared\DemoBoards.Shared.csproj" />
   </ItemGroup>
 

@@ -19,6 +19,46 @@ function normalizeObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 }
 
+function cloneJsonValue(value) {
+  return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+
+function normalizeBoardRecordForSync(value) {
+  const candidate = normalizeObject(value);
+  const source = candidate.resolvedBoardConfig && typeof candidate.resolvedBoardConfig === 'object' && !Array.isArray(candidate.resolvedBoardConfig)
+    ? normalizeObject(candidate.resolvedBoardConfig)
+    : candidate;
+
+  const record = {};
+  for (const field of ['label', 'ai', 'aiWorkspaceTemplate', 'cardsTemplate', 'refsTemplate', 'uiTemplate']) {
+    const normalized = normalizeString(source[field]);
+    if (normalized) {
+      record[field] = normalized;
+    }
+  }
+
+  for (const field of ['metadata', 'chat', 'queueWakeup']) {
+    const normalized = normalizeObject(source[field]);
+    if (Object.keys(normalized).length > 0) {
+      record[field] = cloneJsonValue(normalized);
+    }
+  }
+
+  const refsTemplate = normalizeString(record.refsTemplate);
+  const refs = normalizeObject(source.refs);
+  if (!refsTemplate && Object.keys(refs).length > 0) {
+    record.refs = cloneJsonValue(refs);
+  }
+
+  const uiTemplate = normalizeString(record.uiTemplate);
+  const ui = normalizeObject(source.ui);
+  if (!uiTemplate && Object.keys(ui).length > 0) {
+    record.ui = cloneJsonValue(ui);
+  }
+
+  return record;
+}
+
 async function importLoadConfig(payload) {
   const loaderPath = normalizeString(payload.localFsConfigLoaderPath);
   if (!loaderPath) {
@@ -121,7 +161,7 @@ async function syncBoardRecord(payload) {
   if (!boardId) {
     throw new Error('boardId is required');
   }
-  const record = normalizeObject(payload.record);
+  const record = normalizeBoardRecordForSync(payload.record);
   const hostConfig = await loadHostConfig(payload);
   const loaderPath = normalizeString(payload.localFsConfigLoaderPath);
   const dynamicBoardsModulePath = path.resolve(path.dirname(loaderPath), '..', 'boards-index', 'dynamic-boards.js');

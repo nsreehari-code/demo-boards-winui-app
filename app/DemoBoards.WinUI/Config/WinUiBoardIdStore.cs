@@ -27,6 +27,17 @@ public static class WinUiBoardIdStore
     /// <summary>Returns the persisted board id override, or <c>null</c> when none has been saved.</summary>
     public static string? LoadOverride()
     {
+        return LoadStringProperty(BoardIdProperty);
+    }
+
+    /// <summary>Persists <paramref name="boardId"/> as the active board override.</summary>
+    public static void SaveOverride(string boardId)
+    {
+        SaveStringProperty(BoardIdProperty, boardId);
+    }
+
+    internal static string? LoadStringProperty(string propertyName)
+    {
         try
         {
             string path = OverrideFilePath;
@@ -40,8 +51,8 @@ public static class WinUiBoardIdStore
                 return null;
             }
 
-            string? boardId = root[BoardIdProperty]?.GetValue<string>()?.Trim();
-            return string.IsNullOrWhiteSpace(boardId) ? null : boardId;
+            string? value = root[propertyName]?.GetValue<string>()?.Trim();
+            return string.IsNullOrWhiteSpace(value) ? null : value;
         }
         catch
         {
@@ -49,15 +60,27 @@ public static class WinUiBoardIdStore
         }
     }
 
-    /// <summary>Persists <paramref name="boardId"/> as the active board override.</summary>
-    public static void SaveOverride(string boardId)
+    internal static void SaveStringProperty(string propertyName, string value)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(boardId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(propertyName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(value);
 
         string path = OverrideFilePath;
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
 
-        var root = new JsonObject { [BoardIdProperty] = boardId.Trim() };
+        JsonObject root;
+        try
+        {
+            root = File.Exists(path) && JsonNode.Parse(File.ReadAllText(path)) is JsonObject existingRoot
+                ? existingRoot
+                : new JsonObject();
+        }
+        catch
+        {
+            root = new JsonObject();
+        }
+
+        root[propertyName] = value.Trim();
         File.WriteAllText(path, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
     }
 }

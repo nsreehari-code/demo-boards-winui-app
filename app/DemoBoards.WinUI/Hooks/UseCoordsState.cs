@@ -40,8 +40,8 @@ public abstract partial class HookComponent<TProps>
     /// <summary>Port of <c>useBoardLayoutActions</c>: setters bound to the in-process board store.</summary>
     protected BoardLayoutActions UseBoardLayoutActions()
     {
-        BoardStore store = App.Current.BoardStore;
-        EmbeddedBoardClient client = App.Current.BoardClient;
+        BoardStore store = UseBoardStoreSubscription(includeUiState: false);
+        EmbeddedBoardClient client = UseEmbeddedClient();
         var autosaveTimerRef = UseRef<Timer?>(null);
 
         // Dispose any pending autosave timer when the component unmounts.
@@ -108,8 +108,8 @@ public abstract partial class HookComponent<TProps>
     /// <summary>Port of <c>useCoordsState(cardId)</c>: a single card's coords plus a bound setter.</summary>
     protected (BoardCanvasPointState? Coords, Action<double, double> SetCoords) UseCoordsState(string cardId)
     {
-        BoardCanvasLayoutState layout = UseBoardLayoutState();
-        BoardStore store = App.Current.BoardStore;
+        BoardStore store = UseBoardStoreSubscription(includeUiState: false);
+        BoardCanvasLayoutState layout = store.GetCanvasLayout();
         BoardCanvasPointState? coords = !string.IsNullOrEmpty(cardId) && layout.Positions.TryGetValue(cardId, out BoardCanvasPointState? point)
             ? point
             : null;
@@ -119,8 +119,8 @@ public abstract partial class HookComponent<TProps>
     /// <summary>Port of <c>useCardWidthState(cardId)</c>: a single card's width plus a bound setter.</summary>
     protected (double? Width, Action<double> SetWidth) UseCardWidthState(string cardId)
     {
-        BoardCanvasLayoutState layout = UseBoardLayoutState();
-        BoardStore store = App.Current.BoardStore;
+        BoardStore store = UseBoardStoreSubscription(includeUiState: false);
+        BoardCanvasLayoutState layout = store.GetCanvasLayout();
         double? width = !string.IsNullOrEmpty(cardId) && layout.Widths.TryGetValue(cardId, out double value)
             ? value
             : null;

@@ -33,14 +33,17 @@ public sealed record WinUiHostTemplateCatalog(
     string RuntimeBoardsLayoutRef,
     string RawHostSummaryJson);
 
-public sealed record WinUiFrontendAppConfig(BoardCanvasLayoutDefaults CanvasLayout, WinUiBoardServerConstants BoardServerConstants, string DefaultBoardId)
+public sealed record WinUiFrontendAppConfig(BoardCanvasLayoutDefaults CanvasLayout, WinUiBoardServerConstants BoardServerConstants, string DefaultBoardId, string InitialServerUrl)
 {
-    public static WinUiFrontendAppConfig Default { get; } = new(BoardCanvasLayoutDefaults.Default, WinUiBoardServerConstants.Default, RuntimeHostOptions.Default.InitialBoardId);
+    public static WinUiFrontendAppConfig Default { get; } = new(
+        BoardCanvasLayoutDefaults.Default,
+        WinUiBoardServerConstants.Default,
+        RuntimeHostOptions.Default.InitialBoardId,
+        $"http://localhost:{RuntimeHostOptions.Default.AgentfacePort}");
 }
 
 public sealed record WinUiBackendAppConfig(
     string NsCodeRepoRoot,
-    string HostInvocationRunnerPath,
     int AgentfacePort,
     bool RequireFixedAgentfacePort,
     string HostConfigPath,
@@ -52,10 +55,8 @@ public sealed record WinUiBackendAppConfig(
 {
     public static WinUiBackendAppConfig CreateDefault(string repoRoot, string nsCodeRepoRoot, string baseDirectory)
     {
-        string hostInvocationRunnerPath = RuntimeAssetResolver.ResolveHostInvocationRunnerPathOrThrow(baseDirectory);
         return new(
             nsCodeRepoRoot,
-            hostInvocationRunnerPath,
             RuntimeHostOptions.Default.AgentfacePort,
             RuntimeHostOptions.Default.RequireFixedAgentfacePort,
             System.IO.Path.Combine(nsCodeRepoRoot, "demo-board", "server", "hosted-board-runtime", "hosted-board-runtime.localfs.config.json"),
