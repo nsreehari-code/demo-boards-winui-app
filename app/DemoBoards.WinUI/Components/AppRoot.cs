@@ -32,7 +32,6 @@ public sealed class AppRoot : HookComponent<AppRootProps>
 
         var (loading, setLoading) = UseState(true);
         var (startupMessage, setStartupMessage) = UseState("Preparing board surface...");
-        var (refreshingBoard, setRefreshingBoard) = UseState(false);
         var (configOpen, setConfigOpen) = UseState(false);
         var (smokeVisible, setSmokeVisible) = UseState(false);
 
@@ -97,7 +96,7 @@ public sealed class AppRoot : HookComponent<AppRootProps>
 
         var sections = new List<Element>
         {
-            BuildTopBar(boardStore, boardClient, refreshingBoard, setRefreshingBoard, configOpen, setConfigOpen),
+            BuildTopBar(boardStore, boardClient, configOpen, setConfigOpen),
         };
 
         if (loading)
@@ -113,23 +112,25 @@ public sealed class AppRoot : HookComponent<AppRootProps>
                 new BoardRendererProps(boardStore.GetBoardInfo().BoardId))
             .Flex(grow: 1));
 
+        Element boardSettingsHost = Component<PanelVertical, PanelVerticalProps>(
+            new PanelVerticalProps(
+                FabPosition: "bottom-right",
+                Expanded: configOpen,
+                OnToggle: () => setConfigOpen(!configOpen),
+                AriaLabel: "Board settings",
+                Title: configOpen ? "Close board settings" : "Board settings",
+                Icon: "bi-gear-fill",
+                IconToggled: "bi-x-lg",
+                Children: Component<ReactorAppConfigModalComponent, ReactorAppConfigModalProps>(
+                    new ReactorAppConfigModalProps(
+                        boardStore.GetBoardInfo().BoardId,
+                        boardStore.State.ManagedBoardConfig,
+                        () => setConfigOpen(false),
+                        onRunTests))));
+
         Element? overlay = null;
 
-        if (configOpen)
-        {
-            overlay = Component<GlobalModal, GlobalModalProps>(
-                new GlobalModalProps(
-                    "Board Settings",
-                    () => setConfigOpen(false),
-                    Component<ReactorAppConfigModalComponent, ReactorAppConfigModalProps>(
-                        new ReactorAppConfigModalProps(
-                            boardStore.GetBoardInfo().BoardId,
-                            boardStore.State.ManagedBoardConfig,
-                            () => setConfigOpen(false),
-                            onRunTests))));
-        }
-
-        else if (smokeVisible)
+        if (smokeVisible)
         {
             overlay = Component<GlobalModal, GlobalModalProps>(
                 new GlobalModalProps(
@@ -138,40 +139,43 @@ public sealed class AppRoot : HookComponent<AppRootProps>
                     Component<ReactorSmokeRunnerComponent>()));
         }
 
-        if (overlay is not null)
-        {
-            sections.Add(overlay);
-        }
+        Element shell = Border(VStack(16, sections.ToArray()))
+            .Padding(16)
+            .Background(ResolveBrush("BoardWindowBackgroundBrush"));
 
         // ThemeProvider: resolve the live app theme (from the active BoardTheme pack's resources) and
         // provide it to the whole subtree. Descendants — including the InfiniteCanvas — read it via
         // UseContext(AppThemeContext.Current) instead of looking up XAML resources themselves.
-        return Border(VStack(16, sections.ToArray()))
-            .Padding(16)
-            .Background(ResolveBrush("BoardWindowBackgroundBrush"))
+        return Grid(
+                new[] { GridSize.Star() },
+                new[] { GridSize.Star() },
+                shell,
+                boardSettingsHost,
+                overlay is null
+                    ? Empty()
+                    : overlay
+                        .HAlign(HorizontalAlignment.Center)
+                        .VAlign(VerticalAlignment.Center)
+                        .Margin(24))
             .Provide(AppThemeContext.Current, AppTheme.FromResources());
     }
 
-    private static Element BuildTopBar(BoardStore boardStore, EmbeddedBoardClient boardClient, bool refreshingBoard, Action<bool> setRefreshingBoard, bool configOpen, Action<bool> setConfigOpen)
+    private static Element BuildTopBar(BoardStore boardStore, EmbeddedBoardClient boardClient, bool configOpen, Action<bool> setConfigOpen)
     {
         (string title, string subtitle) = ResolvePageTitleAndSubtitle(boardStore.State.ManagedBoardConfig, boardStore.GetBoardInfo().BoardId);
+        double refreshIntervalMs = ResolveRefreshAllIntervalMs(boardStore.State.ManagedBoardConfig);
 
-        Element refreshButton = Button(refreshingBoard ? "Refreshing..." : "Refresh board", () =>
-        {
-            if (refreshingBoard)
-            {
-                return;
-            }
+        Element refreshButton = Component<TimerButton, TimerButtonProps>(
+            new TimerButtonProps(
+                Duration: refreshIntervalMs,
+                OnClick: () => RefreshBoardAsync(boardClient),
+                Children: state => HStack(8,
+                    TextBlock(state.Pending ? "Refreshing..." : FormatCountdown(state.RemainingMs))
+                        .Foreground(ResolveBrush("BoardTextBrush")))));
 
-            setRefreshingBoard(true);
-            _ = RefreshBoardAsync(boardClient, setRefreshingBoard);
-        })
-        .AutomationName("Refresh board")
-        .SubtleButton();
-
-        Element configButton = Button(configOpen ? "Hide settings" : "Show settings", () => setConfigOpen(!configOpen))
-            .AutomationName(configOpen ? "Hide board settings" : "Show board settings")
-            .SubtleButton();
+        Element actions = HStack(12,
+                refreshButton)
+            .HorizontalAlignment(HorizontalAlignment.Right);
 
         return Border(
                 HStack(12,
@@ -179,12 +183,12 @@ public sealed class AppRoot : HookComponent<AppRootProps>
                         TextBlock(title).Bold().FontSize(15),
                         TextBlock(subtitle).Opacity(0.72).FontSize(11))
                     .Flex(grow: 1),
-                    refreshButton,
-                    configButton))
+                    actions))
             .Padding(14)
             .Background(ResolveBrush("BoardTopBarBackgroundBrush"))
             .WithBorder(ResolveBrush("BoardTopBarBorderBrush"), 1)
-            .CornerRadius(14);
+            .CornerRadius(14)
+            .HorizontalAlignment(HorizontalAlignment.Stretch);
     }
 
     private static Element BuildStartupBanner(string startupMessage)
@@ -223,16 +227,9 @@ public sealed class AppRoot : HookComponent<AppRootProps>
         }
     }
 
-    private static async Task RefreshBoardAsync(EmbeddedBoardClient boardClient, Action<bool> setRefreshingBoard)
+    private static async Task RefreshBoardAsync(EmbeddedBoardClient boardClient)
     {
-        try
-        {
-            await boardClient.RefreshBoardAsync();
-        }
-        finally
-        {
-            setRefreshingBoard(false);
-        }
+        await boardClient.RefreshBoardAsync();
     }
 
     private static string NormalizeServerOrigin(string? serverOrigin)
@@ -271,6 +268,51 @@ public sealed class AppRoot : HookComponent<AppRootProps>
         {
             return (fallbackTitle, fallbackSubtitle);
         }
+    }
+
+    private static double ResolveRefreshAllIntervalMs(ManagedBoardConfigState? config)
+    {
+        const int defaultRefreshAllIntervalSeconds = 30 * 60;
+
+        if (config is null || string.IsNullOrWhiteSpace(config.RawMetadataJson))
+        {
+            return defaultRefreshAllIntervalSeconds * 1000d;
+        }
+
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(config.RawMetadataJson);
+            JsonElement root = document.RootElement;
+
+            if (root.TryGetProperty("refreshAllIntervalSeconds", out JsonElement secondsElement)
+                && secondsElement.ValueKind == JsonValueKind.Number
+                && secondsElement.TryGetInt32(out int seconds)
+                && seconds > 0)
+            {
+                return seconds * 1000d;
+            }
+
+            if (root.TryGetProperty("refreshAllIntervalMs", out JsonElement millisecondsElement)
+                && millisecondsElement.ValueKind == JsonValueKind.Number
+                && millisecondsElement.TryGetInt32(out int milliseconds)
+                && milliseconds > 0)
+            {
+                return milliseconds;
+            }
+        }
+        catch
+        {
+        }
+
+        return defaultRefreshAllIntervalSeconds * 1000d;
+    }
+
+    private static string FormatCountdown(double remainingMs)
+    {
+        int totalSeconds = Math.Max(0, (int)Math.Ceiling(remainingMs / 1000d));
+        int minutes = totalSeconds / 60;
+        int seconds = totalSeconds % 60;
+        return $"{minutes:00}:{seconds:00}";
     }
 
     private static Brush ResolveBrush(string resourceKey)
