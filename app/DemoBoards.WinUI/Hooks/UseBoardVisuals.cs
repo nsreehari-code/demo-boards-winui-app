@@ -14,6 +14,7 @@ public sealed record BoardLayoutActions(
     Action<IReadOnlyDictionary<string, BoardCanvasPointState>> SetManyCoords,
     Action<string, double> SetWidth,
     Action<double, double, double> SetViewport,
+    Action<JsonElement> SetInfiniteCanvasBlob,
     Func<Task> FlushLayout,
     Action ScheduleAutosave);
 
@@ -95,44 +96,9 @@ public abstract partial class HookComponent<TProps>
 
             try
             {
-                var cardIds = new JsonArray();
-                foreach (string cardId in layoutState.CardIds)
-                {
-                    cardIds.Add((JsonNode?)JsonValue.Create(cardId));
-                }
-
-                var positions = new JsonObject();
-                foreach ((string cardId, BoardCanvasPointState position) in layoutState.Positions)
-                {
-                    positions[cardId] = new JsonObject
-                    {
-                        ["x"] = JsonValue.Create(position.X),
-                        ["y"] = JsonValue.Create(position.Y),
-                    };
-                }
-
-                var widths = new JsonObject();
-                foreach ((string cardId, double width) in layoutState.Widths)
-                {
-                    widths[cardId] = JsonValue.Create(width);
-                }
-
-                JsonNode? viewport = layoutState.Viewport is null
-                    ? null
-                    : new JsonObject
-                    {
-                        ["x"] = JsonValue.Create(layoutState.Viewport.X),
-                        ["y"] = JsonValue.Create(layoutState.Viewport.Y),
-                        ["zoom"] = JsonValue.Create(layoutState.Viewport.Zoom),
-                    };
-
-                JsonNode canvasNode = new JsonObject
-                {
-                    ["cardIds"] = cardIds,
-                    ["positions"] = positions,
-                    ["widths"] = widths,
-                    ["viewport"] = viewport,
-                };
+                JsonNode canvasNode = layoutState.InfiniteCanvasBlob is { ValueKind: JsonValueKind.Object } blob
+                    ? JsonNode.Parse(blob.GetRawText()) ?? new JsonObject()
+                    : BuildLegacyCanvasNode(layoutState);
 
                 _ = await ShallowMergeAsync("canvas", canvasNode).ConfigureAwait(false);
             }
@@ -173,6 +139,7 @@ public abstract partial class HookComponent<TProps>
             },
             SetWidth: (cardId, width) => store.SetCanvasCardWidth(cardId, width),
             SetViewport: (x, y, zoom) => store.SetCanvasViewport(x, y, zoom),
+            SetInfiniteCanvasBlob: blob => store.SetInfiniteCanvasBlob(blob),
             FlushLayout: FlushLayoutAsync,
             ScheduleAutosave: ScheduleAutosave);
 
@@ -228,5 +195,47 @@ public abstract partial class HookComponent<TProps>
             && !string.IsNullOrWhiteSpace(kindString)
                 ? kindString.Trim()
                 : DefaultCentrePaneKind;
+    }
+
+    private static JsonNode BuildLegacyCanvasNode(BoardCanvasLayoutState layoutState)
+    {
+        var cardIds = new JsonArray();
+        foreach (string cardId in layoutState.CardIds)
+        {
+            cardIds.Add((JsonNode?)JsonValue.Create(cardId));
+        }
+
+        var positions = new JsonObject();
+        foreach ((string cardId, BoardCanvasPointState position) in layoutState.Positions)
+        {
+            positions[cardId] = new JsonObject
+            {
+                ["x"] = JsonValue.Create(position.X),
+                ["y"] = JsonValue.Create(position.Y),
+            };
+        }
+
+        var widths = new JsonObject();
+        foreach ((string cardId, double width) in layoutState.Widths)
+        {
+            widths[cardId] = JsonValue.Create(width);
+        }
+
+        JsonNode? viewport = layoutState.Viewport is null
+            ? null
+            : new JsonObject
+            {
+                ["x"] = JsonValue.Create(layoutState.Viewport.X),
+                ["y"] = JsonValue.Create(layoutState.Viewport.Y),
+                ["zoom"] = JsonValue.Create(layoutState.Viewport.Zoom),
+            };
+
+        return new JsonObject
+        {
+            ["cardIds"] = cardIds,
+            ["positions"] = positions,
+            ["widths"] = widths,
+            ["viewport"] = viewport,
+        };
     }
 }

@@ -158,6 +158,14 @@ public sealed class LocalManagedBoardStore
 
     private static JsonNode BuildLayoutNode(BoardCanvasLayoutState layoutState)
     {
+        if (layoutState.InfiniteCanvasBlob is { ValueKind: JsonValueKind.Object } blob)
+        {
+            return new JsonObject
+            {
+                ["canvas"] = JsonNode.Parse(blob.GetRawText())
+            };
+        }
+
         var cardIds = new JsonArray();
         foreach (string cardId in layoutState.CardIds)
         {

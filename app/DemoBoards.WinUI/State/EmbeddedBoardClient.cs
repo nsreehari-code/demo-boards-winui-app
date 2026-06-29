@@ -513,6 +513,30 @@ public sealed class EmbeddedBoardClient
 
         string normalizedMode = mode?.Trim() ?? string.Empty;
 
+        if (layoutState.InfiniteCanvasBlob is { ValueKind: JsonValueKind.Object } blob)
+        {
+            if (string.Equals(normalizedMode, "shallow-merge", StringComparison.OrdinalIgnoreCase))
+            {
+                return PostManageBoardsAsync("shallow-merge", new
+                {
+                    boardId = normalizedBoardId,
+                    ns = WinUiLayoutNamespace,
+                    key = "canvas",
+                    val = JsonNode.Parse(blob.GetRawText()),
+                });
+            }
+
+            return PostManageBoardsAsync("save-layout", new
+            {
+                boardId = normalizedBoardId,
+                ns = WinUiLayoutNamespace,
+                keyvals = new
+                {
+                    canvas = JsonNode.Parse(blob.GetRawText()),
+                }
+            });
+        }
+
         var canvas = new
         {
             cardIds = layoutState.CardIds,

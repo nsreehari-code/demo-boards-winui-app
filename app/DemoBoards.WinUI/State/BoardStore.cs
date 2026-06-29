@@ -273,6 +273,11 @@ public sealed class BoardStore : IDisposable
         Dispatch(new SetCanvasViewportAction(x, y, zoom));
     }
 
+    public void SetInfiniteCanvasBlob(JsonElement blob)
+    {
+        Dispatch(new SetInfiniteCanvasBlobAction(blob));
+    }
+
     private void HandleCanonicalStateChanged(object? sender, BoardSseCanonicalEnvelope canonicalEnvelope)
     {
         Dispatch(new ReplaceCanonicalSlicesAction(canonicalEnvelope));
@@ -352,11 +357,20 @@ public sealed class BoardStore : IDisposable
                     ManagedBoardConfig = setManagedConfig.Config,
                     CanvasLayout = ParseCanvasLayout(setManagedConfig.Config?.RawLayoutJson)
                 },
+            SetInfiniteCanvasBlobAction setInfiniteCanvasBlob => ReduceSetInfiniteCanvasBlob(currentState, setInfiniteCanvasBlob),
             SetCanvasCardPositionAction setCanvasCardPosition => ReduceSetCanvasCardPosition(currentState, setCanvasCardPosition),
             SetCanvasCardWidthAction setCanvasCardWidth => ReduceSetCanvasCardWidth(currentState, setCanvasCardWidth),
             SetCanvasViewportAction setCanvasViewport => ReduceSetCanvasViewport(currentState, setCanvasViewport),
             _ => currentState,
         };
+    }
+
+    private static BoardStoreState ReduceSetInfiniteCanvasBlob(BoardStoreState currentState, SetInfiniteCanvasBlobAction action)
+    {
+        BoardCanvasLayoutState nextLayout = ParseCanvasLayout(action.Blob);
+        return Equals(currentState.CanvasLayout, nextLayout)
+            ? currentState
+            : currentState with { CanvasLayout = nextLayout };
     }
 
     private static BoardStoreState ReduceSetCanvasCardPosition(BoardStoreState currentState, SetCanvasCardPositionAction action)
@@ -387,6 +401,7 @@ public sealed class BoardStore : IDisposable
             {
                 CardIds = cardIds,
                 Positions = positions,
+                InfiniteCanvasBlob = null,
             }
         };
     }
@@ -418,6 +433,7 @@ public sealed class BoardStore : IDisposable
             {
                 CardIds = cardIds,
                 Widths = widths,
+                InfiniteCanvasBlob = null,
             }
         };
     }
@@ -437,7 +453,11 @@ public sealed class BoardStore : IDisposable
 
         return currentState with
         {
-            CanvasLayout = currentState.CanvasLayout with { Viewport = nextViewport }
+            CanvasLayout = currentState.CanvasLayout with
+            {
+                Viewport = nextViewport,
+                InfiniteCanvasBlob = null,
+            }
         };
     }
 
@@ -769,18 +789,64 @@ public sealed class BoardStore : IDisposable
         try
         {
             using JsonDocument document = JsonDocument.Parse(rawLayoutJson);
-            JsonElement root = document.RootElement;
-            JsonElement candidate = root.ValueKind == JsonValueKind.Object
-                && root.TryGetProperty("canvas", out JsonElement canvas)
-                && canvas.ValueKind == JsonValueKind.Object
-                ? canvas
-                : root;
-            if (candidate.ValueKind != JsonValueKind.Object)
+            return ParseCanvasLayout(document.RootElement);
+        }
+        catch
+        {
+            return BoardCanvasLayoutState.Empty;
+        }
+    }
+
+    private static BoardCanvasLayoutState ParseCanvasLayout(JsonElement rawLayoutRoot)
+    {
+        JsonElement candidate = rawLayoutRoot.ValueKind == JsonValueKind.Object
+            && rawLayoutRoot.TryGetProperty("canvas", out JsonElement canvas)
+            && canvas.ValueKind == JsonValueKind.Object
+            ? canvas
+            : rawLayoutRoot;
+        if (candidate.ValueKind != JsonValueKind.Object)
+        {
+            return BoardCanvasLayoutState.Empty;
+        }
+
+        bool opaqueInfiniteCanvasBlob = candidate.TryGetProperty("nodes", out JsonElement nodesElement)
+            && nodesElement.ValueKind == JsonValueKind.Object;
+        JsonElement? blob = opaqueInfiniteCanvasBlob ? candidate.Clone() : null;
+
+        var positions = new Dictionary<string, BoardCanvasPointState>(StringComparer.Ordinal);
+        var widths = new Dictionary<string, double>(StringComparer.Ordinal);
+        string[] cardIds;
+
+        if (opaqueInfiniteCanvasBlob)
+        {
+            foreach (JsonProperty property in nodesElement.EnumerateObject())
             {
-                return BoardCanvasLayoutState.Empty;
+                if (property.Value.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                double? x = GetDouble(property.Value, "x");
+                double? y = GetDouble(property.Value, "y");
+                if (x is not null && y is not null)
+                {
+                    positions[property.Name] = new BoardCanvasPointState(x.Value, y.Value);
+                }
+
+                double? width = GetDouble(property.Value, "w");
+                if (width is not null && width.Value > 0)
+                {
+                    widths[property.Name] = width.Value;
+                }
             }
 
-            var positions = new Dictionary<string, BoardCanvasPointState>(StringComparer.Ordinal);
+            cardIds = nodesElement.EnumerateObject()
+                .Select(property => property.Name)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .ToArray();
+        }
+        else
+        {
             if (candidate.TryGetProperty("positions", out JsonElement positionsElement)
                 && positionsElement.ValueKind == JsonValueKind.Object)
             {
@@ -802,7 +868,6 @@ public sealed class BoardStore : IDisposable
                 }
             }
 
-            var widths = new Dictionary<string, double>(StringComparer.Ordinal);
             if (candidate.TryGetProperty("widths", out JsonElement widthsElement)
                 && widthsElement.ValueKind == JsonValueKind.Object)
             {
@@ -816,7 +881,7 @@ public sealed class BoardStore : IDisposable
                 }
             }
 
-            string[] cardIds = candidate.TryGetProperty("cardIds", out JsonElement cardIdsElement)
+            cardIds = candidate.TryGetProperty("cardIds", out JsonElement cardIdsElement)
                 && cardIdsElement.ValueKind == JsonValueKind.Array
                 ? cardIdsElement.EnumerateArray()
                     .Where(item => item.ValueKind == JsonValueKind.String)
@@ -825,26 +890,22 @@ public sealed class BoardStore : IDisposable
                     .Select(id => id!)
                     .ToArray()
                 : positions.Keys.ToArray();
-
-            BoardCanvasViewportState? viewport = null;
-            if (candidate.TryGetProperty("viewport", out JsonElement viewportElement)
-                && viewportElement.ValueKind == JsonValueKind.Object)
-            {
-                double? x = GetDouble(viewportElement, "x");
-                double? y = GetDouble(viewportElement, "y");
-                double? zoom = GetDouble(viewportElement, "zoom");
-                if (x is not null && y is not null && zoom is not null)
-                {
-                    viewport = new BoardCanvasViewportState(x.Value, y.Value, zoom.Value);
-                }
-            }
-
-            return new BoardCanvasLayoutState(cardIds, positions, widths, viewport);
         }
-        catch
+
+        BoardCanvasViewportState? viewport = null;
+        if (candidate.TryGetProperty("viewport", out JsonElement viewportElement)
+            && viewportElement.ValueKind == JsonValueKind.Object)
         {
-            return BoardCanvasLayoutState.Empty;
+            double? x = GetDouble(viewportElement, "x");
+            double? y = GetDouble(viewportElement, "y");
+            double? zoom = GetDouble(viewportElement, "zoom");
+            if (x is not null && y is not null && zoom is not null)
+            {
+                viewport = new BoardCanvasViewportState(x.Value, y.Value, zoom.Value);
+            }
         }
+
+        return new BoardCanvasLayoutState(cardIds, positions, widths, viewport, blob);
     }
 
     private static double? GetDouble(JsonElement element, string propertyName)
@@ -1773,6 +1834,8 @@ public sealed class BoardStore : IDisposable
     private sealed record ReplaceCanonicalSlicesAction(BoardSseCanonicalEnvelope CanonicalEnvelope) : IBoardStoreAction;
 
     private sealed record SetManagedBoardConfigAction(ManagedBoardConfigState? Config) : IBoardStoreAction;
+
+    private sealed record SetInfiniteCanvasBlobAction(JsonElement Blob) : IBoardStoreAction;
 
     private sealed record SetCanvasCardPositionAction(string CardId, double X, double Y) : IBoardStoreAction;
 

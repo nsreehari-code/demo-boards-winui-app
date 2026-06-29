@@ -172,20 +172,8 @@ public sealed class InfiniteCanvasPane : HookComponent<InfiniteCanvasPaneProps>
         JsonElement graphJson = JsonSerializer.SerializeToElement(new { nodes = nodeList, ports = portsMap });
         InfiniteCanvasGraph canvasGraph = InfiniteCanvasGraph.FromJson(graphJson);
 
-        // ---- Opaque CanvasState blob: { v, viewport:{x,y,zoom}|null, nodes:{id:{x,y}} }. ----
-        var blobNodes = new Dictionary<string, object>(StringComparer.Ordinal);
-        foreach (string cardId in cardIds)
-        {
-            if (layoutState.Positions.TryGetValue(cardId, out BoardCanvasPointState? pos) && pos is not null)
-            {
-                blobNodes[cardId] = new { x = pos.X, y = pos.Y };
-            }
-        }
-
-        object? viewportObj = layoutState.Viewport is { } vp
-            ? new { x = vp.X, y = vp.Y, zoom = vp.Zoom }
-            : null;
-        JsonElement canvasState = JsonSerializer.SerializeToElement(new { v = 1, viewport = viewportObj, nodes = blobNodes });
+        // ---- Opaque CanvasState blob: owned by InfiniteCanvas and round-tripped verbatim. ----
+        JsonElement? canvasState = layoutState.InfiniteCanvasBlob;
 
         // ---- Canvas callbacks (closures over this render's state). ----
         Element RenderNode(JsonElement node)
@@ -217,41 +205,7 @@ public sealed class InfiniteCanvasPane : HookComponent<InfiniteCanvasPaneProps>
 
         void HandleCanvasStateCommit(JsonElement blob)
         {
-            var coords = new Dictionary<string, BoardCanvasPointState>(StringComparer.Ordinal);
-            if (blob.ValueKind == JsonValueKind.Object
-                && blob.TryGetProperty("nodes", out JsonElement nodes)
-                && nodes.ValueKind == JsonValueKind.Object)
-            {
-                foreach (JsonProperty entry in nodes.EnumerateObject())
-                {
-                    if (entry.Value.ValueKind == JsonValueKind.Object
-                        && entry.Value.TryGetProperty("x", out JsonElement xe) && xe.ValueKind == JsonValueKind.Number
-                        && entry.Value.TryGetProperty("y", out JsonElement ye) && ye.ValueKind == JsonValueKind.Number)
-                    {
-                        double x = xe.GetDouble();
-                        double y = ye.GetDouble();
-                        if (double.IsFinite(x) && double.IsFinite(y))
-                        {
-                            coords[entry.Name] = new BoardCanvasPointState(x, y);
-                        }
-                    }
-                }
-            }
-
-            if (coords.Count > 0)
-            {
-                actions.SetManyCoords(coords);
-            }
-
-            if (blob.ValueKind == JsonValueKind.Object
-                && blob.TryGetProperty("viewport", out JsonElement vpEl) && vpEl.ValueKind == JsonValueKind.Object
-                && vpEl.TryGetProperty("x", out JsonElement vx) && vx.ValueKind == JsonValueKind.Number
-                && vpEl.TryGetProperty("y", out JsonElement vy) && vy.ValueKind == JsonValueKind.Number
-                && vpEl.TryGetProperty("zoom", out JsonElement vz) && vz.ValueKind == JsonValueKind.Number)
-            {
-                actions.SetViewport(vx.GetDouble(), vy.GetDouble(), vz.GetDouble());
-            }
-
+            actions.SetInfiniteCanvasBlob(blob);
             actions.ScheduleAutosave();
         }
 
