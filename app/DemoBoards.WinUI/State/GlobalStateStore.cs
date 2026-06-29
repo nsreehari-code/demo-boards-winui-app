@@ -11,6 +11,9 @@ public static class GlobalStateKeys
 
     /// <summary>The active hosted server URL backing the current board session.</summary>
     public const string ServerUrl = "board.serverUrl";
+
+    /// <summary>In-memory flag that swaps the main surface to the historical InfiniteCanvas test page.</summary>
+    public const string TestPageMode = "app.testPageMode";
 }
 
 /// <summary>Event payload describing which <see cref="GlobalStateStore"/> key changed.</summary>

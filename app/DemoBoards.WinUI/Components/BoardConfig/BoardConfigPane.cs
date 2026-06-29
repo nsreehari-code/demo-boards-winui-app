@@ -50,6 +50,7 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
         AppTheme theme = UseContext(AppThemeContext.Current);
         BoardConfig? boardConfig = UseBoardConfig(Props.BoardId);
         BoardVisuals visualsHook = UseBoardVisuals(Props.BoardId);
+        var (testPageMode, setTestPageMode) = UseGlobalState<bool>(GlobalStateKeys.TestPageMode, false);
 
         string rawBoardJson = boardConfig?.Board?.ToJsonString(PrettyJsonOptions) ?? "{}";
         string rawUiJson = visualsHook.Visuals.Ui.ToJsonString(PrettyJsonOptions);
@@ -57,11 +58,7 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
         string rawLayoutJson = visualsHook.Visuals.LayoutBlob.ToJsonString(PrettyJsonOptions);
         PageDetailsState pageDetails = PageDetailsState.FromRaw(Props.BoardId, rawBoardJson, rawMetadataJson);
 
-        Element SectionCard(Element content) => Border(content)
-            .Padding(14)
-            .Background(theme.CardBackground)
-            .WithBorder(theme.CardBorderStrong, 1)
-            .CornerRadius(14);
+        Element SectionCard(Element content) => content;
 
         Brush CreateStatusBrush(StatusKind kind) => kind switch
         {
@@ -348,6 +345,25 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
                     StatusBlock(templateStatus),
                     HintText(BuildTemplateCatalogHint(templateEntries)))));
 
+        sections.Add(
+            SectionCard(
+                VStack(10,
+                    TextBlock("Test Page")
+                        .FontSize(16)
+                        .Bold(),
+                    TextBlock("Use the shared global-state flag to bypass the live registry-driven board and render the historical InfiniteCanvas working example page.")
+                        .FontSize(12)
+                        .Opacity(0.68)
+                        .Set(text => text.TextWrapping = TextWrapping.WrapWholeWords),
+                    ToggleSwitch(testPageMode, value => setTestPageMode(value), "Enable test page mode", "On", "Off"),
+                    TextBlock(testPageMode
+                            ? "Test page mode is on. AppRoot is bypassing the main board renderer."
+                            : "Test page mode is off. AppRoot is rendering the live board.")
+                        .FontSize(12)
+                        .Foreground(testPageMode ? theme.StatusSuccess : theme.TextMuted)
+                        .Opacity(0.84)
+                        .Set(text => text.TextWrapping = TextWrapping.WrapWholeWords))));
+
         if (showAddBoardForm)
         {
             return ScrollViewer(
@@ -416,7 +432,13 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
                 });
         }
 
-        return ScrollViewer(VStack(14, sections.ToArray()))
+        return ScrollViewer(
+                VStack(12, sections.ToArray())
+                    .Set(stack =>
+                    {
+                        stack.Padding = new Thickness(12, 10, 12, 12);
+                        stack.HorizontalAlignment = HorizontalAlignment.Stretch;
+                    }))
             .Set(scrollViewer =>
             {
                 scrollViewer.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
@@ -949,6 +971,7 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
             metadata["pageTitle"] = PageTitle;
             metadata["pageSubtitle"] = PageSubtitle;
             metadata["refreshAllIntervalSeconds"] = Math.Max(1, ParsePositiveIntOrDefault(RefreshIntervalMinutes, DefaultRefreshAllIntervalSeconds / 60)) * 60;
+
             return metadata.ToJsonString(PrettyJsonOptions);
         }
 

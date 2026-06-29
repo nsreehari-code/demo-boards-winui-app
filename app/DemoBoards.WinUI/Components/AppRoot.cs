@@ -33,6 +33,7 @@ public sealed class AppRoot : HookComponent<AppRootProps>
         string runningServerUrl = NormalizeServerOrigin(boardClient.LiveBoardStateServerBaseUri.AbsoluteUri);
         var (activeBoardId, setActiveBoardId) = UseGlobalState<string>(GlobalStateKeys.BoardId, runningBoardId);
         var (activeServerUrl, setActiveServerUrl) = UseGlobalState<string>(GlobalStateKeys.ServerUrl, boardClient.LiveBoardStateServerBaseUri.AbsoluteUri);
+        var (testPageMode, _) = UseGlobalState<bool>(GlobalStateKeys.TestPageMode, false);
 
         var (loading, setLoading) = UseState(true);
         var (startupMessage, setStartupMessage) = UseState("Preparing board surface...");
@@ -103,7 +104,8 @@ public sealed class AppRoot : HookComponent<AppRootProps>
             BuildTopBar(
                 boardStore,
                 board,
-                theme),
+                theme,
+                testPageMode),
         };
 
         if (loading)
@@ -115,9 +117,13 @@ public sealed class AppRoot : HookComponent<AppRootProps>
         // itself (panes / filters / centre layout / renderer rules) and resolves the board into a node
         // tree through NodeRenderer — no imperative card-splitting in the shell.
         sections.Add(
-            Component<BoardRenderer, BoardRendererProps>(
-                new BoardRendererProps(boardStore.GetBoardInfo().BoardId))
-            .Flex(grow: 1));
+            (testPageMode
+                ? (Element)Component<InfiniteCanvasWorkingExamplePage, InfiniteCanvasWorkingExamplePageProps>(
+                    new InfiniteCanvasWorkingExamplePageProps())
+                : Component<BoardRenderer, BoardRendererProps>(
+                    new BoardRendererProps(boardStore.GetBoardInfo().BoardId)))
+            .Flex(grow: 1)
+            .Margin(0, 4, 0, 0));
 
         Element boardSettingsHost = Component<PanelVertical, PanelVerticalProps>(
             new PanelVerticalProps(
@@ -154,8 +160,7 @@ public sealed class AppRoot : HookComponent<AppRootProps>
                     Component<ReactorSmokeRunnerComponent>()));
         }
 
-        Element shell = Border(VStack(16, sections.ToArray()))
-            .Padding(16)
+        Element shell = Border(VStack(0, sections.ToArray()))
             .Background(theme.WindowBackground);
 
         // ThemeProvider: resolve the live app theme (from the active BoardTheme pack's resources) and
@@ -178,10 +183,24 @@ public sealed class AppRoot : HookComponent<AppRootProps>
     private static Element BuildTopBar(
         BoardStore boardStore,
         BoardState board,
-        AppTheme theme)
+        AppTheme theme,
+        bool testPageMode)
     {
         (string title, string subtitle) = ResolvePageTitleAndSubtitle(boardStore.State.ManagedBoardConfig, boardStore.GetBoardInfo().BoardId);
         double refreshIntervalMs = ResolveRefreshAllIntervalMs(boardStore.State.ManagedBoardConfig);
+
+        var titleBlockChildren = new List<Element>
+        {
+            TextBlock(title).Bold().FontSize(15)
+        };
+
+        if (testPageMode)
+        {
+            titleBlockChildren.Add(
+                Component<Badge, BadgeProps>(
+                    new BadgeProps("Test Page", "accent"))
+                    .VAlign(VerticalAlignment.Center));
+        }
 
         Element refreshButton = Component<TimerButton, TimerButtonProps>(
             new TimerButtonProps(
@@ -202,14 +221,18 @@ public sealed class AppRoot : HookComponent<AppRootProps>
         return Border(
                 HStack(12,
                     VStack(2,
-                        TextBlock(title).Bold().FontSize(15),
+                        HStack(8, titleBlockChildren.ToArray())
+                            .VAlign(VerticalAlignment.Center),
                         TextBlock(subtitle).Opacity(0.72).FontSize(11))
                     .Flex(grow: 1),
                     actions))
-            .Padding(14)
+            .Padding(12, 8, 12, 8)
                 .Background(theme.TopBarBackground)
-                .WithBorder(theme.TopBarBorder, 1)
-            .CornerRadius(14)
+                .Set(border =>
+                {
+                    border.BorderBrush = theme.TopBarBorder;
+                    border.BorderThickness = new Thickness(0, 0, 0, 1);
+                })
             .HorizontalAlignment(HorizontalAlignment.Stretch);
     }
 

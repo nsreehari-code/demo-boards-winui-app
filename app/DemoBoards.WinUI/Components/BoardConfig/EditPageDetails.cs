@@ -99,7 +99,7 @@ public sealed class EditPageDetails : Component<EditPageDetailsProps>
                 }
             };
             return spec;
-        }, Props.UiTemplateOptions?.Count ?? 0);
+        }, $"{Props.UiTemplateOptions?.Count ?? 0}");
 
         var sections = new List<Element>
         {
