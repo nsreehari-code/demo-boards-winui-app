@@ -322,6 +322,8 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         // win). Falls back to the persisted blob / GetInitialNodePos / auto-grid for anything not yet here.
         var (movedPositions, setMovedPositions) = UseState<IReadOnlyDictionary<string, InfiniteCanvasNodePosition>>(
             new Dictionary<string, InfiniteCanvasNodePosition>(StringComparer.Ordinal));
+        var (nodeOrder, setNodeOrder) = UseState<IReadOnlyList<string>>(
+            ResolveNodeOrder(Props.Nodes, preferredOrder: null, Props.CanvasState));
 
         // Reactive viewport (pan + zoom + visible size). Single source of truth that the ScrollViewer
         // commits into and the minimap indicator derives from — no live ScrollViewer reads, no tick hack.
@@ -335,6 +337,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
             () =>
             {
                 setMovedPositions(new Dictionary<string, InfiniteCanvasNodePosition>(StringComparer.Ordinal));
+                setNodeOrder(ResolveNodeOrder(Props.Nodes, preferredOrder: null, Props.CanvasState));
                 setViewport(null);
                 restoredViewportRef.Current = false;
                 return () => { };
@@ -379,6 +382,8 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
             effective[entry.Key] = entry.Value;
         }
 
+        IReadOnlyList<string> effectiveNodeOrder = ResolveNodeOrder(Props.Nodes, nodeOrder);
+
         // Surface bounds (content extent + padding).
         double maxRight = 0;
         double maxBottom = 0;
@@ -394,14 +399,14 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
 
         // Persist the opaque canvas blob (node geometry + viewport) through OnCanvasStateCommit. The
         // viewport override is passed because setViewport is async — the captured `viewport` is stale here.
-        void Commit(ViewportState? viewportOverride = null)
+        void Commit(ViewportState? viewportOverride = null, IReadOnlyList<string>? orderOverride = null)
         {
             if (Props.OnCanvasStateCommit is null)
             {
                 return;
             }
 
-            JsonElement next = BuildBlob(effective, boxes, viewportOverride ?? viewport, Props.CanvasState);
+            JsonElement next = BuildBlob(effective, boxes, viewportOverride ?? viewport, Props.CanvasState, orderOverride ?? effectiveNodeOrder);
             Props.OnCanvasStateCommit(next);
         }
 
@@ -423,6 +428,17 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
             Commit();
         }
 
+        void BringNodeToFront(string id)
+        {
+            List<string> next = MoveNodeToFront(effectiveNodeOrder, id);
+            if (next.Count == effectiveNodeOrder.Count && next.SequenceEqual(effectiveNodeOrder, StringComparer.Ordinal))
+            {
+                return;
+            }
+
+            setNodeOrder(next);
+        }
+
         // ---- Canvas children: background grid + edges + nodes ----
         var children = new List<Element>();
         if (options.ShowGrid)
@@ -439,8 +455,13 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
             children.AddRange(BuildEdges(edges, effective, boxes, Props.NodePorts, theme, options.ShowEdgeLabels));
         }
 
-        foreach ((string id, InfiniteCanvasNodeBox node) in boxes)
+        foreach (string id in effectiveNodeOrder)
         {
+            if (!boxes.TryGetValue(id, out InfiniteCanvasNodeBox? node))
+            {
+                continue;
+            }
+
             InfiniteCanvasNodePosition pos = effective[id];
             InfiniteCanvasNodePorts? nodePorts = null;
             Props.NodePorts?.TryGetValue(id, out nodePorts);
@@ -454,6 +475,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
                 dragStartPos,
                 dragLatest,
                 options,
+                () => BringNodeToFront(id),
                 committedPos => CommitPosition(id, committedPos),
                 movedPos => positionDraft.SetField(id, movedPos),
                 theme));
@@ -619,7 +641,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
 
     // ---- Opaque CanvasState blob ----
     // Shape (private to the canvas; the consumer round-trips it verbatim):
-    //   { "v": 1, "viewport": { "x", "y", "zoom" } | null, "nodes": { id: { "x", "y", "w", "h" } } }
+    //   { "v": 1, "viewport": { "x", "y", "zoom" } | null, "nodes": { id: { "x", "y", "w", "h" } }, "order": [id...] }
 
     private static bool TryBlobNode(JsonElement? blob, string id, out JsonElement node)
     {
@@ -654,11 +676,33 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
             ? new InfiniteCanvasViewport(xe.GetDouble(), ye.GetDouble(), ze.GetDouble())
             : null;
 
+    private static IReadOnlyList<string> BlobNodeOrder(JsonElement? blob)
+    {
+        if (blob is not { ValueKind: JsonValueKind.Object } b
+            || !b.TryGetProperty("order", out JsonElement order)
+            || order.ValueKind != JsonValueKind.Array)
+        {
+            return Array.Empty<string>();
+        }
+
+        var ids = new List<string>();
+        foreach (JsonElement item in order.EnumerateArray())
+        {
+            if (item.ValueKind == JsonValueKind.String && item.GetString() is { Length: > 0 } id)
+            {
+                ids.Add(id);
+            }
+        }
+
+        return ids;
+    }
+
     private static JsonElement BuildBlob(
         IReadOnlyDictionary<string, InfiniteCanvasNodePosition> positions,
         IReadOnlyDictionary<string, InfiniteCanvasNodeBox> boxes,
         ViewportState? viewport,
-        JsonElement? previousBlob)
+        JsonElement? previousBlob,
+        IReadOnlyList<string> nodeOrder)
     {
         var nodes = new JsonObject();
         foreach ((string id, InfiniteCanvasNodeBox box) in boxes)
@@ -688,11 +732,18 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
             }
             : null;
 
+        var orderNode = new JsonArray();
+        foreach (string id in nodeOrder)
+        {
+            orderNode.Add((JsonNode?)JsonValue.Create(id));
+        }
+
         var blob = new JsonObject
         {
             ["v"] = JsonValue.Create(1),
             ["viewport"] = viewportNode,
             ["nodes"] = nodes,
+            ["order"] = orderNode,
         };
 
         using JsonDocument document = JsonDocument.Parse(blob.ToJsonString());
@@ -770,7 +821,70 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         return (pos, width, height);
     }
 
+    private static IReadOnlyList<string> ResolveNodeOrder(
+        IReadOnlyList<JsonElement> nodes,
+        IReadOnlyList<string>? preferredOrder,
+        JsonElement? fallbackBlob = null)
+    {
+        IReadOnlyList<string> source = preferredOrder is { Count: > 0 }
+            ? preferredOrder
+            : BlobNodeOrder(fallbackBlob);
+
+        var currentIds = nodes.Select(NodeId).ToList();
+        var currentSet = new HashSet<string>(currentIds, StringComparer.Ordinal);
+        var resolved = new List<string>(currentIds.Count);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (string id in source)
+        {
+            if (currentSet.Contains(id) && seen.Add(id))
+            {
+                resolved.Add(id);
+            }
+        }
+
+        foreach (string id in currentIds)
+        {
+            if (seen.Add(id))
+            {
+                resolved.Add(id);
+            }
+        }
+
+        return resolved;
+    }
+
+    private static List<string> MoveNodeToFront(IReadOnlyList<string> nodeOrder, string id)
+    {
+        var next = new List<string>(nodeOrder.Count);
+        foreach (string existingId in nodeOrder)
+        {
+            if (!string.Equals(existingId, id, StringComparison.Ordinal))
+            {
+                next.Add(existingId);
+            }
+        }
+
+        next.Add(id);
+        return next;
+    }
+
     // ---- Node ----
+
+    private sealed record NodeFrameLayout(
+        double LeftRailWidth,
+        double RightRailWidth,
+        double TopRailHeight,
+        double BottomRailHeight,
+        double MiddleRowHeight,
+        double BodyOffsetX,
+        double BodyOffsetY,
+        double FrameWidth,
+        double FrameHeight,
+        double LeftExtent,
+        double TopExtent,
+        double RightExtent,
+        double BottomExtent);
 
     private Element BuildNode(
         InfiniteCanvasNodeBox box,
@@ -782,17 +896,18 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         Microsoft.UI.Reactor.Core.Ref<InfiniteCanvasNodePosition> dragStartPos,
         Microsoft.UI.Reactor.Core.Ref<InfiniteCanvasNodePosition> dragLatest,
         InfiniteCanvasOptions options,
+        Action onBringToFront,
         Action<InfiniteCanvasNodePosition> onCommitted,
         Action<InfiniteCanvasNodePosition> onDragMove,
         AppTheme theme)
     {
         string id = box.Id;
+        NodeFrameLayout layout = ResolveNodeFrameLayout(box, ports);
 
         // The node body is rendered entirely on demand by the host's RenderNode callback from the
         // opaque descriptor (no canvas-owned chrome — titles etc. are the consumer's to render).
         Element nodeContent = Props.RenderNode(box.Descriptor);
 
-        // Body fills the node-local canvas (0,0 -> Width,Height). Ports straddle the borders.
         Element body =
             Border(Border(nodeContent).Padding(12))
             .Background(theme.CardBackground)
@@ -800,15 +915,47 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
             .CornerRadius(12)
             .Width(box.Width)
             .Height(box.Height)
-            .Canvas(0, 0);
+            .VAlign(VerticalAlignment.Center);
 
-        var nodeChildren = new List<Element> { body };
-        nodeChildren.AddRange(BuildNodePortChips(box, ports, Props.RenderNodePort, theme));
+        var frameRows = new List<Element>();
 
-        return Canvas(nodeChildren.ToArray())
-            .Width(box.Width)
-            .Height(box.Height)
-            .Canvas(pos.X, pos.Y)
+        if (layout.TopRailHeight > 0)
+        {
+            frameRows.Add(HStack(0,
+                    BuildSpacer(layout.LeftRailWidth, 1, theme),
+                    BuildHorizontalRail(box, ports?.Top, InfiniteCanvasPortSide.Top, Props.RenderNodePort)
+                        .Width(box.Width)
+                        .Height(layout.TopRailHeight),
+                    BuildSpacer(layout.RightRailWidth, 1, theme))
+                .Height(layout.TopRailHeight));
+        }
+
+        frameRows.Add(
+            HStack(PortRailGap,
+                    BuildVerticalRail(box, ports?.Left, InfiniteCanvasPortSide.Left, Props.RenderNodePort)
+                        .Width(layout.LeftRailWidth)
+                        .Height(layout.MiddleRowHeight),
+                    body,
+                    BuildVerticalRail(box, ports?.Right, InfiniteCanvasPortSide.Right, Props.RenderNodePort)
+                        .Width(layout.RightRailWidth)
+                        .Height(layout.MiddleRowHeight))
+                .Height(layout.MiddleRowHeight));
+
+        if (layout.BottomRailHeight > 0)
+        {
+            frameRows.Add(HStack(0,
+                    BuildSpacer(layout.LeftRailWidth, 1, theme),
+                    BuildHorizontalRail(box, ports?.Bottom, InfiniteCanvasPortSide.Bottom, Props.RenderNodePort)
+                        .Width(box.Width)
+                        .Height(layout.BottomRailHeight),
+                    BuildSpacer(layout.RightRailWidth, 1, theme))
+                .Height(layout.BottomRailHeight));
+        }
+
+        return VStack(0, frameRows.ToArray())
+            .Width(layout.FrameWidth)
+            .Height(layout.FrameHeight)
+            .Canvas(pos.X - layout.BodyOffsetX, pos.Y - layout.BodyOffsetY)
             .OnPointerPressed((element, args) =>
             {
                 Canvas? canvas = canvasRef.Current;
@@ -816,6 +963,8 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
                 {
                     return;
                 }
+
+                onBringToFront();
 
                 Point world = args.GetCurrentPoint(canvas).Position;
                 draggingKey.Current = id;
@@ -839,8 +988,8 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
                 }
 
                 Point world = args.GetCurrentPoint(canvas).Position;
-                double nx = Math.Max(0, dragStartPos.Current.X + (world.X - dragStartPointer.Current.X));
-                double ny = Math.Max(0, dragStartPos.Current.Y + (world.Y - dragStartPointer.Current.Y));
+                double nx = Math.Max(layout.LeftExtent, dragStartPos.Current.X + (world.X - dragStartPointer.Current.X));
+                double ny = Math.Max(layout.TopExtent, dragStartPos.Current.Y + (world.Y - dragStartPointer.Current.Y));
                 var nextPos = new InfiniteCanvasNodePosition(nx, ny);
                 dragLatest.Current = nextPos;
 
@@ -870,57 +1019,104 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
 
     // ---- Node port rails ----
 
-    /// <summary>
-    /// Lays out host-rendered port chips on the four node borders. Each chip is produced by the
-    /// host's <paramref name="renderPort"/> callback and centred on its deterministic border anchor
-    /// (matching <see cref="PortLocalAnchor"/>) via a SizeChanged recentre so the edge layer connects
-    /// exactly to the visible chip. When no callback is supplied, no chips are rendered.
-    /// </summary>
-    private static IEnumerable<Element> BuildNodePortChips(
+    private const double PortRailChipSize = 14;
+    private const double PortRailGap = 4;
+    private const double PortRailSpacing = 6;
+
+    private static NodeFrameLayout ResolveNodeFrameLayout(InfiniteCanvasNodeBox box, InfiniteCanvasNodePorts? ports)
+    {
+        int topCount = ports?.Top?.Count ?? 0;
+        int bottomCount = ports?.Bottom?.Count ?? 0;
+        int leftCount = ports?.Left?.Count ?? 0;
+        int rightCount = ports?.Right?.Count ?? 0;
+
+        double leftRailWidth = leftCount > 0 ? PortRailChipSize + PortRailGap : 0;
+        double rightRailWidth = rightCount > 0 ? PortRailChipSize + PortRailGap : 0;
+        double topRailHeight = topCount > 0 ? PortRailChipSize + PortRailGap : 0;
+        double bottomRailHeight = bottomCount > 0 ? PortRailChipSize + PortRailGap : 0;
+        double middleRowHeight = Math.Max(box.Height, Math.Max(RailClusterLength(leftCount), RailClusterLength(rightCount)));
+        double bodyOffsetX = leftRailWidth;
+        double bodyOffsetY = topRailHeight + ((middleRowHeight - box.Height) / 2);
+        double frameWidth = leftRailWidth + box.Width + rightRailWidth;
+        double frameHeight = topRailHeight + middleRowHeight + bottomRailHeight;
+
+        return new NodeFrameLayout(
+            leftRailWidth,
+            rightRailWidth,
+            topRailHeight,
+            bottomRailHeight,
+            middleRowHeight,
+            bodyOffsetX,
+            bodyOffsetY,
+            frameWidth,
+            frameHeight,
+            bodyOffsetX,
+            bodyOffsetY,
+            frameWidth - bodyOffsetX,
+            frameHeight - bodyOffsetY);
+    }
+
+    private static double RailClusterLength(int count) =>
+        count <= 0 ? 0 : PortRailChipSize + ((count - 1) * (PortRailChipSize + PortRailSpacing));
+
+    private static Element BuildHorizontalRail(
         InfiniteCanvasNodeBox box,
-        InfiniteCanvasNodePorts? ports,
-        Func<JsonElement, InfiniteCanvasPortRenderContext, Element>? renderPort,
-        AppTheme theme)
+        IReadOnlyList<JsonElement>? list,
+        InfiniteCanvasPortSide side,
+        Func<JsonElement, InfiniteCanvasPortRenderContext, Element>? renderPort)
     {
-        if (ports is null || renderPort is null)
+        if (list is null || list.Count == 0 || renderPort is null)
         {
-            yield break;
+            return Empty();
         }
 
-        foreach ((InfiniteCanvasPortSide side, IReadOnlyList<JsonElement>? list) in EnumeratePortSides(ports))
-        {
-            if (list is null || list.Count == 0)
-            {
-                continue;
-            }
+        Element[] chips = list
+            .Select(port => renderPort(port, new InfiniteCanvasPortRenderContext(side, box.Descriptor)))
+            .ToArray();
 
-            for (int i = 0; i < list.Count; i++)
-            {
-                (double anchorX, double anchorY) = PortLocalAnchor(side, i, list.Count, box.Width, box.Height);
-                Element content = renderPort(list[i], new InfiniteCanvasPortRenderContext(side, box.Descriptor));
-                yield return BuildPortChip(content, anchorX, anchorY, theme);
-            }
-        }
+        return Grid(
+                new[] { GridSize.Star() },
+                new[] { GridSize.Star() },
+                HStack(PortRailSpacing, chips)
+                    .HAlign(HorizontalAlignment.Center)
+                    .VAlign(VerticalAlignment.Center))
+            .HAlign(HorizontalAlignment.Stretch)
+            .VAlign(VerticalAlignment.Center);
     }
 
-    private static Element BuildPortChip(Element content, double anchorX, double anchorY, AppTheme theme)
+    private static Element BuildVerticalRail(
+        InfiniteCanvasNodeBox box,
+        IReadOnlyList<JsonElement>? list,
+        InfiniteCanvasPortSide side,
+        Func<JsonElement, InfiniteCanvasPortRenderContext, Element>? renderPort)
     {
-        return Border(content)
+        if (list is null || list.Count == 0 || renderPort is null)
+        {
+            return Empty();
+        }
+
+        Element[] chips = list
+            .Select(port => renderPort(port, new InfiniteCanvasPortRenderContext(side, box.Descriptor)))
+            .ToArray();
+
+        return VStack(PortRailSpacing, chips)
+            .HAlign(HorizontalAlignment.Center)
+            .VAlign(VerticalAlignment.Center);
+    }
+
+    private static Element BuildSpacer(double width, double height, AppTheme theme)
+    {
+        return Border(Empty())
             .Background(theme.Transparent)
-            .Canvas(anchorX, anchorY)
-            .Set(chip =>
-            {
-                void Recenter()
-                {
-                    Microsoft.UI.Xaml.Controls.Canvas.SetLeft(chip, anchorX - (chip.ActualWidth / 2));
-                    Microsoft.UI.Xaml.Controls.Canvas.SetTop(chip, anchorY - (chip.ActualHeight / 2));
-                }
-
-                chip.SizeChanged += (_, _) => Recenter();
-                Recenter();
-            });
+            .Width(width)
+            .Height(height);
     }
 
+    /// <summary>
+    /// Node-local (body-top-left origin) anchor for port <paramref name="index"/> of <paramref name="count"/>
+    /// on a side. The visible rails are stacked UI, but the edge layer still needs deterministic world
+    /// coordinates for each gem center.
+    /// </summary>
     private static IEnumerable<(InfiniteCanvasPortSide Side, IReadOnlyList<JsonElement>? List)> EnumeratePortSides(InfiniteCanvasNodePorts ports)
     {
         yield return (InfiniteCanvasPortSide.Top, ports.Top);
@@ -929,18 +1125,54 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         yield return (InfiniteCanvasPortSide.Right, ports.Right);
     }
 
-    /// <summary>Node-local (top-left origin) anchor for port <paramref name="index"/> of <paramref name="count"/> on a side.</summary>
     private static (double X, double Y) PortLocalAnchor(InfiniteCanvasPortSide side, int index, int count, double width, double height)
     {
-        double fraction = (index + 0.5) / Math.Max(1, count);
+        NodeFrameLayout layout = ResolveNodeFrameLayout(
+            new InfiniteCanvasNodeBox(string.Empty, width, height, default),
+            side switch
+            {
+                InfiniteCanvasPortSide.Top => new InfiniteCanvasNodePorts(Top: BuildPlaceholderPorts(count)),
+                InfiniteCanvasPortSide.Bottom => new InfiniteCanvasNodePorts(Bottom: BuildPlaceholderPorts(count)),
+                InfiniteCanvasPortSide.Left => new InfiniteCanvasNodePorts(Left: BuildPlaceholderPorts(count)),
+                InfiniteCanvasPortSide.Right => new InfiniteCanvasNodePorts(Right: BuildPlaceholderPorts(count)),
+                _ => new InfiniteCanvasNodePorts(Bottom: BuildPlaceholderPorts(count)),
+            });
+
+        double centerToCenter = PortRailChipSize + PortRailSpacing;
+
         return side switch
         {
-            InfiniteCanvasPortSide.Top => (width * fraction, 0),
-            InfiniteCanvasPortSide.Bottom => (width * fraction, height),
-            InfiniteCanvasPortSide.Left => (0, height * fraction),
-            InfiniteCanvasPortSide.Right => (width, height * fraction),
-            _ => (width * fraction, height),
+            InfiniteCanvasPortSide.Top => HorizontalAnchor(index, count, 0, width, -(layout.TopRailHeight / 2)),
+            InfiniteCanvasPortSide.Bottom => HorizontalAnchor(index, count, 0, width, height + (layout.BottomRailHeight / 2)),
+            InfiniteCanvasPortSide.Left => VerticalAnchor(index, count, -(layout.LeftRailWidth / 2), ((height - RailClusterLength(count)) / 2) + (PortRailChipSize / 2)),
+            InfiniteCanvasPortSide.Right => VerticalAnchor(index, count, width + (layout.RightRailWidth / 2), ((height - RailClusterLength(count)) / 2) + (PortRailChipSize / 2)),
+            _ => HorizontalAnchor(index, count, 0, width, height + (layout.BottomRailHeight / 2)),
         };
+
+        (double X, double Y) HorizontalAnchor(int railIndex, int railCount, double xOffset, double railLength, double y)
+        {
+            double clusterLength = (Math.Max(0, railCount - 1) * centerToCenter) + PortRailChipSize;
+            double start = (railLength - clusterLength) / 2;
+            double center = start + (PortRailChipSize / 2) + (railIndex * centerToCenter);
+            return (xOffset + center, y);
+        }
+
+        (double X, double Y) VerticalAnchor(int railIndex, int railCount, double x, double yOffset)
+        {
+            double center = yOffset + (PortRailChipSize / 2) + (railIndex * centerToCenter);
+            return (x, center);
+        }
+
+        static IReadOnlyList<JsonElement> BuildPlaceholderPorts(int railCount)
+        {
+            if (railCount <= 0)
+            {
+                return Array.Empty<JsonElement>();
+            }
+
+            using JsonDocument doc = JsonDocument.Parse("[]");
+            return Enumerable.Range(0, railCount).Select(_ => doc.RootElement.Clone()).ToArray();
+        }
     }
 
     // ---- Edge layer ----

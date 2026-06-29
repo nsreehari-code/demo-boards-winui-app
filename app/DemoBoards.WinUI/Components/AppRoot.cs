@@ -225,7 +225,8 @@ public sealed class AppRoot : HookComponent<AppRootProps>
                             .VAlign(VerticalAlignment.Center),
                         TextBlock(subtitle).Opacity(0.72).FontSize(11))
                     .Flex(grow: 1),
-                    actions))
+                    actions)
+                .HorizontalAlignment(HorizontalAlignment.Stretch))
             .Padding(12, 8, 12, 8)
                 .Background(theme.TopBarBackground)
                 .Set(border =>

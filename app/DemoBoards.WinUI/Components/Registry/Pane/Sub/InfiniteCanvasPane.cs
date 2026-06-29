@@ -230,21 +230,48 @@ public sealed class InfiniteCanvasPane : HookComponent<InfiniteCanvasPaneProps>
     }
 
     private static Element BuildTokenGem(AppTheme theme, string token, bool provide, bool selected, bool active, Action onClick) =>
-        Button(string.Empty, onClick)
-            .AutomationName($"{(provide ? "Provides" : "Requires")} {token}")
-            .CornerRadius(999)
-            .Padding(0)
-            .MinWidth(0)
-            .Width(14)
-            .Height(14)
-            .Background(selected || (provide && active)
-                ? theme.Accent
-                : theme.ControlFill)
-            .WithBorder(theme.CardBorder, 1)
-            .Set(button =>
-            {
-                button.Foreground = theme.Transparent;
-            });
+        Component<TokenGemButton, TokenGemButtonProps>(
+            new TokenGemButtonProps(theme, token, provide, selected, active, onClick));
+
+    private sealed record TokenGemButtonProps(
+        AppTheme Theme,
+        string Token,
+        bool Provide,
+        bool Selected,
+        bool Active,
+        Action OnClick);
+
+    private sealed class TokenGemButton : HookComponent<TokenGemButtonProps>
+    {
+        public override Element Render()
+        {
+            var (hovered, setHovered) = UseState(false);
+
+            bool emphasized = hovered || Props.Selected || (Props.Provide && Props.Active);
+
+            return Button(string.Empty, Props.OnClick)
+                .AutomationName($"{(Props.Provide ? "Provides" : "Requires")} {Props.Token}")
+                .CornerRadius(999)
+                .Padding(0)
+                .MinWidth(0)
+                .Width(14)
+                .Height(14)
+                .Background(emphasized ? Props.Theme.AccentStrong : Props.Theme.Accent)
+                .WithBorder(emphasized ? Props.Theme.AccentStrong : Props.Theme.Accent, 1)
+                .Set(button =>
+                {
+                    button.Foreground = Props.Theme.Transparent;
+                    button.PointerEntered -= HandlePointerEntered;
+                    button.PointerExited -= HandlePointerExited;
+                    button.PointerEntered += HandlePointerEntered;
+                    button.PointerExited += HandlePointerExited;
+                });
+
+            void HandlePointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args) => setHovered(true);
+
+            void HandlePointerExited(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args) => setHovered(false);
+        }
+    }
 
     private static string? ReadString(JsonElement element, string name) =>
         element.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.String
