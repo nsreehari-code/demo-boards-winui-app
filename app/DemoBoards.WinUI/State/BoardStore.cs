@@ -997,6 +997,17 @@ public sealed class BoardStore : IDisposable
         JsonElement cardData = TryGetObject(definition, "card_data");
         JsonElement meta = TryGetObject(definition, "meta");
         string title = GetString(cardData, "title") ?? GetString(meta, "title") ?? cardId;
+        IReadOnlyList<string> requires = ParseTokenList(definition, "requires");
+        if (requires.Count == 0)
+        {
+            requires = ParseTokenList(cardData, "requires");
+        }
+
+        IReadOnlyList<string> provides = ParseProvideList(definition);
+        if (provides.Count == 0)
+        {
+            provides = ParseProvideList(cardData);
+        }
 
         var fields = new List<BoardCardField>();
         if (cardData.ValueKind == JsonValueKind.Object)
@@ -1017,8 +1028,8 @@ public sealed class BoardStore : IDisposable
             title,
             ParseStringDictionary(meta),
             fields,
-            ParseTokenList(cardData, "requires"),
-            ParseProvideList(cardData),
+            requires,
+            provides,
             ParseViewKinds(definition),
             ParseViewElements(definition),
             ParseSourceDefinitions(definition),
