@@ -617,15 +617,11 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
             overlay.Add(BuildZoomControls(scrollViewerRef, effective, boxes, options, theme));
         }
 
-        return Border(
-                Grid(
-                    new[] { GridSize.Star() },
-                    new[] { GridSize.Star() },
-                    overlay.ToArray()))
+        return Grid(
+            new[] { GridSize.Star() },
+            new[] { GridSize.Star() },
+            overlay.ToArray())
             .Background(theme.SurfaceBackground)
-            .WithBorder(theme.CardBorder, 1)
-            .CornerRadius(14)
-            .Padding(12)
             .Flex(grow: 1);
     }
 
@@ -916,8 +912,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         // opaque descriptor (no canvas-owned chrome — titles etc. are the consumer's to render).
         Element nodeContent = Props.RenderNode(box.Descriptor);
 
-        Element body =
-            Border(Border(nodeContent).Padding(12))
+        Element body = Border(Border(nodeContent).Padding(12))
             .Background(theme.CardBackground)
             .WithBorder(theme.CardBorder, 1)
             .CornerRadius(12)
@@ -930,11 +925,11 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         if (layout.TopRailHeight > 0)
         {
             frameRows.Add(HStack(0,
-                    BuildSpacer(layout.LeftRailWidth, 1, theme),
+                    BuildSpacer(layout.LeftRailWidth, 1),
                     BuildHorizontalRail(box, ports?.Top, InfiniteCanvasPortSide.Top, Props.RenderNodePort)
                         .Width(box.Width)
                         .Height(layout.TopRailHeight),
-                    BuildSpacer(layout.RightRailWidth, 1, theme))
+                    BuildSpacer(layout.RightRailWidth, 1))
                 .Height(layout.TopRailHeight));
         }
 
@@ -952,11 +947,11 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         if (layout.BottomRailHeight > 0)
         {
             frameRows.Add(HStack(0,
-                    BuildSpacer(layout.LeftRailWidth, 1, theme),
+                    BuildSpacer(layout.LeftRailWidth, 1),
                     BuildHorizontalRail(box, ports?.Bottom, InfiniteCanvasPortSide.Bottom, Props.RenderNodePort)
                         .Width(box.Width)
                         .Height(layout.BottomRailHeight),
-                    BuildSpacer(layout.RightRailWidth, 1, theme))
+                    BuildSpacer(layout.RightRailWidth, 1))
                 .Height(layout.BottomRailHeight));
         }
 
@@ -1113,10 +1108,11 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
             .VAlign(VerticalAlignment.Center);
     }
 
-    private static Element BuildSpacer(double width, double height, AppTheme theme)
+    private static Element BuildSpacer(double width, double height)
     {
-        return Border(Empty())
-            .Background(theme.Transparent)
+        return Grid(
+                new[] { GridSize.Star() },
+                new[] { GridSize.Star() })
             .Width(width)
             .Height(height);
     }
@@ -1325,11 +1321,9 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
             {
                 double cx = (sx + tx) / 2;
                 double cy = (sy + ty) / 2;
-                yield return Border(TextBlock(edge.Label).FontSize(11).Opacity(0.85))
-                    .Padding(5, 1, 5, 1)
-                    .Background(theme.Layer)
-                    .WithBorder(theme.CardBorder, 1)
-                    .CornerRadius(6)
+                yield return TextBlock(edge.Label)
+                    .FontSize(11)
+                    .Opacity(0.85)
                     .Canvas(Math.Max(0, cx - 24), Math.Max(0, cy - 10))
                     .WithKey($"icv-edge-label-{edge.Id}");
             }
@@ -1774,13 +1768,15 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
 
     private static Element ZoomIconButton(AppTheme theme, string iconSource, string automationName, Action onClick)
     {
+        var hovered = false;
+
         // Borderless, transparent square button so the buttons merge into the container group with no
         // visible gaps; hover/press still highlights the individual button.
         return Button(Component<SvgIcon, SvgIconProps>(new SvgIconProps(iconSource)), onClick)
             .Background(theme.SurfaceElevated)
             .AutomationName(automationName)
             .Foreground(theme.AccentStrong)
-            .Opacity(0.75)
+            .Opacity(0.5)
             .Width(40)
             .Height(40)
             .CornerRadius(0)
@@ -1790,7 +1786,34 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
                 button.BorderThickness = new Thickness(0);
                 button.BorderBrush = null;
                 button.Padding = new Thickness(0);
+                button.PointerEntered -= HandlePointerEntered;
+                button.PointerExited -= HandlePointerExited;
+                button.PointerEntered += HandlePointerEntered;
+                button.PointerExited += HandlePointerExited;
             });
+
+        void HandlePointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args)
+        {
+            if (hovered)
+            {
+                return;
+            }
+
+            hovered = true;
+            if (sender is Button button)
+            {
+                button.Opacity = 0.75;
+            }
+        }
+
+        void HandlePointerExited(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args)
+        {
+            hovered = false;
+            if (sender is Button button)
+            {
+                button.Opacity = 0.5;
+            }
+        }
     }
 
     private static void ZoomBy(ScrollViewer? scrollViewer, double factor, InfiniteCanvasOptions options)
