@@ -251,6 +251,7 @@ internal static class BoardTheme
         style.Setters.Add(new Setter(Control.ForegroundProperty, dictionary["BoardToolbarButtonForegroundBrush"]));
         style.Setters.Add(new Setter(Control.BorderBrushProperty, dictionary["BoardToolbarButtonBorderBrush"]));
         style.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(1)));
+        style.Setters.Add(new Setter(UIElement.OpacityProperty, 0.75d));
         return style;
     }
 
@@ -266,6 +267,7 @@ internal static class BoardTheme
         style.Setters.Add(new Setter(FrameworkElement.MinHeightProperty, 42d));
         style.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Center));
         style.Setters.Add(new Setter(Control.VerticalContentAlignmentProperty, VerticalAlignment.Center));
+        style.Setters.Add(new Setter(UIElement.OpacityProperty, 0.75d));
         return style;
     }
 
@@ -275,6 +277,7 @@ internal static class BoardTheme
         style.Setters.Add(new Setter(Control.BackgroundProperty, dictionary["BoardFloatingButtonActiveBackgroundBrush"]));
         style.Setters.Add(new Setter(Control.ForegroundProperty, dictionary["BoardFloatingButtonActiveForegroundBrush"]));
         style.Setters.Add(new Setter(Control.BorderBrushProperty, dictionary["BoardFloatingButtonActiveBorderBrush"]));
+        style.Setters.Add(new Setter(UIElement.OpacityProperty, 0.75d));
         return style;
     }
 
@@ -286,6 +289,7 @@ internal static class BoardTheme
         style.Setters.Add(new Setter(Control.BorderBrushProperty, dictionary["BoardEdgeToggleButtonBorderBrush"]));
         style.Setters.Add(new Setter(FrameworkElement.WidthProperty, 48d));
         style.Setters.Add(new Setter(FrameworkElement.HeightProperty, 48d));
+        style.Setters.Add(new Setter(UIElement.OpacityProperty, 0.75d));
         return style;
     }
 
@@ -295,6 +299,7 @@ internal static class BoardTheme
         style.Setters.Add(new Setter(Control.BackgroundProperty, dictionary["BoardEdgeToggleButtonActiveBackgroundBrush"]));
         style.Setters.Add(new Setter(Control.ForegroundProperty, dictionary["BoardEdgeToggleButtonActiveForegroundBrush"]));
         style.Setters.Add(new Setter(Control.BorderBrushProperty, dictionary["BoardEdgeToggleButtonActiveBorderBrush"]));
+        style.Setters.Add(new Setter(UIElement.OpacityProperty, 0.75d));
         return style;
     }
 

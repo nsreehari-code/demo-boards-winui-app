@@ -1515,10 +1515,10 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         // holds borderless square buttons with zero spacing, anchored bottom-left with a small margin.
         return Border(
                 (VStack(0,
-                    ZoomIconButton(HostIconSources.ControlZoomIn, "Zoom in", () => ZoomBy(scrollViewerRef.Current, 1.2, options)),
-                    ZoomIconButton(HostIconSources.ControlZoomOut, "Zoom out", () => ZoomBy(scrollViewerRef.Current, 1 / 1.2, options)),
-                    ZoomIconButton(HostIconSources.ControlFitView, "Fit to content", () => FitToContent(scrollViewerRef.Current, positions, nodes, options)),
-                    ZoomIconButton(HostIconSources.ControlActualSize, "Actual size", () => ResetZoom(scrollViewerRef.Current)))
+                    ZoomIconButton(theme, HostIconSources.ControlZoomIn, "Zoom in", () => ZoomBy(scrollViewerRef.Current, 1.2, options)),
+                    ZoomIconButton(theme, HostIconSources.ControlZoomOut, "Zoom out", () => ZoomBy(scrollViewerRef.Current, 1 / 1.2, options)),
+                    ZoomIconButton(theme, HostIconSources.ControlFitView, "Fit to content", () => FitToContent(scrollViewerRef.Current, positions, nodes, options)),
+                    ZoomIconButton(theme, HostIconSources.ControlActualSize, "Actual size", () => ResetZoom(scrollViewerRef.Current)))
                 .Set(panel => panel.Spacing = 0)))
             .Background(theme.Layer)
             .WithBorder(theme.CardBorder, 1)
@@ -1529,17 +1529,25 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
             .Margin(16, 0, 0, 16);
     }
 
-    private static Element ZoomIconButton(string iconSource, string automationName, Action onClick)
+    private static Element ZoomIconButton(AppTheme theme, string iconSource, string automationName, Action onClick)
     {
         // Borderless, transparent square button so the buttons merge into the container group with no
         // visible gaps; hover/press still highlights the individual button.
         return Button(Component<SvgIcon, SvgIconProps>(new SvgIconProps(iconSource)), onClick)
-            .SubtleButton()
+            .Background(theme.SurfaceElevated)
             .AutomationName(automationName)
+            .Foreground(theme.AccentStrong)
+            .Opacity(0.75)
             .Width(40)
             .Height(40)
             .CornerRadius(0)
-            .Margin(0, 0, 0, 0);
+            .Margin(0, 0, 0, 0)
+            .Set(button =>
+            {
+                button.BorderThickness = new Thickness(0);
+                button.BorderBrush = null;
+                button.Padding = new Thickness(0);
+            });
     }
 
     private static void ZoomBy(ScrollViewer? scrollViewer, double factor, InfiniteCanvasOptions options)

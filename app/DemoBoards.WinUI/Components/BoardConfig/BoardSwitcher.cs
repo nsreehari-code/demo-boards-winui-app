@@ -1,11 +1,15 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json.Nodes;
+using System.Threading.Tasks;
 using Microsoft.UI.Reactor;
 using Microsoft.UI.Reactor.Core;
 using static Microsoft.UI.Reactor.Factories;
 using DemoBoards_WinUI.Assets;
 using DemoBoards_WinUI.Controls.Shared;
+using DemoBoards_WinUI.Hooks;
+using DemoBoards_WinUI.State;
 
 namespace DemoBoards_WinUI.Controls.Registry.BoardConfig;
 
@@ -35,7 +39,7 @@ public sealed record BoardSwitcherProps(
     Action? OnRunSmokeRunner = null,
     string SmokeRunnerTitle = "");
 
-public sealed class BoardSwitcher : Component<BoardSwitcherProps>
+public sealed class BoardSwitcher : HookComponent<BoardSwitcherProps>
 {
     private static string GetOptionId(object? opt) =>
         opt is IDictionary<string, object?> dict && dict.TryGetValue("id", out var id)
@@ -49,12 +53,71 @@ public sealed class BoardSwitcher : Component<BoardSwitcherProps>
 
     public override Element Render()
     {
+        string targetBoardId = string.IsNullOrWhiteSpace(Props.Value)
+            ? Props.CurrentBoardId
+            : Props.Value.Trim();
+        BoardVisuals visualsHook = UseBoardVisuals(targetBoardId);
+        EmbeddedBoardClient client = UseEmbeddedClient();
+        BoardStore store = UseBoardStoreSubscription(includeUiState: false);
+        var (togglingLayout, setTogglingLayout) = UseState(false);
+        var (layoutKindOverride, setLayoutKindOverride) = UseState<string?>(null);
+
+        string sourceLayoutKind = !string.IsNullOrWhiteSpace(Props.LayoutKind)
+            ? Props.LayoutKind!
+            : visualsHook.Visuals.CentrePaneKind;
+        string layoutKind = string.IsNullOrWhiteSpace(layoutKindOverride)
+            ? (string.IsNullOrWhiteSpace(sourceLayoutKind) ? "infinite-canvas" : sourceLayoutKind)
+            : layoutKindOverride!;
+
+        UseEffect(
+            () =>
+            {
+                setLayoutKindOverride(null);
+                return static () => { };
+            },
+            targetBoardId,
+            Props.LayoutKind ?? string.Empty,
+            visualsHook.Visuals.CentrePaneKind ?? string.Empty);
+
         var options = Props.Options ?? Array.Empty<object?>();
-        bool showLayoutToggle = Props.OnToggleLayout != null;
         bool showThemeToggle = Props.OnToggleTheme != null;
-        bool isCardsLayout = Props.LayoutKind == "flowing-cards";
+        bool isCardsLayout = layoutKind == "flowing-cards";
         bool isSignalRoom = Props.ThemePackId == "signal-room";
         bool showRunButtons = Props.SmokeRunnerEnabled;
+
+        async Task ToggleLayoutAsync()
+        {
+            if (togglingLayout || string.IsNullOrWhiteSpace(targetBoardId))
+            {
+                return;
+            }
+
+            string nextKind = isCardsLayout ? "infinite-canvas" : "flowing-cards";
+            setTogglingLayout(true);
+            setLayoutKindOverride(nextKind);
+
+            try
+            {
+                await visualsHook.ShallowMerge("kind", JsonValue.Create(nextKind)).ConfigureAwait(false);
+
+                if (string.Equals(targetBoardId, Props.CurrentBoardId, StringComparison.Ordinal))
+                {
+                    ManagedBoardConfigState? saved = await client.GetManagedBoardConfigAsync(targetBoardId).ConfigureAwait(false);
+                    if (saved is not null)
+                    {
+                        store.SetManagedBoardConfig(saved);
+                    }
+                }
+            }
+            catch
+            {
+                setLayoutKindOverride(null);
+            }
+            finally
+            {
+                setTogglingLayout(false);
+            }
+        }
 
         // Build select options with "(current)" suffix for current board
         var selectOptions = new List<object?>();
@@ -93,14 +156,11 @@ public sealed class BoardSwitcher : Component<BoardSwitcherProps>
         }
 
         // Layout toggle button (bi-diagram-3 / bi-bounding-box)
-        if (showLayoutToggle)
-        {
-            buttonElements.Add(
-                Button(Component<SvgIcon, SvgIconProps>(new SvgIconProps(isCardsLayout ? HostIconSources.Diagram3 : HostIconSources.BoundingBox, 15)), Props.OnToggleLayout)
-                    .IsEnabled(!(Props.LayoutToggleDisabled || Props.LayoutKind == null || Props.TogglingLayout))
-                    .AutomationName(isCardsLayout ? "Switch to infinite canvas layout" : "Switch to flowing cards layout")
-                    .SubtleButton());
-        }
+        buttonElements.Add(
+            Button(Component<SvgIcon, SvgIconProps>(new SvgIconProps(isCardsLayout ? HostIconSources.Diagram3 : HostIconSources.BoundingBox, 15)), () => _ = ToggleLayoutAsync())
+                .IsEnabled(!(Props.LayoutToggleDisabled || togglingLayout || Props.TogglingLayout || string.IsNullOrWhiteSpace(targetBoardId)))
+                .AutomationName(isCardsLayout ? "Switch to infinite canvas layout" : "Switch to flowing cards layout")
+                .SubtleButton());
 
         // Theme toggle button (bi-brightness-high / bi-moon-stars)
         if (showThemeToggle)

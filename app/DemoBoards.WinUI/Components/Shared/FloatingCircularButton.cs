@@ -6,6 +6,7 @@ using static Microsoft.UI.Reactor.Factories;
 using System.Collections.Generic;
 using DemoBoards_WinUI;
 using DemoBoards_WinUI.Assets;
+using DemoBoards_WinUI.Hooks;
 
 namespace DemoBoards_WinUI.Controls.Shared;
 
@@ -23,7 +24,7 @@ public sealed record FloatingCircularButtonProps(
     Action? OnClickToggled = null,
     string? AriaLabel = null);
 
-public sealed class FloatingCircularButton : Component<FloatingCircularButtonProps>
+public sealed class FloatingCircularButton : HookComponent<FloatingCircularButtonProps>
 {
     /// <summary>Maps the frontend Bootstrap-icon names this control receives to host SVG assets.</summary>
     private static readonly Dictionary<string, string> IconSources = new(StringComparer.Ordinal)
@@ -44,23 +45,36 @@ public sealed class FloatingCircularButton : Component<FloatingCircularButtonPro
     public override Element Render()
     {
         AppTheme theme = UseContext(AppThemeContext.Current);
+        var (hovered, setHovered) = UseState(false);
 
         string? activeIcon = Props.Toggled ? Props.IconToggled ?? Props.Icon : Props.Icon;
         Action? activeOnClick = Props.Toggled ? Props.OnClickToggled ?? Props.OnClick : Props.OnClick;
         string source = activeIcon is not null && IconSources.TryGetValue(activeIcon, out string? mapped)
             ? mapped
             : HostIconSources.List;
+        double opacity = hovered ? 0.75 : (Props.Toggled ? 0.60 : 0.50);
 
         return Button(Component<SvgIcon, SvgIconProps>(new SvgIconProps(source, 20)), () => activeOnClick?.Invoke())
-            .AccentButton()
+            .Background(theme.SurfaceElevated)
             .AutomationName(Props.AriaLabel ?? "Toggle")
-            .Foreground(theme.TextPrimary)
+            .Foreground(theme.AccentStrong)
+            .Opacity(opacity)
             .Set(button =>
             {
                 button.Width = 44;
                 button.Height = 44;
                 button.CornerRadius = new CornerRadius(22);
                 button.Padding = new Thickness(0);
+                button.BorderThickness = new Thickness(0);
+                button.BorderBrush = null;
+                button.PointerEntered -= HandlePointerEntered;
+                button.PointerExited -= HandlePointerExited;
+                button.PointerEntered += HandlePointerEntered;
+                button.PointerExited += HandlePointerExited;
             });
+
+        void HandlePointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args) => setHovered(true);
+
+        void HandlePointerExited(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args) => setHovered(false);
     }
 }

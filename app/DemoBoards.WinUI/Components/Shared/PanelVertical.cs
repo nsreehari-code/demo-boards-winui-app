@@ -25,6 +25,9 @@ public sealed record PanelVerticalProps(
 
 public sealed class PanelVertical : Component<PanelVerticalProps>
 {
+    private const double LayerInset = 12;
+    private const double FabSlotWidth = 52;
+
     public override Element Render()
     {
         AppTheme theme = UseContext(AppThemeContext.Current);
@@ -41,52 +44,56 @@ public sealed class PanelVertical : Component<PanelVerticalProps>
                 OnClickToggled: () => Props.OnToggle?.Invoke(),
                 AriaLabel: Props.Title ?? Props.AriaLabel ?? "Toggle panel"));
 
-        Element fabHost = Border(fab)
-            .Background(theme.SurfaceBackground)
-            .CornerRadius(28)
-            .Padding(4)
+        Element fabHost = fab
             .HAlign(horizontalAlignment)
             .VAlign(verticalAlignment);
+
+        (double fabLeft, double fabTop, double fabRight, double fabBottom) = ResolveFabMargin(verticalAlignment, isRight);
 
         if (!Props.Expanded)
         {
             return Grid(
                 new[] { GridSize.Star() },
                 new[] { GridSize.Star() },
-                fabHost.Margin(12));
+                fabHost.Margin(fabLeft, fabTop, fabRight, fabBottom));
         }
+
+        (double panelLeft, double panelTop, double panelRight, double panelBottom) = ResolvePanelMargin(isRight);
 
         Element panel = Border(ScrollViewer(Props.Children ?? Empty()).Flex(grow: 1))
             .Padding(12)
             .Background(theme.CardBackground)
             .WithBorder(theme.CardBorder, 1)
-            .CornerRadius(12)
+            .CornerRadius(0)
             .Width(480)
             .MaxWidth(560)
+            .HAlign(horizontalAlignment)
+            .VAlign(VerticalAlignment.Stretch)
+            .Margin(panelLeft, panelTop, panelRight, panelBottom)
             .AutomationName(Props.AriaLabel ?? Props.Title ?? "Panel");
-
-        Element rail = BuildExpandedRail(panel, fabHost, verticalAlignment, horizontalAlignment, isRight);
 
         return Grid(
             new[] { GridSize.Star() },
             new[] { GridSize.Star() },
             Border(Empty()).Background(theme.Overlay),
-            rail.Margin(12));
+            panel,
+            fabHost.Margin(fabLeft, fabTop, fabRight, fabBottom));
     }
 
-    private static Element BuildExpandedRail(Element panel, Element fabHost, VerticalAlignment verticalAlignment, HorizontalAlignment horizontalAlignment, bool isRight)
+    private static (double Left, double Top, double Right, double Bottom) ResolveFabMargin(VerticalAlignment verticalAlignment, bool isRight)
     {
-        Element fabColumn = verticalAlignment == VerticalAlignment.Bottom
-            ? VStack(Empty().Flex(grow: 1), fabHost)
-            : VStack(fabHost, Empty().Flex(grow: 1));
+        double top = verticalAlignment == VerticalAlignment.Top ? LayerInset : 0;
+        double bottom = verticalAlignment == VerticalAlignment.Bottom ? LayerInset : 0;
+        double left = isRight ? 0 : LayerInset;
+        double right = isRight ? LayerInset : 0;
+        return (left, top, right, bottom);
+    }
 
-        Element row = isRight
-            ? HStack(12, panel.Flex(grow: 0), fabColumn.Flex(grow: 0))
-            : HStack(12, fabColumn.Flex(grow: 0), panel.Flex(grow: 0));
-
-        return row
-            .HAlign(horizontalAlignment)
-            .VAlign(VerticalAlignment.Stretch);
+    private static (double Left, double Top, double Right, double Bottom) ResolvePanelMargin(bool isRight)
+    {
+        return isRight
+            ? (LayerInset, 0, LayerInset + FabSlotWidth, 0)
+            : (LayerInset + FabSlotWidth, 0, LayerInset, 0);
     }
 
     private static (VerticalAlignment Vertical, HorizontalAlignment Horizontal, bool IsRight) ResolvePlacement(string? fabPosition)
