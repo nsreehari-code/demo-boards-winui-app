@@ -4,6 +4,8 @@ using Microsoft.UI.Reactor;
 using Microsoft.UI.Reactor.Core;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
+using Windows.UI;
 using static Microsoft.UI.Reactor.Factories;
 using DemoBoards_WinUI;
 using DemoBoards_WinUI.Assets;
@@ -94,6 +96,29 @@ public sealed class CardChrome : Component<CardChromeProps>
             .FontSize(11)
             .Foreground(BoardTheme.CreateStatusBrush(def.ToneStatus, 0xFF));
     }
+
+    internal static Brush RunningHeaderWash(AppTheme theme, double pulseProgress)
+    {
+        Color baseColor = theme.RunningCard.HeaderWash is SolidColorBrush brush
+            ? brush.Color
+            : theme.StatusRunningColor;
+        double beat = 0.5 - (0.5 * Math.Cos(pulseProgress * Math.PI * 2));
+        byte alpha = (byte)Math.Round(theme.RunningCard.HeaderWashAlphaRest + (beat * (theme.RunningCard.HeaderWashAlphaPeak - theme.RunningCard.HeaderWashAlphaRest)));
+        return new SolidColorBrush(Color.FromArgb(alpha, baseColor.R, baseColor.G, baseColor.B));
+    }
+
+    internal static Element CardSurfaceWithHeader(AppTheme theme, Element? header, Element body, bool isRunning = false, double pulseProgress = 0)
+    {
+        Element paddedBody = Border(body).Padding(theme.Surfaces.CardPadding);
+        Element content = header is null
+            ? paddedBody
+            : VStack(0, header, paddedBody);
+
+        return Border(content)
+            .Background(isRunning ? theme.RunningCard.Background : theme.CardBackground)
+            .WithBorder(isRunning ? SurfaceUi.RunningBorderBrush(theme, pulseProgress) : theme.CardBorder, 1)
+            .CornerRadius(theme.Surfaces.CardRadius);
+    }
 }
 
 /// <summary>
@@ -168,14 +193,26 @@ public sealed class CardChromeInspectView : HookComponent<CardChromeInspectViewP
 
         string title = CardChrome.MetaValue(content, "title") ?? Props.CardId;
         string status = cardState.CardRuntime?.Status ?? "fresh";
+        bool isRunning = string.Equals(status, "running", StringComparison.Ordinal);
+        double pulseProgress = UsePulseProgress(isRunning && theme.RunningCard.PulseEnabled, theme.RunningCard.PulseDurationMs, 110);
         string pathState = CardChrome.NormalizePathState(content.MetaValues);
         string rationale = CardChrome.NormalizePathStateRationale(content.MetaValues);
 
-        Element header = VStack(2,
+        Element headerContent = VStack(2,
             TextBlock(title).Bold().FontSize(14).Foreground(theme.TextPrimary),
             status != "completed"
                 ? TextBlock(status).FontSize(11).Foreground(BoardTheme.CreateStatusBrush(status, 0xFF))
                 : Empty());
+
+        Element header = Border(headerContent)
+            .Padding(theme.Surfaces.CardPadding);
+
+        if (isRunning)
+        {
+            header = Border(headerContent)
+                .Padding(theme.Surfaces.CardPadding)
+                .Background(CardChrome.RunningHeaderWash(theme, pulseProgress));
+        }
 
         Element body = ScrollViewer(VStack(8,
                 CardChrome.PathStateOverlay(pathState, rationale),
@@ -189,7 +226,7 @@ public sealed class CardChromeInspectView : HookComponent<CardChromeInspectViewP
                 scrollViewer.VerticalScrollMode = ScrollMode.Auto;
             });
 
-        Element card = SurfaceUi.CardSurface(theme, VStack(8, header, body));
+        Element card = CardChrome.CardSurfaceWithHeader(theme, header, VStack(8, body), isRunning, pulseProgress);
 
         return Component<ResizableCardShell, ResizableCardShellProps>(
             new ResizableCardShellProps(Props.CardId, false, card));
@@ -233,6 +270,8 @@ public sealed class CardChromeBoardView : HookComponent<CardChromeBoardViewProps
 
         string title = CardChrome.MetaValue(content, "title") ?? Props.CardId;
         string status = cardState.CardRuntime?.Status ?? "fresh";
+        bool isRunning = string.Equals(status, "running", StringComparison.Ordinal);
+        double pulseProgress = UsePulseProgress(isRunning && theme.RunningCard.PulseEnabled, theme.RunningCard.PulseDurationMs, 110);
         string pathState = CardChrome.NormalizePathState(content.MetaValues);
         string rationale = CardChrome.NormalizePathStateRationale(content.MetaValues);
         bool inspectOpen = inspectedCardId == Props.CardId;
@@ -289,11 +328,21 @@ public sealed class CardChromeBoardView : HookComponent<CardChromeBoardViewProps
                 .HorizontalAlignment(HorizontalAlignment.Right)
                 .VAlign(VerticalAlignment.Center);
 
-            header = Grid(
+            Element headerContent = Grid(
                 new[] { GridSize.Star(), GridSize.Auto },
                 new[] { GridSize.Auto },
                 titleBlock.Grid(0, 0),
                 actions.Grid(0, 1));
+
+            header = Border(headerContent)
+                .Padding(theme.Surfaces.CardPadding);
+
+            if (isRunning)
+            {
+                header = Border(headerContent)
+                    .Padding(theme.Surfaces.CardPadding)
+                    .Background(CardChrome.RunningHeaderWash(theme, pulseProgress));
+            }
         }
 
         Element miniChat = chatOpen
@@ -317,7 +366,7 @@ public sealed class CardChromeBoardView : HookComponent<CardChromeBoardViewProps
                 scrollViewer.VerticalScrollMode = ScrollMode.Auto;
             });
 
-        Element card = SurfaceUi.CardSurface(theme, VStack(8, header, headerStatus, body));
+        Element card = CardChrome.CardSurfaceWithHeader(theme, header, VStack(8, headerStatus, body), isRunning, pulseProgress);
 
         Element shell = Component<ResizableCardShell, ResizableCardShellProps>(
             new ResizableCardShellProps(Props.CardId, Props.EnableResize, card));

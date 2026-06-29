@@ -387,6 +387,11 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         // lookups inside the canvas). Threaded into the builders below so grid/edges/nodes/minimap/zoom
         // all follow the active theme pack.
         AppTheme theme = UseContext(AppThemeContext.Current);
+        bool hasRunningMiniMapNodes = Props.Nodes.Any(node => IsRunningStatus(GetStr(node, "status")));
+        double miniMapPulseProgress = UsePulseProgress(
+            enabled: hasRunningMiniMapNodes && theme.MiniMap.RunningPulseEnabled,
+            periodMs: theme.MiniMap.RunningPulseDurationMs,
+            frameMs: 85);
 
         // Resolve geometry for every current node and build its layout box. Position precedence:
         // runtime drag -> persisted blob -> GetInitialNodePos -> auto-grid. Size precedence: persisted
@@ -694,6 +699,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
                 effective,
                 surfaceWidth,
                 surfaceHeight,
+                miniMapPulseProgress,
                 scrollViewerRef.Current,
                 viewport,
                 options,
@@ -719,8 +725,8 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         return Grid(
             new[] { GridSize.Star() },
             new[] { GridSize.Star() },
-            overlay.ToArray())
-            .Background(theme.SurfaceBackground)
+                overlay.ToArray())
+                .Background(theme.SurfaceBackground)
             .Flex(grow: 1);
     }
 
@@ -740,6 +746,12 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
 
     private static string? GetStr(JsonElement el, string name) =>
         el.TryGetProperty(name, out JsonElement v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+
+    private static bool IsRunningStatus(string? status)
+    {
+        string normalized = (status ?? string.Empty).Trim().ToLowerInvariant();
+        return normalized is "running" or "in_progress";
+    }
 
     // ---- Opaque CanvasState blob ----
     // Shape (private to the canvas; the consumer round-trips it verbatim):
@@ -1551,6 +1563,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         IReadOnlyDictionary<string, InfiniteCanvasNodePosition> positions,
         double surfaceWidth,
         double surfaceHeight,
+        double pulseProgress,
         ScrollViewer? scrollViewer,
         ViewportState? viewport,
         InfiniteCanvasOptions options,
@@ -1733,12 +1746,24 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
             double nodeRectH = Math.Max(6, node.Height * scale);
             double nodeLeft = ToMiniX(pos.X);
             double nodeTop = ToMiniY(pos.Y);
+            bool isRunning = IsRunningStatus(GetStr(node.Descriptor, "status"));
+            double beat = isRunning && theme.MiniMap.RunningPulseEnabled ? PulseBeat(pulseProgress) : 0;
+            double scaleFactor = isRunning ? 1.0 + (beat * theme.MiniMap.RunningPulseScaleDelta) : 1.0;
+            double renderW = nodeRectW * scaleFactor;
+            double renderH = nodeRectH * scaleFactor;
+            double renderLeft = nodeLeft - ((renderW - nodeRectW) / 2);
+            double renderTop = nodeTop - ((renderH - nodeRectH) / 2);
+            double opacity = isRunning
+                ? theme.MiniMap.RunningOpacityMin + (beat * (theme.MiniMap.RunningOpacityMax - theme.MiniMap.RunningOpacityMin))
+                : 0.92;
             string nodeId = id;
             miniChildren.Add(Rectangle()
-                .Fill(theme.Accent)
-                .Width(nodeRectW)
-                .Height(nodeRectH)
-                .Canvas(nodeLeft, nodeTop)
+                .Fill(isRunning ? theme.MiniMap.RunningFill : theme.MiniMap.NodeFill)
+                .WithBorder(isRunning ? theme.MiniMap.RunningStroke : theme.MiniMap.NodeStroke, 1)
+                .Opacity(opacity)
+                .Width(renderW)
+                .Height(renderH)
+                .Canvas(renderLeft, renderTop)
                 .OnPointerPressed((element, args) =>
                 {
                     Canvas? mini = miniCanvasRef.Current;
@@ -1750,8 +1775,8 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
                     Point pointer = args.GetCurrentPoint(mini).Position;
                     miniNodeDragging.Current = nodeId;
                     miniNodeDragStartPointer.Current = pointer;
-                    miniNodeDragStartRect.Current = new Point(nodeLeft, nodeTop);
-                    miniNodeDragLatest.Current = new Point(nodeLeft, nodeTop);
+                    miniNodeDragStartRect.Current = new Point(renderLeft, renderTop);
+                    miniNodeDragLatest.Current = new Point(renderLeft, renderTop);
                     ui.CapturePointer(args.Pointer);
                     args.Handled = true;
                 })
@@ -1769,8 +1794,8 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
                     }
 
                     Point pointer = args.GetCurrentPoint(mini).Position;
-                    double nx = Math.Clamp(miniNodeDragStartRect.Current.X + (pointer.X - miniNodeDragStartPointer.Current.X), 0, Math.Max(0, miniWidth - nodeRectW));
-                    double ny = Math.Clamp(miniNodeDragStartRect.Current.Y + (pointer.Y - miniNodeDragStartPointer.Current.Y), 0, Math.Max(0, miniHeight - nodeRectH));
+                    double nx = Math.Clamp(miniNodeDragStartRect.Current.X + (pointer.X - miniNodeDragStartPointer.Current.X), 0, Math.Max(0, miniWidth - renderW));
+                    double ny = Math.Clamp(miniNodeDragStartRect.Current.Y + (pointer.Y - miniNodeDragStartPointer.Current.Y), 0, Math.Max(0, miniHeight - renderH));
                     miniNodeDragLatest.Current = new Point(nx, ny);
 
                     // Move the mini rect imperatively; the real node only follows on release.
@@ -1798,8 +1823,8 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
                         return;
                     }
 
-                    double worldX = ToWorldX(miniNodeDragLatest.Current.X);
-                    double worldY = ToWorldY(miniNodeDragLatest.Current.Y);
+                    double worldX = ToWorldX(miniNodeDragLatest.Current.X + ((renderW - nodeRectW) / 2));
+                    double worldY = ToWorldY(miniNodeDragLatest.Current.Y + ((renderH - nodeRectH) / 2));
                     onCommitPosition(nodeId, new InfiniteCanvasNodePosition(worldX, worldY));
                 })
                 .WithKey($"icv-mini-{nodeId}"));
@@ -1862,6 +1887,9 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
             .HAlign(horizontal)
             .VAlign(vertical);
     }
+
+    private static double PulseBeat(double progress) =>
+        0.5 - (0.5 * Math.Cos(progress * Math.PI * 2));
 
     // ---- Zoom controls ----
 

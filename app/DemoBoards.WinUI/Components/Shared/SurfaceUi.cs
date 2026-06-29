@@ -2,6 +2,7 @@ using Microsoft.UI.Reactor;
 using Microsoft.UI.Reactor.Core;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Windows.UI;
 using static Microsoft.UI.Reactor.Factories;
 using DemoBoards_WinUI;
 
@@ -13,11 +14,11 @@ namespace DemoBoards_WinUI.Controls.Shared;
 /// </summary>
 public static class SurfaceUi
 {
-    public static Element CardSurface(AppTheme theme, Element child) =>
+    public static Element CardSurface(AppTheme theme, Element child, bool isRunning = false, double pulseProgress = 0) =>
         Border(child)
             .Padding(theme.Surfaces.CardPadding)
-            .Background(theme.CardBackground)
-            .WithBorder(theme.CardBorder, 1)
+            .Background(isRunning ? theme.RunningCard.Background : theme.CardBackground)
+            .WithBorder(isRunning ? RunningBorderBrush(theme, pulseProgress) : theme.CardBorder, 1)
             .CornerRadius(theme.Surfaces.CardRadius);
 
     public static Element TileSurface(AppTheme theme, Element child) =>
@@ -54,4 +55,12 @@ public static class SurfaceUi
             .Padding(theme.Chips.PaddingX, theme.Chips.PaddingY, theme.Chips.PaddingX, theme.Chips.PaddingY)
             .Background(background)
             .CornerRadius(theme.Chips.Radius);
+
+    internal static Brush RunningBorderBrush(AppTheme theme, double pulseProgress)
+    {
+        double beat = 0.5 - (0.5 * Math.Cos(pulseProgress * Math.PI * 2));
+        byte alpha = (byte)Math.Round(theme.RunningCard.BorderAlphaRest + (beat * (theme.RunningCard.BorderAlphaPeak - theme.RunningCard.BorderAlphaRest)));
+        Color glow = theme.RunningCard.GlowColor;
+        return new SolidColorBrush(Color.FromArgb(alpha, glow.R, glow.G, glow.B));
+    }
 }

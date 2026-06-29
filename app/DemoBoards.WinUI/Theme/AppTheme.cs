@@ -36,6 +36,29 @@ public sealed record AppThemeTableTokens(
     double HeaderPaddingY,
     double Radius);
 
+public sealed record AppThemeMiniMapTokens(
+    Brush NodeFill,
+    Brush NodeStroke,
+    Brush RunningFill,
+    Brush RunningStroke,
+    bool RunningPulseEnabled,
+    double RunningPulseDurationMs,
+    double RunningPulseScaleDelta,
+    double RunningOpacityMin,
+    double RunningOpacityMax);
+
+public sealed record AppThemeCardRunningTokens(
+    Brush Background,
+    Brush Border,
+    Brush HeaderWash,
+    Color GlowColor,
+    bool PulseEnabled,
+    double PulseDurationMs,
+    byte BorderAlphaRest,
+    byte BorderAlphaPeak,
+    byte HeaderWashAlphaRest,
+    byte HeaderWashAlphaPeak);
+
 /// <summary>
 /// The app theme as a small set of <b>semantic</b> brushes/colours that Reactor components consume
 /// through <see cref="AppThemeContext"/> instead of reaching into XAML resources directly. Each role
@@ -78,6 +101,8 @@ public sealed record AppTheme(
     Color StatusNeutralColor,
     Color GridDotColor,
     Color MiniMapViewportFill,
+    AppThemeMiniMapTokens MiniMap,
+    AppThemeCardRunningTokens RunningCard,
     AppThemeSurfaceTokens Surfaces,
     AppThemeChipTokens Chips,
     AppThemeTableTokens Tables)
@@ -120,6 +145,27 @@ public sealed record AppTheme(
         StatusNeutralColor: Color.FromArgb(0xFF, 0x81, 0x91, 0xA3),
         GridDotColor: Color.FromArgb(0x22, 0x88, 0x88, 0x88),
         MiniMapViewportFill: Color.FromArgb(0x33, 0x30, 0x90, 0xF0),
+        MiniMap: new AppThemeMiniMapTokens(
+            NodeFill: new SolidColorBrush(Color.FromArgb(0x94, 0x7D, 0x95, 0xAB)),
+            NodeStroke: new SolidColorBrush(Color.FromArgb(0x57, 0x61, 0x7A, 0x93)),
+            RunningFill: new SolidColorBrush(Color.FromArgb(0xEA, 0x6F, 0xC0, 0x9A)),
+            RunningStroke: new SolidColorBrush(Color.FromArgb(0xF5, 0x22, 0x84, 0x5D)),
+            RunningPulseEnabled: true,
+            RunningPulseDurationMs: 1050,
+            RunningPulseScaleDelta: 0.12,
+            RunningOpacityMin: 0.72,
+            RunningOpacityMax: 1.0),
+        RunningCard: new AppThemeCardRunningTokens(
+            Background: new SolidColorBrush(Color.FromArgb(0xFF, 0x3E, 0x2C, 0x1E)),
+            Border: new SolidColorBrush(Color.FromArgb(0xA8, 0xD4, 0x8A, 0x2A)),
+            HeaderWash: new SolidColorBrush(Color.FromArgb(0x24, 0xD4, 0x8A, 0x2A)),
+            GlowColor: Color.FromArgb(0xFF, 0xD4, 0x8A, 0x2A),
+            PulseEnabled: true,
+            PulseDurationMs: 2600,
+            BorderAlphaRest: 0x9A,
+            BorderAlphaPeak: 0xDA,
+            HeaderWashAlphaRest: 0x24,
+            HeaderWashAlphaPeak: 0x3C),
         Surfaces: new AppThemeSurfaceTokens(
             CardPadding: 8,
             CardRadius: 4,
@@ -177,6 +223,17 @@ public sealed record AppTheme(
         Color neutralColor = BoardTheme.ResolveColor("BoardStatusUnknownColor", Color.FromArgb(0xFF, 0x81, 0x91, 0xA3));
         Color borderColor = BoardTheme.ResolveColor("BoardColorBorder", Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF));
         Color borderStrongColor = BoardTheme.ResolveColor("BoardColorBorderStrong", Color.FromArgb(0x55, 0xFF, 0xFF, 0xFF));
+        Color cardColor = BoardTheme.ResolveColor("BoardColorSurface", Color.FromArgb(0xFF, 0x2A, 0x2A, 0x2A));
+        Color surfaceStrongColor = BoardTheme.ResolveColor("BoardColorSurfaceStrong", Color.FromArgb(0xFF, 0x2F, 0x2F, 0x2F));
+
+        Color miniMapDefaultFill = Color.FromArgb(0x94, neutralColor.R, neutralColor.G, neutralColor.B);
+        Color miniMapDefaultStroke = Color.FromArgb(0x57, neutralColor.R, neutralColor.G, neutralColor.B);
+        Color miniMapRunningFill = Color.FromArgb(0xEA, successColor.R, successColor.G, successColor.B);
+        Color miniMapRunningStroke = Color.FromArgb(0xF5, successColor.R, successColor.G, successColor.B);
+        Color runningCardBackground = Blend(cardColor, runningColor, 0.16);
+        Color runningCardBorder = Blend(borderStrongColor, runningColor, 0.56);
+        Color runningHeaderWash = Color.FromArgb(0x24, runningColor.R, runningColor.G, runningColor.B);
+        Color runningGlow = Blend(surfaceStrongColor, runningColor, 0.82);
 
         return new AppTheme(
             Transparent: new SolidColorBrush(Colors.Transparent),
@@ -212,6 +269,27 @@ public sealed record AppTheme(
             StatusNeutralColor: neutralColor,
             GridDotColor: Color.FromArgb(0x22, textColor.R, textColor.G, textColor.B),
             MiniMapViewportFill: Color.FromArgb(0x33, accentColor.R, accentColor.G, accentColor.B),
+            MiniMap: new AppThemeMiniMapTokens(
+                NodeFill: new SolidColorBrush(miniMapDefaultFill),
+                NodeStroke: new SolidColorBrush(miniMapDefaultStroke),
+                RunningFill: new SolidColorBrush(miniMapRunningFill),
+                RunningStroke: new SolidColorBrush(miniMapRunningStroke),
+                RunningPulseEnabled: true,
+                RunningPulseDurationMs: 1050,
+                RunningPulseScaleDelta: 0.12,
+                RunningOpacityMin: 0.72,
+                RunningOpacityMax: 1.0),
+            RunningCard: new AppThemeCardRunningTokens(
+                Background: new SolidColorBrush(runningCardBackground),
+                Border: new SolidColorBrush(runningCardBorder),
+                HeaderWash: new SolidColorBrush(runningHeaderWash),
+                GlowColor: runningGlow,
+                PulseEnabled: true,
+                PulseDurationMs: 2600,
+                BorderAlphaRest: 0x9A,
+                BorderAlphaPeak: 0xDA,
+                HeaderWashAlphaRest: 0x24,
+                HeaderWashAlphaPeak: 0x3C),
             Surfaces: new AppThemeSurfaceTokens(
                 CardPadding: 8,
                 CardRadius: 4,
@@ -273,6 +351,30 @@ public sealed record AppTheme(
         return new SolidColorBrush(Color.FromArgb(alpha, color.R, color.G, color.B));
     }
 
+    public Brush MiniMapFillForTone(string? tone)
+    {
+        return NormalizeTone(tone) switch
+        {
+            "running" => MiniMap.RunningFill,
+            "success" or "completed" => new SolidColorBrush(Color.FromArgb(0xEA, StatusSuccessColor.R, StatusSuccessColor.G, StatusSuccessColor.B)),
+            "failed" or "error" => new SolidColorBrush(Color.FromArgb(0xEA, StatusErrorColor.R, StatusErrorColor.G, StatusErrorColor.B)),
+            "warning" or "blocked" => new SolidColorBrush(Color.FromArgb(0xEA, StatusWarningColor.R, StatusWarningColor.G, StatusWarningColor.B)),
+            _ => MiniMap.NodeFill,
+        };
+    }
+
+    public Brush MiniMapStrokeForTone(string? tone)
+    {
+        return NormalizeTone(tone) switch
+        {
+            "running" => MiniMap.RunningStroke,
+            "success" or "completed" => new SolidColorBrush(Color.FromArgb(0xF5, StatusSuccessColor.R, StatusSuccessColor.G, StatusSuccessColor.B)),
+            "failed" or "error" => new SolidColorBrush(Color.FromArgb(0xF5, StatusErrorColor.R, StatusErrorColor.G, StatusErrorColor.B)),
+            "warning" or "blocked" => new SolidColorBrush(Color.FromArgb(0xF5, StatusWarningColor.R, StatusWarningColor.G, StatusWarningColor.B)),
+            _ => MiniMap.NodeStroke,
+        };
+    }
+
     public IReadOnlyList<Brush> CreateChartPalette()
     {
         return new Brush[]
@@ -294,6 +396,20 @@ public sealed record AppTheme(
         Application.Current.Resources.TryGetValue(resourceKey, out object resource) && resource is Brush brush
             ? brush
             : new SolidColorBrush(fallback);
+
+    private static string NormalizeTone(string? tone) =>
+        (tone ?? string.Empty).Trim().ToLowerInvariant();
+
+    private static Color Blend(Color background, Color foreground, double amount)
+    {
+        double clamped = Math.Clamp(amount, 0, 1);
+        byte Mix(byte lhs, byte rhs) => (byte)Math.Round(lhs + ((rhs - lhs) * clamped));
+        return Color.FromArgb(
+            Mix(background.A, foreground.A),
+            Mix(background.R, foreground.R),
+            Mix(background.G, foreground.G),
+            Mix(background.B, foreground.B));
+    }
 }
 
 /// <summary>
