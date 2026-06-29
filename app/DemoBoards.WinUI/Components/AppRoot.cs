@@ -203,6 +203,7 @@ public sealed class AppRoot : HookComponent<AppRootProps>
                     await board.BoardActions.RefreshAll().ConfigureAwait(false);
                 },
                 Disabled: !board.HasRefreshableCards,
+                Width: 112,
                 Children: state => HStack(8,
                     TextBlock(state.Pending ? "Refreshing..." : FormatCountdown(state.RemainingMs))
                         .Foreground(theme.TextPrimary))));
@@ -212,13 +213,17 @@ public sealed class AppRoot : HookComponent<AppRootProps>
             .HorizontalAlignment(HorizontalAlignment.Right);
 
         return Border(
-                HStack(12,
+                Grid(
+                    new[] { GridSize.Star(), GridSize.Auto },
+                    new[] { GridSize.Auto },
                     VStack(2,
-                        HStack(8, titleBlockChildren.ToArray())
-                            .VAlign(VerticalAlignment.Center),
-                        TextBlock(subtitle).Opacity(0.72).FontSize(11))
-                    .Flex(grow: 1),
-                    actions)
+                            HStack(8, titleBlockChildren.ToArray())
+                                .VAlign(VerticalAlignment.Center),
+                            TextBlock(subtitle).Opacity(0.72).FontSize(11))
+                        .Grid(0, 0),
+                    actions
+                        .Grid(0, 1)
+                        .VAlign(VerticalAlignment.Center))
                 .HorizontalAlignment(HorizontalAlignment.Stretch))
             .Padding(12, 8, 12, 8)
                 .Background(theme.TopBarBackground)

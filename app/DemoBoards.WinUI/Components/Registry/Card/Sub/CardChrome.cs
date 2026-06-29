@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.UI.Reactor;
 using Microsoft.UI.Reactor.Core;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using static Microsoft.UI.Reactor.Factories;
 using DemoBoards_WinUI;
@@ -239,9 +240,24 @@ public sealed class CardChromeBoardView : HookComponent<CardChromeBoardViewProps
         bool showRefresh = cardState.CanRefresh;
         bool showHeader = Props.Chrome == "full";
 
-        Element RefreshControl() => refreshDisabled
-            ? ProgressRing().AutomationName("Refreshing")
-            : Button(Component<SvgIcon, SvgIconProps>(new SvgIconProps(HostIconSources.ArrowClockwise, 15)), () => _ = cardState.CardActions.Refresh()).SubtleButton().AutomationName("Refresh");
+        Element RefreshControl() => Button(
+                Border(
+                        refreshDisabled
+                            ? ProgressRing()
+                                .Width(14)
+                                .Height(14)
+                                .AutomationName("Refreshing")
+                                .HAlign(HorizontalAlignment.Center)
+                                .VAlign(VerticalAlignment.Center)
+                            : Component<SvgIcon, SvgIconProps>(new SvgIconProps(HostIconSources.ArrowClockwise, 15))
+                                .HAlign(HorizontalAlignment.Center)
+                                .VAlign(VerticalAlignment.Center))
+                    .Width(15)
+                    .Height(15),
+                () => _ = cardState.CardActions.Refresh())
+            .SubtleButton()
+            .AutomationName(refreshDisabled ? "Refreshing" : "Refresh")
+            .Set(button => button.IsEnabled = !refreshDisabled);
 
         Element header = Empty();
         if (showHeader)
@@ -258,12 +274,19 @@ public sealed class CardChromeBoardView : HookComponent<CardChromeBoardViewProps
                 .SubtleButton()
                 .AutomationName(inspectOpen ? "Close inspect view" : "Show source information");
 
-            header = HStack(8,
-                titleBlock.Flex(grow: 1),
-                inspectButton,
-                showRefresh ? RefreshControl() : Empty(),
-                Component<ChatHeaderButton, ChatHeaderButtonProps>(
-                    new ChatHeaderButtonProps(Props.BoardId, Props.CardId, chatOpen, handleToggleChat)));
+            Element actions = HStack(4,
+                    inspectButton,
+                    showRefresh ? RefreshControl() : Empty(),
+                    Component<ChatHeaderButton, ChatHeaderButtonProps>(
+                        new ChatHeaderButtonProps(Props.BoardId, Props.CardId, chatOpen, handleToggleChat)))
+                .HorizontalAlignment(HorizontalAlignment.Right)
+                .VAlign(VerticalAlignment.Center);
+
+            header = Grid(
+                new[] { GridSize.Star(), GridSize.Auto },
+                new[] { GridSize.Auto },
+                titleBlock.Grid(0, 0),
+                actions.Grid(0, 1));
         }
 
         Element miniChat = chatOpen

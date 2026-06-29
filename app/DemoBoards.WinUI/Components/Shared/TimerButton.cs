@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Reactor;
 using Microsoft.UI.Reactor.Core;
+using Microsoft.UI.Xaml;
 using static Microsoft.UI.Reactor.Factories;
 using DemoBoards_WinUI;
 
@@ -22,6 +23,7 @@ public sealed record TimerButtonProps(
     double Duration = 0,
     Func<Task>? OnClick = null,
     bool Disabled = false,
+    double? Width = null,
     Func<TimerButtonRenderState, Element>? Children = null);
 
 public sealed class TimerButton : Component<TimerButtonProps>
@@ -110,8 +112,11 @@ public sealed class TimerButton : Component<TimerButtonProps>
             ? Props.Children(new TimerButtonRenderState(remainingMs, pending))
             : TextBlock(pending ? "Working..." : $"{Math.Ceiling(remainingMs / 1000.0):0}s").Foreground(theme.TextPrimary);
 
-        return Border(content)
+        Element buttonContent = content.HAlign(HorizontalAlignment.Center);
+
+        return Border(buttonContent)
             .Padding(10)
+            .Width(Props.Width ?? double.NaN)
             .Background(theme.Accent)
             .CornerRadius(8)
             .AutomationName("Timer action")
