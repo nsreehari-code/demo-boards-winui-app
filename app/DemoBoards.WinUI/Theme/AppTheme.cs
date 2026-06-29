@@ -6,6 +6,26 @@ using Windows.UI;
 
 namespace DemoBoards_WinUI;
 
+public sealed record AppThemeSurfaceTokens(
+    double CardPadding,
+    double CardRadius,
+    double TilePadding,
+    double TileRadius,
+    double PanelPadding,
+    double PanelRadius,
+    double DialogPadding,
+    double DialogRadius,
+    double BubblePadding,
+    double BubbleRadius);
+
+public sealed record AppThemeChipTokens(
+    double PaddingX,
+    double PaddingY,
+    double Radius,
+    double CompactPaddingX,
+    double CompactPaddingY,
+    double CompactRadius);
+
 /// <summary>
 /// The app theme as a small set of <b>semantic</b> brushes/colours that Reactor components consume
 /// through <see cref="AppThemeContext"/> instead of reaching into XAML resources directly. Each role
@@ -47,7 +67,9 @@ public sealed record AppTheme(
     Color StatusWarningColor,
     Color StatusNeutralColor,
     Color GridDotColor,
-    Color MiniMapViewportFill)
+    Color MiniMapViewportFill,
+    AppThemeSurfaceTokens Surfaces,
+    AppThemeChipTokens Chips)
 {
     /// <summary>
     /// Resource-independent neutral theme used as the <see cref="AppThemeContext"/> default (only seen
@@ -86,7 +108,25 @@ public sealed record AppTheme(
         StatusWarningColor: Color.FromArgb(0xFF, 0xD9, 0x92, 0x2E),
         StatusNeutralColor: Color.FromArgb(0xFF, 0x81, 0x91, 0xA3),
         GridDotColor: Color.FromArgb(0x22, 0x88, 0x88, 0x88),
-        MiniMapViewportFill: Color.FromArgb(0x33, 0x30, 0x90, 0xF0));
+        MiniMapViewportFill: Color.FromArgb(0x33, 0x30, 0x90, 0xF0),
+        Surfaces: new AppThemeSurfaceTokens(
+            CardPadding: 8,
+            CardRadius: 4,
+            TilePadding: 12,
+            TileRadius: 10,
+            PanelPadding: 12,
+            PanelRadius: 2,
+            DialogPadding: 16,
+            DialogRadius: 16,
+            BubblePadding: 10,
+            BubbleRadius: 12),
+        Chips: new AppThemeChipTokens(
+            PaddingX: 8,
+            PaddingY: 2,
+            Radius: 10,
+            CompactPaddingX: 6,
+            CompactPaddingY: 2,
+            CompactRadius: 8));
 
     /// <summary>
     /// Builds the live theme from the application's current Fluent/board theme resources. The two
@@ -149,7 +189,25 @@ public sealed record AppTheme(
             StatusWarningColor: warningColor,
             StatusNeutralColor: neutralColor,
             GridDotColor: Color.FromArgb(0x22, textColor.R, textColor.G, textColor.B),
-            MiniMapViewportFill: Color.FromArgb(0x33, accentColor.R, accentColor.G, accentColor.B));
+            MiniMapViewportFill: Color.FromArgb(0x33, accentColor.R, accentColor.G, accentColor.B),
+            Surfaces: new AppThemeSurfaceTokens(
+                CardPadding: 8,
+                CardRadius: 4,
+                TilePadding: 12,
+                TileRadius: 10,
+                PanelPadding: 12,
+                PanelRadius: 2,
+                DialogPadding: 16,
+                DialogRadius: 16,
+                BubblePadding: 10,
+                BubbleRadius: 12),
+            Chips: new AppThemeChipTokens(
+                PaddingX: 8,
+                PaddingY: 2,
+                Radius: 10,
+                CompactPaddingX: 6,
+                CompactPaddingY: 2,
+                CompactRadius: 8));
     }
 
     public Brush BrushForTone(string? tone)

@@ -84,15 +84,14 @@ public sealed class ChatBubble : Component<ChatBubbleProps>
             bubbleChildren.Add(Props.Footer);
         }
 
-        return Border(VStack(4, bubbleChildren.ToArray()))
-            .Padding(10)
-            .Background(isUser ? theme.LayerAlt : theme.Layer)
-            .WithBorder(theme.CardBorder, 1)
-            .CornerRadius(12)
-            .Set(border =>
-            {
-                border.MaxWidth = 420;
-                border.HorizontalAlignment = isUser ? HorizontalAlignment.Right : HorizontalAlignment.Left;
-            });
+        return SurfaceUi.BubbleSurface(
+            theme,
+            VStack(4, bubbleChildren.ToArray()),
+                isUser ? theme.LayerAlt : theme.Layer,
+                border =>
+                {
+                    border.MaxWidth = 420;
+                    border.HorizontalAlignment = isUser ? HorizontalAlignment.Right : HorizontalAlignment.Left;
+                });
     }
 }

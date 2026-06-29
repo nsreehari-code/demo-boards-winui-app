@@ -23,10 +23,6 @@ public sealed class GlobalModal : Component<GlobalModalProps>
             TextBlock(Props.Title).Bold().FontSize(16).Foreground(theme.TextPrimary).Flex(grow: 1),
             Button(Component<SvgIcon, SvgIconProps>(new SvgIconProps(HostIconSources.XLg, 14)), Props.OnClose).SubtleButton().AutomationName($"Close {Props.Title}"));
 
-        return Border(VStack(12, header, Props.Children ?? Empty()))
-            .Padding(16)
-            .Background(theme.CardBackground)
-            .WithBorder(theme.CardBorder, 1)
-            .CornerRadius(16);
+        return SurfaceUi.DialogSurface(theme, VStack(12, header, Props.Children ?? Empty()));
     }
 }

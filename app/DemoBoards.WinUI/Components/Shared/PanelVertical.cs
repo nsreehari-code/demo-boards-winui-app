@@ -61,7 +61,8 @@ public sealed class PanelVertical : Component<PanelVerticalProps>
 
         (double panelLeft, double panelTop, double panelRight, double panelBottom) = ResolvePanelMargin(isRight);
 
-        Element panel = Border(
+        Element panel = SurfaceUi.PanelSurface(
+                theme,
                 ScrollViewer(Props.Children ?? Empty())
                     .Flex(grow: 1)
                     .Set(scrollViewer =>
@@ -69,10 +70,6 @@ public sealed class PanelVertical : Component<PanelVerticalProps>
                         scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
                         scrollViewer.HorizontalScrollMode = ScrollMode.Disabled;
                     }))
-            .Padding(12)
-            .Background(theme.CardBackground)
-            .WithBorder(theme.CardBorder, 1)
-            .CornerRadius(2)
             .Width(480)
             .MaxWidth(560)
             .HAlign(horizontalAlignment)

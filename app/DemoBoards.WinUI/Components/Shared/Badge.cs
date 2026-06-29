@@ -18,9 +18,9 @@ public sealed class Badge : Component<BadgeProps>
     {
         AppTheme theme = UseContext(AppThemeContext.Current);
 
-        return Border(TextBlock(Props.Value).FontSize(12).Foreground(theme.TextOnAccent))
-            .Background(theme.BrushForTone(Props.Tone))
-            .CornerRadius(10)
-            .Set(border => border.Padding = new Thickness(8, 2, 8, 2));
+        return SurfaceUi.ChipSurface(
+            theme,
+            TextBlock(Props.Value).FontSize(12).Foreground(theme.TextOnAccent),
+            theme.BrushForTone(Props.Tone));
     }
 }

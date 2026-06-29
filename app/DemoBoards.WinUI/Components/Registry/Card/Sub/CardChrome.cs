@@ -188,11 +188,7 @@ public sealed class CardChromeInspectView : HookComponent<CardChromeInspectViewP
                 scrollViewer.VerticalScrollMode = ScrollMode.Auto;
             });
 
-        Element card = Border(VStack(8, header, body))
-            .Padding(8)
-            .Background(theme.CardBackground)
-            .WithBorder(theme.CardBorder, 1)
-            .CornerRadius(4);
+        Element card = SurfaceUi.CardSurface(theme, VStack(8, header, body));
 
         return Component<ResizableCardShell, ResizableCardShellProps>(
             new ResizableCardShellProps(Props.CardId, false, card));
@@ -291,11 +287,7 @@ public sealed class CardChromeBoardView : HookComponent<CardChromeBoardViewProps
                 scrollViewer.VerticalScrollMode = ScrollMode.Auto;
             });
 
-        Element card = Border(VStack(8, header, body))
-            .Padding(8)
-            .Background(theme.CardBackground)
-            .WithBorder(theme.CardBorder, 1)
-            .CornerRadius(4);
+        Element card = SurfaceUi.CardSurface(theme, VStack(8, header, body));
 
         Element shell = Component<ResizableCardShell, ResizableCardShellProps>(
             new ResizableCardShellProps(Props.CardId, Props.EnableResize, card));

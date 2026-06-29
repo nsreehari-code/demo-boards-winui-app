@@ -34,19 +34,13 @@ public sealed class Alert : Component<AlertProps>
             body.Add(TextBlock(Props.Label).FontSize(12).Opacity(0.7).Foreground(theme.TextPrimary));
         }
 
-        Element levelPill = Border(TextBlock(Props.Level).FontSize(11).Foreground(theme.TextOnAccent))
-            .Background(tone)
-            .CornerRadius(8)
-            .Set(border =>
-            {
-                border.Padding = new Thickness(8, 2, 8, 2);
-                border.VerticalAlignment = VerticalAlignment.Center;
-            });
+        Element levelPill = SurfaceUi.ChipSurface(
+                theme,
+                TextBlock(Props.Level).FontSize(11).Foreground(theme.TextOnAccent),
+                tone)
+            .VAlign(VerticalAlignment.Center);
 
-        return Border(HStack(10, dot, VStack(2, body.ToArray()).Flex(grow: 1), levelPill))
-            .Padding(12)
-            .Background(theme.CardBackground)
-            .WithBorder(theme.CardBorder, 1)
-            .CornerRadius(10);
+        return SurfaceUi.TileSurface(theme,
+            HStack(10, dot, VStack(2, body.ToArray()).Flex(grow: 1), levelPill));
     }
 }
