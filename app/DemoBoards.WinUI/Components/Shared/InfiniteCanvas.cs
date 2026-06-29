@@ -331,6 +331,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
             new Dictionary<string, double>(StringComparer.Ordinal));
         var (nodeOrder, setNodeOrder) = UseState<IReadOnlyList<string>>(
             ResolveNodeOrder(Props.Nodes, preferredOrder: null, Props.CanvasState));
+        var (frontNodeId, setFrontNodeId) = UseState<string?>(null);
 
         // Reactive viewport (pan + zoom + visible size). Single source of truth that the ScrollViewer
         // commits into and the minimap indicator derives from — no live ScrollViewer reads, no tick hack.
@@ -346,6 +347,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
                 setMovedPositions(new Dictionary<string, InfiniteCanvasNodePosition>(StringComparer.Ordinal));
                 setMeasuredNodeHeights(new Dictionary<string, double>(StringComparer.Ordinal));
                 setNodeOrder(ResolveNodeOrder(Props.Nodes, preferredOrder: null, Props.CanvasState));
+                setFrontNodeId(null);
                 setViewport(null);
                 restoredViewportRef.Current = false;
                 return () => { };
@@ -418,6 +420,11 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
             zIndices[effectiveNodeOrder[index]] = index;
         }
 
+        if (frontNodeId is { Length: > 0 } activeId && zIndices.ContainsKey(activeId))
+        {
+            zIndices[activeId] = effectiveNodeOrder.Count;
+        }
+
         // Surface bounds (content extent + padding).
         double maxRight = 0;
         double maxBottom = 0;
@@ -464,13 +471,12 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
 
         void BringNodeToFront(string id)
         {
-            List<string> next = MoveNodeToFront(effectiveNodeOrder, id);
-            if (next.Count == effectiveNodeOrder.Count && next.SequenceEqual(effectiveNodeOrder, StringComparer.Ordinal))
+            if (string.Equals(frontNodeId, id, StringComparison.Ordinal))
             {
                 return;
             }
 
-            setNodeOrder(next);
+            setFrontNodeId(id);
         }
 
         // ---- Canvas children: background grid + edges + nodes ----
@@ -1008,6 +1014,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
                 }
 
                 Point world = args.GetCurrentPoint(canvas).Position;
+                onBringToFront();
                 draggingKey.Current = id;
                 dragStartPointer.Current = world;
                 dragStartPos.Current = pos;
