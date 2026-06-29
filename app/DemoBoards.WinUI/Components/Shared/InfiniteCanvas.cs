@@ -383,6 +383,11 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         }
 
         IReadOnlyList<string> effectiveNodeOrder = ResolveNodeOrder(Props.Nodes, nodeOrder);
+        var zIndices = new Dictionary<string, int>(effectiveNodeOrder.Count, StringComparer.Ordinal);
+        for (int index = 0; index < effectiveNodeOrder.Count; index++)
+        {
+            zIndices[effectiveNodeOrder[index]] = index;
+        }
 
         // Surface bounds (content extent + padding).
         double maxRight = 0;
@@ -455,8 +460,9 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
             children.AddRange(BuildEdges(edges, effective, boxes, Props.NodePorts, theme, options.ShowEdgeLabels));
         }
 
-        foreach (string id in effectiveNodeOrder)
+        foreach (JsonElement descriptor in Props.Nodes)
         {
+            string id = NodeId(descriptor);
             if (!boxes.TryGetValue(id, out InfiniteCanvasNodeBox? node))
             {
                 continue;
@@ -474,6 +480,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
                 dragStartPointer,
                 dragStartPos,
                 dragLatest,
+                zIndices.TryGetValue(id, out int zIndex) ? zIndex : 0,
                 options,
                 () => BringNodeToFront(id),
                 committedPos => CommitPosition(id, committedPos),
@@ -895,6 +902,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         Microsoft.UI.Reactor.Core.Ref<Point> dragStartPointer,
         Microsoft.UI.Reactor.Core.Ref<InfiniteCanvasNodePosition> dragStartPos,
         Microsoft.UI.Reactor.Core.Ref<InfiniteCanvasNodePosition> dragLatest,
+        int zIndex,
         InfiniteCanvasOptions options,
         Action onBringToFront,
         Action<InfiniteCanvasNodePosition> onCommitted,
@@ -956,6 +964,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
             .Width(layout.FrameWidth)
             .Height(layout.FrameHeight)
             .Canvas(pos.X - layout.BodyOffsetX, pos.Y - layout.BodyOffsetY)
+            .Set(element => Microsoft.UI.Xaml.Controls.Canvas.SetZIndex(element, zIndex))
             .OnPointerPressed((element, args) =>
             {
                 Canvas? canvas = canvasRef.Current;
