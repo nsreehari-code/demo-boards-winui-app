@@ -33,10 +33,7 @@ public sealed record BoardSwitcherProps(
     bool TogglingTheme = false,
     bool SmokeRunnerEnabled = false,
     Action? OnRunSmokeRunner = null,
-    string SmokeRunnerTitle = "",
-    bool SmokeStrategistEnabled = false,
-    Action? OnRunStrategist = null,
-    string SmokeStrategistTitle = "");
+    string SmokeRunnerTitle = "");
 
 public sealed class BoardSwitcher : Component<BoardSwitcherProps>
 {
@@ -57,7 +54,7 @@ public sealed class BoardSwitcher : Component<BoardSwitcherProps>
         bool showThemeToggle = Props.OnToggleTheme != null;
         bool isCardsLayout = Props.LayoutKind == "flowing-cards";
         bool isSignalRoom = Props.ThemePackId == "signal-room";
-        bool showRunButtons = Props.SmokeRunnerEnabled || Props.SmokeStrategistEnabled;
+        bool showRunButtons = Props.SmokeRunnerEnabled;
 
         // Build select options with "(current)" suffix for current board
         var selectOptions = new List<object?>();
@@ -92,15 +89,6 @@ public sealed class BoardSwitcher : Component<BoardSwitcherProps>
             buttonElements.Add(
                 Button(Component<SvgIcon, SvgIconProps>(new SvgIconProps(HostIconSources.Flask, 15)), Props.OnRunSmokeRunner)
                     .AutomationName(Props.SmokeRunnerTitle ?? "Run tests")
-                    .SubtleButton());
-        }
-
-        // Smoke strategist button (bi-compass)
-        if (Props.SmokeStrategistEnabled)
-        {
-            buttonElements.Add(
-                Button(Component<SvgIcon, SvgIconProps>(new SvgIconProps(HostIconSources.Compass, 15)), Props.OnRunStrategist)
-                    .AutomationName(Props.SmokeStrategistTitle ?? "Run strategist")
                     .SubtleButton());
         }
 

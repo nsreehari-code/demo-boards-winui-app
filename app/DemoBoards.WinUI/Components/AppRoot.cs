@@ -37,12 +37,12 @@ public sealed class AppRoot : HookComponent<AppRootProps>
         var (loading, setLoading) = UseState(true);
         var (startupMessage, setStartupMessage) = UseState("Preparing board surface...");
         var (configOpen, setConfigOpen) = UseState(false);
-        var (smokeVisible, setSmokeVisible) = UseState(false);
+        var (smokeRunnerVisible, setSmokeRunnerVisible) = UseState(false);
 
-        Action onRunTests = () =>
+        Action onRunSmokeRunner = () =>
         {
             setConfigOpen(false);
-            setSmokeVisible(true);
+            setSmokeRunnerVisible(true);
         };
 
         UseEffect(() =>
@@ -103,7 +103,6 @@ public sealed class AppRoot : HookComponent<AppRootProps>
             BuildTopBar(
                 boardStore,
                 board,
-                visualsHook,
                 theme),
         };
 
@@ -142,16 +141,16 @@ public sealed class AppRoot : HookComponent<AppRootProps>
                         InitialServerUrl: App.Current.HostConfig.Frontend.InitialServerUrl,
                         LiveRuntimeServerUrl: boardClient.LiveBoardStateServerBaseUri.AbsoluteUri,
                         SetManagedBoardConfig: boardStore.SetManagedBoardConfig,
-                        OnRunTests: onRunTests))));
+                        OnRunSmokeRunner: onRunSmokeRunner))));
 
         Element? overlay = null;
 
-        if (smokeVisible)
+        if (smokeRunnerVisible)
         {
             overlay = Component<GlobalModal, GlobalModalProps>(
                 new GlobalModalProps(
                     "Smoke Runner",
-                    () => setSmokeVisible(false),
+                    () => setSmokeRunnerVisible(false),
                     Component<ReactorSmokeRunnerComponent>()));
         }
 
@@ -179,7 +178,6 @@ public sealed class AppRoot : HookComponent<AppRootProps>
     private static Element BuildTopBar(
         BoardStore boardStore,
         BoardState board,
-        BoardVisuals visualsHook,
         AppTheme theme)
     {
         (string title, string subtitle) = ResolvePageTitleAndSubtitle(boardStore.State.ManagedBoardConfig, boardStore.GetBoardInfo().BoardId);
@@ -190,7 +188,6 @@ public sealed class AppRoot : HookComponent<AppRootProps>
                 Duration: refreshIntervalMs,
                 OnClick: async () =>
                 {
-                    await visualsHook.Actions.FlushLayout().ConfigureAwait(false);
                     await board.BoardActions.RefreshAll().ConfigureAwait(false);
                 },
                 Disabled: !board.HasRefreshableCards,

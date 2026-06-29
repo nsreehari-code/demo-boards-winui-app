@@ -31,7 +31,7 @@ public sealed record BoardConfigPaneProps(
     string InitialServerUrl,
     string LiveRuntimeServerUrl,
     Action<ManagedBoardConfigState?> SetManagedBoardConfig,
-    Action? OnRunTests = null);
+    Action? OnRunSmokeRunner = null);
 
 public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
 {
@@ -79,26 +79,16 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
 
         var (pageStatus, setPageStatus) = UseState(StatusMessage.Empty);
         var (themeStatus, setThemeStatus) = UseState(StatusMessage.Empty);
-        var (hostStatus, setHostStatus) = UseState(StatusMessage.Empty);
         var (importExportStatus, setImportExportStatus) = UseState(StatusMessage.Empty);
         var (templateStatus, setTemplateStatus) = UseState(StatusMessage.Empty);
         var (addBoardStatus, setAddBoardStatus) = UseState(StatusMessage.Empty);
 
-        var (hostConfigPathsText, setHostConfigPathsText) = UseState(string.Empty);
-        var (hostConfigPreviewText, setHostConfigPreviewText) = UseState(string.Empty);
-        var (effectiveBoardConfigPreviewText, setEffectiveBoardConfigPreviewText) = UseState(string.Empty);
-        var (showHostPreview, setShowHostPreview) = UseState(false);
         var (confirmRuntimeImport, setConfirmRuntimeImport) = UseState(false);
 
         var (templateEntries, setTemplateEntries) = UseState<IReadOnlyList<SampleTemplateEntry>>(Array.Empty<SampleTemplateEntry>());
         var (selectedTemplateKey, setSelectedTemplateKey) = UseState(string.Empty);
         var (templatePreview, setTemplatePreview) = UseState<TemplatePreviewState?>(null);
         var (templateHelpText, setTemplateHelpText) = UseState(string.Empty);
-
-        var (assistantNames, setAssistantNames) = UseState<IReadOnlyList<string>>(new[] { "copilot", "foundry" });
-        var (aiWorkspaceTemplateNames, setAiWorkspaceTemplateNames) = UseState<IReadOnlyList<string>>(Array.Empty<string>());
-        var (uiTemplateNames, setUiTemplateNames) = UseState<IReadOnlyList<string>>(Array.Empty<string>());
-        var (refsTemplateNames, setRefsTemplateNames) = UseState<IReadOnlyList<string>>(Array.Empty<string>());
 
         var (showAddBoardForm, setShowAddBoardForm) = UseState(false);
 
@@ -109,33 +99,28 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
         var (refreshingWorkspace, setRefreshingWorkspace) = UseState(false);
         var (previewingTemplate, setPreviewingTemplate) = UseState(false);
         var (applyingTemplate, setApplyingTemplate) = UseState(false);
-        var (previewingHostConfig, setPreviewingHostConfig) = UseState(false);
         var (addingBoard, setAddingBoard) = UseState(false);
+
+        IReadOnlyList<string> uiTemplateNames = BuildUiTemplateOptions(pageDetails.UiTemplate);
+        bool smokeRunnerEnabled = string.Equals(Props.BoardId, "live-test-frontend", StringComparison.Ordinal);
+        string smokeRunnerTitle = smokeRunnerEnabled
+            ? "Run the in-app smoke suite against the live-test-frontend board"
+            : "Smoke suite is only available when the active board id is live-test-frontend";
 
         UseEffect(() =>
         {
             setPageStatus(StatusMessage.Empty);
             setThemeStatus(StatusMessage.Empty);
-            setHostStatus(StatusMessage.Empty);
             setImportExportStatus(StatusMessage.Empty);
             setTemplateStatus(StatusMessage.Empty);
             setAddBoardStatus(StatusMessage.Empty);
             setTemplatePreview(null);
-            setShowHostPreview(false);
-            setEffectiveBoardConfigPreviewText(string.Empty);
 
             _ = LoadCatalogAndTemplatesAsync(
                 Props.BoardClient,
-                setAssistantNames,
-                setAiWorkspaceTemplateNames,
-                setUiTemplateNames,
-                setRefsTemplateNames,
-                setHostConfigPathsText,
-                setHostConfigPreviewText,
                 setTemplateEntries,
                 setSelectedTemplateKey,
                 setTemplateHelpText,
-                setHostStatus,
                 setTemplateStatus);
             }, Props.BoardId, rawBoardJson, rawMetadataJson, rawLayoutJson);
 
@@ -229,7 +214,10 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
                     OnChange: setPendingBoardId,
                     OnSwitch: SwitchBoard,
                     SelectDisabled: manageBoards.LoadingManagedBoards,
-                    Loading: manageBoards.LoadingManagedBoards))
+                    Loading: manageBoards.LoadingManagedBoards,
+                    SmokeRunnerEnabled: smokeRunnerEnabled,
+                    OnRunSmokeRunner: Props.OnRunSmokeRunner,
+                    SmokeRunnerTitle: smokeRunnerTitle))
                         .WithKey($"{Props.ActiveBoardId}|{Props.ActiveServerUrl}")));
 
         sections.Add(
@@ -252,8 +240,7 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
                         {
                             setShowAddBoardForm(true);
                             setAddBoardStatus(StatusMessage.Empty);
-                        }).AutomationName("Open new board form").SubtleButton(),
-                        Button("Run tests", Props.OnRunTests ?? (() => { })).AutomationName("Run smoke tests").SubtleButton()))));
+                        }).AutomationName("Open new board form").SubtleButton()))));
 
         sections.Add(
             SectionCard(
@@ -281,12 +268,9 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
                                 ReadString(values, "pageSubtitle"),
                                 ReadString(values, "refreshAllIntervalMinutes"),
                                 ReadString(values, "uiTemplate"),
-                                showHostPreview,
                                 setSaving,
                                 setPageStatus,
-                                Props.SetManagedBoardConfig,
-                                setEffectiveBoardConfigPreviewText,
-                                setHostStatus);
+                                Props.SetManagedBoardConfig);
                         }
                     }))));
 
@@ -316,41 +300,6 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
         sections.Add(
             SectionCard(
                 VStack(10,
-                    TextBlock("Host Runtime Config").FontSize(18).Bold(),
-                    HintText("Use this only when you need to inspect resolved host wiring."),
-                    BuildCodeBlock(hostConfigPathsText, minHeight: 72),
-                    HStack(8,
-                        Button(previewingHostConfig ? "Refreshing preview..." : "Preview effective board config", () =>
-                        {
-                            if (!previewingHostConfig)
-                            {
-                                _ = PreviewEffectiveBoardConfigAsync(
-                                    Props.BoardClient,
-                                    Props.BoardId,
-                                    rawBoardJson,
-                                    setPreviewingHostConfig,
-                                    setShowHostPreview,
-                                    setEffectiveBoardConfigPreviewText,
-                                    setHostStatus);
-                            }
-                        }).AutomationName("Preview effective board config").SubtleButton(),
-                        Button("Hide preview", () =>
-                        {
-                            setShowHostPreview(false);
-                            setHostStatus(StatusMessage.Empty);
-                        }).AutomationName("Hide effective board config preview").SubtleButton()),
-                    showHostPreview
-                        ? (Element)VStack(8,
-                            TextBlock("Resolved host summary").Bold(),
-                            BuildCodeBlock(hostConfigPreviewText, minHeight: 140),
-                            TextBlock("Resolved effective board config").Bold(),
-                            BuildCodeBlock(effectiveBoardConfigPreviewText, minHeight: 220))
-                        : HintText("Preview is hidden."),
-                    StatusBlock(hostStatus))));
-
-        sections.Add(
-            SectionCard(
-                VStack(10,
                     confirmRuntimeImport
                         ? (Element)Component<ChallengeConfirmModal, ChallengeConfirmModalProps>(
                             new ChallengeConfirmModalProps(
@@ -365,10 +314,7 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
                                             Props.BoardId,
                                             setImporting,
                                             setImportExportStatus,
-                                            Props.SetManagedBoardConfig,
-                                            showHostPreview,
-                                            setEffectiveBoardConfigPreviewText,
-                                            setHostStatus);
+                                            Props.SetManagedBoardConfig);
                                     }
                                 },
                                 () =>
@@ -402,12 +348,8 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
                                 _ = RefreshBoardWorkspaceAsync(
                                     Props.BoardClient,
                                     Props.BoardId,
-                                    rawBoardJson,
-                                    showHostPreview,
                                     setRefreshingWorkspace,
-                                    setImportExportStatus,
-                                    setEffectiveBoardConfigPreviewText,
-                                    setHostStatus);
+                                    setImportExportStatus);
                             }
                         },
                         Importing: importing,
@@ -465,10 +407,6 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
                             LoadingTemplates: false,
                             Submitting: addingBoard,
                             ErrorMessage: addBoardStatus.Kind == StatusKind.Error ? addBoardStatus.Message : string.Empty)),
-                        HintText(BuildOptionsHint("Available AI names", assistantNames)),
-                        HintText(BuildOptionsHint("Available AI workspace templates", aiWorkspaceTemplateNames)),
-                        HintText(BuildOptionsHint("Available UI templates", uiTemplateNames)),
-                        HintText(BuildOptionsHint("Available refs templates", refsTemplateNames)),
                         HintText(templateHelpText),
                         addBoardStatus.Kind == StatusKind.Success
                             ? StatusBlock(addBoardStatus)
@@ -527,48 +465,11 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
 
     private static async Task LoadCatalogAndTemplatesAsync(
         EmbeddedBoardClient boardClient,
-        Action<IReadOnlyList<string>> setAssistantNames,
-        Action<IReadOnlyList<string>> setAiWorkspaceTemplateNames,
-        Action<IReadOnlyList<string>> setUiTemplateNames,
-        Action<IReadOnlyList<string>> setRefsTemplateNames,
-        Action<string> setHostConfigPathsText,
-        Action<string> setHostConfigPreviewText,
         Action<IReadOnlyList<SampleTemplateEntry>> setTemplateEntries,
         Action<string> setSelectedTemplateKey,
         Action<string> setTemplateHelpText,
-        Action<StatusMessage> setHostStatus,
         Action<StatusMessage> setTemplateStatus)
     {
-        try
-        {
-            WinUiHostTemplateCatalog hostTemplateCatalog = await boardClient.DescribeHostConfigAsync();
-            IReadOnlyList<string> assistantOptions = hostTemplateCatalog.AssistantNames
-                .Where(name => string.Equals(name, "copilot", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(name, "foundry", StringComparison.OrdinalIgnoreCase))
-                .ToArray();
-
-            setAssistantNames(assistantOptions.Count > 0 ? assistantOptions : hostTemplateCatalog.AssistantNames);
-            setAiWorkspaceTemplateNames(hostTemplateCatalog.AiWorkspaceTemplateNames);
-            setUiTemplateNames(hostTemplateCatalog.UiTemplateNames);
-            setRefsTemplateNames(hostTemplateCatalog.RefsTemplateNames);
-            setHostConfigPathsText(
-                $"Host config: {hostTemplateCatalog.HostConfigPath}{Environment.NewLine}" +
-                $"Templates config: {hostTemplateCatalog.TemplatesConfigPath}{Environment.NewLine}" +
-                $"Workspace setup script: {hostTemplateCatalog.SetupSingleAiWorkspaceScriptPath}");
-            setHostConfigPreviewText(PrettyJson(hostTemplateCatalog.RawHostSummaryJson));
-            setHostStatus(StatusMessage.Empty);
-        }
-        catch (Exception ex)
-        {
-            setAssistantNames(new[] { "copilot", "foundry" });
-            setAiWorkspaceTemplateNames(Array.Empty<string>());
-            setUiTemplateNames(Array.Empty<string>());
-            setRefsTemplateNames(Array.Empty<string>());
-            setHostConfigPathsText(ex.Message);
-            setHostConfigPreviewText(string.Empty);
-            setHostStatus(StatusMessage.Error(ex.Message));
-        }
-
         try
         {
             IReadOnlyList<SampleTemplateEntry> templates = await boardClient.ListSampleTemplatesAsync();
@@ -599,12 +500,9 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
         string pageSubtitle,
         string refreshIntervalMinutes,
         string uiTemplate,
-        bool refreshPreview,
         Action<bool> setSaving,
         Action<StatusMessage> setPageStatus,
-        Action<ManagedBoardConfigState?> setManagedBoardConfig,
-        Action<string> setEffectiveBoardConfigPreviewText,
-        Action<StatusMessage> setHostStatus)
+        Action<ManagedBoardConfigState?> setManagedBoardConfig)
     {
         if (string.IsNullOrWhiteSpace(boardId))
         {
@@ -649,13 +547,6 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
                 updatedBoardRecordJson);
 
             setManagedBoardConfig(saved);
-
-            if (refreshPreview)
-            {
-                setEffectiveBoardConfigPreviewText(await boardClient.ResolveEffectiveBoardConfigAsync(boardId, saved.RawBoardJson));
-            }
-
-            setHostStatus(StatusMessage.Empty);
             setPageStatus(StatusMessage.Success("Saved."));
         }
         catch (Exception ex)
@@ -707,43 +598,12 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
         }
     }
 
-    private static async Task PreviewEffectiveBoardConfigAsync(
-        EmbeddedBoardClient boardClient,
-        string boardId,
-        string rawBoardJson,
-        Action<bool> setPreviewingHostConfig,
-        Action<bool> setShowHostPreview,
-        Action<string> setEffectiveBoardConfigPreviewText,
-        Action<StatusMessage> setHostStatus)
-    {
-        setPreviewingHostConfig(true);
-        try
-        {
-            setShowHostPreview(true);
-            setEffectiveBoardConfigPreviewText(string.IsNullOrWhiteSpace(boardId)
-                ? string.Empty
-                : await boardClient.ResolveEffectiveBoardConfigAsync(boardId, rawBoardJson));
-            setHostStatus(StatusMessage.Success("Effective board config preview updated."));
-        }
-        catch (Exception ex)
-        {
-            setHostStatus(StatusMessage.Error(ex.Message));
-        }
-        finally
-        {
-            setPreviewingHostConfig(false);
-        }
-    }
-
     private static async Task ImportBoardAsync(
         EmbeddedBoardClient boardClient,
         string boardId,
         Action<bool> setImporting,
         Action<StatusMessage> setImportExportStatus,
-        Action<ManagedBoardConfigState?> setManagedBoardConfig,
-        bool refreshPreview,
-        Action<string> setEffectiveBoardConfigPreviewText,
-        Action<StatusMessage> setHostStatus)
+        Action<ManagedBoardConfigState?> setManagedBoardConfig)
     {
         if (string.IsNullOrWhiteSpace(boardId))
         {
@@ -767,15 +627,9 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
             if (saved is not null)
             {
                 setManagedBoardConfig(saved);
-
-                if (refreshPreview)
-                {
-                    setEffectiveBoardConfigPreviewText(await boardClient.ResolveEffectiveBoardConfigAsync(boardId, saved.RawBoardJson));
-                }
             }
 
             await boardClient.RefreshBoardAsync();
-            setHostStatus(StatusMessage.Empty);
             setImportExportStatus(StatusMessage.Success("Board import applied."));
         }
         catch (Exception ex)
@@ -819,12 +673,8 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
     private static async Task RefreshBoardWorkspaceAsync(
         EmbeddedBoardClient boardClient,
         string boardId,
-        string rawBoardJson,
-        bool refreshPreview,
         Action<bool> setRefreshingWorkspace,
-        Action<StatusMessage> setImportExportStatus,
-        Action<string> setEffectiveBoardConfigPreviewText,
-        Action<StatusMessage> setHostStatus)
+        Action<StatusMessage> setImportExportStatus)
     {
         if (string.IsNullOrWhiteSpace(boardId))
         {
@@ -836,15 +686,8 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
         setImportExportStatus(StatusMessage.Info("Refreshing workspace bootstrap..."));
         try
         {
-            await boardClient.SetupBoardWorkspaceAsync(boardId);
             await boardClient.RefreshManagedBoardAsync(boardId);
             await boardClient.RefreshBoardAsync();
-            if (refreshPreview)
-            {
-                setEffectiveBoardConfigPreviewText(await boardClient.ResolveEffectiveBoardConfigAsync(boardId, rawBoardJson));
-            }
-
-            setHostStatus(StatusMessage.Empty);
             setImportExportStatus(StatusMessage.Success("Workspace bootstrap refreshed."));
         }
         catch (Exception ex)
@@ -973,7 +816,6 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
                 await boardClient.ApplyImportBoardAsync(created.Id, template.RawPayloadJson, "ingest", applyBoardMetadata: false);
             }
 
-            await boardClient.SetupBoardWorkspaceAsync(created.Id);
             onSuccess();
         }
         catch (Exception ex)
@@ -1009,32 +851,20 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
             .Set(text => text.TextWrapping = TextWrapping.WrapWholeWords);
     }
 
-    private static Element BuildCodeBlock(string value, double minHeight)
-    {
-        return TextBox(value)
-            .AutomationName("Read only details")
-            .IsReadOnly(true)
-            .AcceptsReturn(true)
-            .TextWrapping(TextWrapping.Wrap)
-            .Set(textBox =>
-            {
-                textBox.MinHeight = minHeight;
-                textBox.FontFamily = new FontFamily("Consolas");
-            });
-    }
-
-    private static string BuildOptionsHint(string label, IReadOnlyList<string> options)
-    {
-        return options.Count == 0
-            ? $"{label}: none exposed by the host config."
-            : $"{label}: {string.Join(", ", options)}";
-    }
-
     private static string ReadString(IReadOnlyDictionary<string, object?> values, string key)
     {
         return values.TryGetValue(key, out object? value)
             ? value?.ToString()?.Trim() ?? string.Empty
             : string.Empty;
+    }
+
+    private static IReadOnlyList<string> BuildUiTemplateOptions(string currentUiTemplate)
+    {
+        string normalized = ValueOrFallback(currentUiTemplate, "default");
+        return new[] { normalized, "default" }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
     }
 
     private static string BuildTemplateCatalogHint(IReadOnlyList<SampleTemplateEntry> templates)
@@ -1059,8 +889,8 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
 
         try
         {
-            using JsonDocument document = JsonDocument.Parse(raw);
-            return JsonSerializer.Serialize(document.RootElement, PrettyJsonOptions);
+            JsonNode? node = JsonNode.Parse(raw);
+            return node?.ToJsonString(PrettyJsonOptions) ?? raw;
         }
         catch
         {

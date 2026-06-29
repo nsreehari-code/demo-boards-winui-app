@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using DemoBoards.RuntimeHost;
 using DemoBoards_WinUI.Config;
@@ -638,24 +639,22 @@ public sealed class BoardStore : IDisposable
 
     private static JsonElement MergeDefinitionWithCardData(JsonElement cardContent, JsonElement cardData)
     {
-        using JsonDocument contentDocument = JsonDocument.Parse(cardContent.GetRawText());
-        var rootObject = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(contentDocument.RootElement.GetRawText())
-            ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal);
-        Dictionary<string, JsonElement> nextCardData = rootObject.TryGetValue("card_data", out JsonElement existingCardData)
-            && existingCardData.ValueKind == JsonValueKind.Object
-            ? JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(existingCardData.GetRawText()) ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal)
-            : new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        JsonObject rootObject = JsonNode.Parse(cardContent.GetRawText()) as JsonObject
+            ?? new JsonObject();
+        JsonObject nextCardData = rootObject["card_data"] as JsonObject
+            ?? new JsonObject();
 
         if (cardData.ValueKind == JsonValueKind.Object)
         {
             foreach (JsonProperty property in cardData.EnumerateObject())
             {
-                nextCardData[property.Name] = property.Value;
+                nextCardData[property.Name] = JsonNode.Parse(property.Value.GetRawText());
             }
         }
 
-        rootObject["card_data"] = JsonSerializer.Deserialize<JsonElement>(JsonSerializer.Serialize(nextCardData));
-        return JsonSerializer.Deserialize<JsonElement>(JsonSerializer.Serialize(rootObject));
+        rootObject["card_data"] = nextCardData;
+        using JsonDocument mergedDocument = JsonDocument.Parse(rootObject.ToJsonString());
+        return mergedDocument.RootElement.Clone();
     }
 
     private static IReadOnlyDictionary<string, BoardCardRuntimeSlice> ParseCanonicalRuntimes(
@@ -684,7 +683,7 @@ public sealed class BoardStore : IDisposable
             JsonElement runtime = TryGetObject(runtimeElement, "runtime");
             if (runtime.ValueKind != JsonValueKind.Object)
             {
-                runtime = JsonSerializer.Deserialize<JsonElement>("{}");
+                runtime = ParseRawJsonElement("{}");
             }
 
             string schemaVersion = GetString(runtimeElement, "schema_version") ?? string.Empty;
@@ -749,7 +748,7 @@ public sealed class BoardStore : IDisposable
             var result = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
             foreach (JsonProperty property in document.RootElement.EnumerateObject())
             {
-                result[property.Name] = JsonSerializer.Deserialize<JsonElement>(property.Value.GetRawText());
+                result[property.Name] = property.Value.Clone();
             }
 
             return result;
@@ -1204,10 +1203,9 @@ public sealed class BoardStore : IDisposable
 
     private static BoardWatchpartyState ParseWatchpartyDelta(string cardId, string channel, JsonElement payload)
     {
-        JsonElement payloadElement = payload.ValueKind is JsonValueKind.Undefined
-            ? JsonSerializer.Deserialize<JsonElement>("null")
-            : JsonSerializer.Deserialize<JsonElement>(payload.GetRawText());
-        JsonElement events = JsonSerializer.SerializeToElement(new[] { new Dictionary<string, JsonElement>(StringComparer.Ordinal) { ["payload"] = payloadElement } });
+        string payloadJson = payload.ValueKind is JsonValueKind.Undefined ? "null" : payload.GetRawText();
+        using JsonDocument eventsDocument = JsonDocument.Parse($"[{{\"payload\":{payloadJson}}}]");
+        JsonElement events = eventsDocument.RootElement.Clone();
         WinUiBoardServerConstants constants = App.Current.HostConfig.Frontend.BoardServerConstants;
 
         string agentOutput = string.Empty;
@@ -1225,6 +1223,12 @@ public sealed class BoardStore : IDisposable
         }
 
         return new BoardWatchpartyState(agentOutput, agentTools, toolPayloads);
+    }
+
+    private static JsonElement ParseRawJsonElement(string rawJson)
+    {
+        using JsonDocument document = JsonDocument.Parse(rawJson);
+        return document.RootElement.Clone();
     }
 
     private static BoardWatchpartyState ParseWatchparty(JsonElement cardWatchparty, string agentOutputChannel, string agentToolsChannel)

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using DemoBoards_WinUI.Assets;
 using DemoBoards_WinUI.Controls.Shared;
 using DemoBoards_WinUI.Hooks;
@@ -658,27 +659,43 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         ViewportState? viewport,
         JsonElement? previousBlob)
     {
-        var nodes = new Dictionary<string, object>(StringComparer.Ordinal);
+        var nodes = new JsonObject();
         foreach ((string id, InfiniteCanvasNodeBox box) in boxes)
         {
             InfiniteCanvasNodePosition pos = positions.TryGetValue(id, out InfiniteCanvasNodePosition? p)
                 ? p
                 : new InfiniteCanvasNodePosition(0, 0);
-            nodes[id] = new { x = pos.X, y = pos.Y, w = box.Width, h = box.Height };
+            nodes[id] = new JsonObject
+            {
+                ["x"] = JsonValue.Create(pos.X),
+                ["y"] = JsonValue.Create(pos.Y),
+                ["w"] = JsonValue.Create(box.Width),
+                ["h"] = JsonValue.Create(box.Height),
+            };
         }
 
         // Keep the previously-persisted viewport when this commit is geometry-only.
         InfiniteCanvasViewport? vp = viewport is { } v
             ? new InfiniteCanvasViewport(v.OffsetX, v.OffsetY, v.Zoom)
             : BlobViewport(previousBlob);
-        object? viewportObj = vp is { } vv ? new { x = vv.OffsetX, y = vv.OffsetY, zoom = vv.Zoom } : null;
+        JsonNode? viewportNode = vp is { } vv
+            ? new JsonObject
+            {
+                ["x"] = JsonValue.Create(vv.OffsetX),
+                ["y"] = JsonValue.Create(vv.OffsetY),
+                ["zoom"] = JsonValue.Create(vv.Zoom),
+            }
+            : null;
 
-        return JsonSerializer.SerializeToElement(new
+        var blob = new JsonObject
         {
-            v = 1,
-            viewport = viewportObj,
-            nodes,
-        });
+            ["v"] = JsonValue.Create(1),
+            ["viewport"] = viewportNode,
+            ["nodes"] = nodes,
+        };
+
+        using JsonDocument document = JsonDocument.Parse(blob.ToJsonString());
+        return document.RootElement.Clone();
     }
 
     /// <summary>

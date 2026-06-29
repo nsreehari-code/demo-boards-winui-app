@@ -49,7 +49,7 @@ public sealed class LocalManagedBoardStore
         string normalizedBoardId = NormalizeBoardId(boardId);
         LocalManagedBoardRecord record = await ReadRecordAsync(normalizedBoardId).ConfigureAwait(false)
             ?? CreateDefaultRecord(normalizedBoardId);
-        JsonNode layout = JsonSerializer.SerializeToNode(BuildLayoutPayload(layoutState), JsonOptions) ?? JsonValue.Create((string?)null)!;
+        JsonNode layout = BuildLayoutNode(layoutState);
         LocalManagedBoardRecord updated = record with { Layout = layout };
         await WriteRecordAsync(updated).ConfigureAwait(false);
     }
@@ -156,21 +156,47 @@ public sealed class LocalManagedBoardStore
         };
     }
 
-    private static object BuildLayoutPayload(BoardCanvasLayoutState layoutState)
+    private static JsonNode BuildLayoutNode(BoardCanvasLayoutState layoutState)
     {
-        return new
+        var cardIds = new JsonArray();
+        foreach (string cardId in layoutState.CardIds)
         {
-            canvas = new
+            cardIds.Add((JsonNode?)JsonValue.Create(cardId));
+        }
+
+        var positions = new JsonObject();
+        foreach ((string cardId, BoardCanvasPointState position) in layoutState.Positions)
+        {
+            positions[cardId] = new JsonObject
             {
-                cardIds = layoutState.CardIds,
-                positions = layoutState.Positions.ToDictionary(
-                    entry => entry.Key,
-                    entry => new { x = entry.Value.X, y = entry.Value.Y },
-                    StringComparer.Ordinal),
-                widths = layoutState.Widths,
-                viewport = layoutState.Viewport is null
-                    ? null
-                    : new { x = layoutState.Viewport.X, y = layoutState.Viewport.Y, zoom = layoutState.Viewport.Zoom }
+                ["x"] = JsonValue.Create(position.X),
+                ["y"] = JsonValue.Create(position.Y),
+            };
+        }
+
+        var widths = new JsonObject();
+        foreach ((string cardId, double width) in layoutState.Widths)
+        {
+            widths[cardId] = JsonValue.Create(width);
+        }
+
+        JsonNode? viewport = layoutState.Viewport is null
+            ? null
+            : new JsonObject
+            {
+                ["x"] = JsonValue.Create(layoutState.Viewport.X),
+                ["y"] = JsonValue.Create(layoutState.Viewport.Y),
+                ["zoom"] = JsonValue.Create(layoutState.Viewport.Zoom),
+            };
+
+        return new JsonObject
+        {
+            ["canvas"] = new JsonObject
+            {
+                ["cardIds"] = cardIds,
+                ["positions"] = positions,
+                ["widths"] = widths,
+                ["viewport"] = viewport,
             }
         };
     }

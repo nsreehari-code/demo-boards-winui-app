@@ -13,13 +13,19 @@ internal static class BoardTheme
 {
     public const string DefaultThemePackId = "mist-ops";
     public const string SignalRoomThemePackId = "signal-room";
+    public const string FrontendParityThemePackId = "fe-parity";
 
-    public static readonly string[] ThemePackIds = [DefaultThemePackId, SignalRoomThemePackId];
+    public static readonly string[] ThemePackIds = [DefaultThemePackId, SignalRoomThemePackId, FrontendParityThemePackId];
 
     public static string NormalizeThemePackId(string? themePackId)
     {
         string normalized = themePackId?.Trim().ToLowerInvariant() ?? string.Empty;
-        return normalized == SignalRoomThemePackId ? SignalRoomThemePackId : DefaultThemePackId;
+        return normalized switch
+        {
+            SignalRoomThemePackId => SignalRoomThemePackId,
+            FrontendParityThemePackId => FrontendParityThemePackId,
+            _ => DefaultThemePackId,
+        };
     }
 
     public static string ResolveThemePackIdFromLayoutJson(string? rawLayoutJson)
@@ -50,7 +56,12 @@ internal static class BoardTheme
     public static ResourceDictionary CreateThemeDictionary(string? themePackId)
     {
         string normalized = NormalizeThemePackId(themePackId);
-        var palette = normalized == SignalRoomThemePackId ? CreateSignalRoomPalette() : CreateMistOpsPalette();
+        var palette = normalized switch
+        {
+            SignalRoomThemePackId => CreateSignalRoomPalette(),
+            FrontendParityThemePackId => CreateFrontendParityPalette(),
+            _ => CreateMistOpsPalette(),
+        };
         var dictionary = new ResourceDictionary();
 
         AddColor(dictionary, "BoardColorBg", palette.BoardColorBg);
@@ -77,6 +88,13 @@ internal static class BoardTheme
         dictionary["BoardWindowBackgroundBrush"] = CreateVerticalGradientBrush(palette.BoardWindowBackgroundGradientStart, palette.BoardWindowBackgroundGradientMid, palette.BoardWindowBackgroundGradientEnd, palette.BoardWindowBackgroundMidOffset);
         dictionary["BoardTopBarBackgroundBrush"] = CreateDiagonalGradientBrush(palette.BoardTopBarBackgroundGradientStart, palette.BoardTopBarBackgroundGradientEnd);
         dictionary["BoardTopBarBorderBrush"] = new SolidColorBrush(palette.BoardColorBorderStrong);
+        dictionary["TextFillColorPrimaryBrush"] = new SolidColorBrush(palette.BoardColorText);
+        dictionary["TextOnAccentFillColorPrimaryBrush"] = new SolidColorBrush(ParseColor("#FFFFFFFF"));
+        dictionary["AccentFillColorDefaultBrush"] = new SolidColorBrush(palette.BoardColorAccent);
+        dictionary["SolidBackgroundFillColorBaseAltBrush"] = new SolidColorBrush(palette.BoardColorSurfaceMuted);
+        dictionary["ControlFillColorDefaultBrush"] = new SolidColorBrush(palette.BoardColorSurfaceMuted);
+        dictionary["LayerFillColorDefaultBrush"] = new SolidColorBrush(Color.FromArgb(0x22, palette.BoardColorBorder.R, palette.BoardColorBorder.G, palette.BoardColorBorder.B));
+        dictionary["LayerFillColorAltBrush"] = new SolidColorBrush(Color.FromArgb(0x16, palette.BoardColorBorderStrong.R, palette.BoardColorBorderStrong.G, palette.BoardColorBorderStrong.B));
         dictionary["BoardTextBrush"] = new SolidColorBrush(palette.BoardColorText);
         dictionary["BoardTextMutedBrush"] = new SolidColorBrush(palette.BoardColorTextMuted);
         dictionary["BoardTextSoftBrush"] = new SolidColorBrush(palette.BoardColorTextSoft);
@@ -89,7 +107,14 @@ internal static class BoardTheme
         dictionary["BoardSurfaceStrongBrush"] = new SolidColorBrush(palette.BoardColorSurfaceStrong);
         dictionary["BoardSurfaceMutedBrush"] = new SolidColorBrush(palette.BoardColorSurfaceMuted);
         dictionary["CardBackgroundFillColorDefaultBrush"] = new SolidColorBrush(palette.BoardColorSurface);
+        dictionary["CardBackgroundFillColorSecondaryBrush"] = new SolidColorBrush(palette.BoardColorSurfaceStrong);
+        dictionary["CardStrokeColorDefaultBrush"] = new SolidColorBrush(palette.BoardColorBorder);
         dictionary["LayerOnAcrylicFillColorDefaultBrush"] = new SolidColorBrush(palette.BoardColorSurfaceStrong);
+        dictionary["BoardStatusRunningBrush"] = new SolidColorBrush(palette.BoardStatusRunningColor);
+        dictionary["BoardStatusCompletedBrush"] = new SolidColorBrush(palette.BoardStatusCompletedColor);
+        dictionary["BoardStatusFailedBrush"] = new SolidColorBrush(palette.BoardStatusFailedColor);
+        dictionary["BoardStatusBlockedBrush"] = new SolidColorBrush(palette.BoardStatusBlockedColor);
+        dictionary["BoardStatusUnknownBrush"] = new SolidColorBrush(palette.BoardStatusUnknownColor);
         dictionary["BoardCanvasPanelBrush"] = new SolidColorBrush(palette.BoardCanvasPanelColor);
         dictionary["BoardCanvasPanelBorderBrush"] = new SolidColorBrush(palette.BoardCanvasPanelBorderColor);
         dictionary["BoardCanvasMiniMapBrush"] = new SolidColorBrush(palette.BoardCanvasMiniMapColor);
@@ -299,6 +324,20 @@ internal static class BoardTheme
             ParseColor("#2954A6FF"), ParseColor("#CC7DC7FF"), ParseColor("#00000000"), ParseColor("#FFE5EEFC"), ParseColor("#577AADFF"), ParseColor("#F0142034"),
             ParseColor("#FFE5EEFC"), ParseColor("#9D7DC7FF"), ParseColor("#F61A2940"), ParseColor("#FFF4FAFF"), ParseColor("#C67DC7FF"), ParseColor("#F0121D30"),
             ParseColor("#FF7DC7FF"), ParseColor("#A66E9AD7"), ParseColor("#F71A2A44"), ParseColor("#FFF3FAFF"), ParseColor("#D07DC7FF"));
+    }
+
+    private static ThemePalette CreateFrontendParityPalette()
+    {
+        return new ThemePalette(
+            ParseColor("#FFF0F5FA"), ParseColor("#FFE5EDF6"), ParseColor("#FFFDFEFF"), ParseColor("#FFF8FBFE"), ParseColor("#FFE9F1F8"),
+            ParseColor("#4A6A88A8"), ParseColor("#8A6F95BF"), ParseColor("#FF17344E"), ParseColor("#FF586F89"), ParseColor("#FF71859B"),
+            ParseColor("#FF2B8FF3"), ParseColor("#FF245F98"), ParseColor("#262B8FF3"), ParseColor("#52132842"), ParseColor("#FFD4892C"),
+            ParseColor("#FF18B57D"), ParseColor("#FFD6455D"), ParseColor("#FFD9922E"), ParseColor("#FF6586AA"), ParseColor("#FF8191A3"),
+            ParseColor("#FFF8FBFE"), ParseColor("#FFEEF4FA"), ParseColor("#FFE3EDF7"), 0.50,
+                ParseColor("#FFF7FBFE"), ParseColor("#FFE6EEF6"), ParseColor("#FFF4F8FC"), ParseColor("#407392B4"), ParseColor("#FFEAF1F7"), ParseColor("#5A7798B9"),
+                ParseColor("#6E84B7F0"), ParseColor("#FFFBFDFF"), ParseColor("#FFF9FCFE"), ParseColor("#FF17344E"), ParseColor("#3A6A88A8"), ParseColor("#FFF8FBFE"), ParseColor("#FF17344E"), ParseColor("#406B89AA"),
+            ParseColor("#FF2B8FF3"), ParseColor("#FFFFFFFF"), ParseColor("#7A2B8FF3"), ParseColor("#FFF6FAFD"), ParseColor("#FF17344E"), ParseColor("#456C8CAB"),
+            ParseColor("#FF2B8FF3"), ParseColor("#FFFFFFFF"), ParseColor("#8A2B8FF3"));
     }
 
     private static Color ParseColor(string hex)

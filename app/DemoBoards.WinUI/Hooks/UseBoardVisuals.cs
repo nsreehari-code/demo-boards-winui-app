@@ -42,11 +42,12 @@ public abstract partial class HookComponent<TProps>
 
     /// <summary>
     /// Reads the current board's visual config and canvas state from BoardStore and exposes the
-    /// layout autosave actions. Layout persistence uses <c>save-layout</c> in <c>shallow-merge</c>
-    /// mode so non-canvas visual keys inside the layout blob survive canvas saves.
+    /// layout autosave actions. Layout persistence uses the <c>shallow-merge</c> manage-boards
+    /// subcommand so non-canvas visual keys inside the layout blob survive canvas saves.
     /// </summary>
     protected BoardVisuals UseBoardVisuals(string boardId)
     {
+        const string winUiLayoutNamespace = "winui";
         BoardStore store = UseBoardStoreSubscription(includeUiState: false);
         EmbeddedBoardClient client = UseEmbeddedClient();
         var autosaveTimerRef = UseRef<Timer?>(null);
@@ -66,16 +67,12 @@ public abstract partial class HookComponent<TProps>
                 return null;
             }
 
-            var layoutPatch = new JsonObject
-            {
-                [normalizedKey] = data?.DeepClone()
-            };
-
-            JsonNode? saved = await client.ManageBoardsAsync("save-layout", new Dictionary<string, object?>(StringComparer.Ordinal)
+            JsonNode? saved = await client.ManageBoardsAsync("shallow-merge", new Dictionary<string, object?>(StringComparer.Ordinal)
             {
                 ["boardId"] = targetBoardId,
-                ["layout"] = layoutPatch,
-                ["mode"] = "shallow-merge",
+                ["ns"] = winUiLayoutNamespace,
+                ["key"] = normalizedKey,
+                ["val"] = data?.DeepClone(),
             }).ConfigureAwait(false);
 
             return saved is JsonObject dataObject
@@ -98,15 +95,44 @@ public abstract partial class HookComponent<TProps>
 
             try
             {
-                JsonNode canvasNode = JsonSerializer.SerializeToNode(new
+                var cardIds = new JsonArray();
+                foreach (string cardId in layoutState.CardIds)
                 {
-                    cardIds = layoutState.CardIds,
-                    positions = layoutState.Positions,
-                    widths = layoutState.Widths,
-                    viewport = layoutState.Viewport is null
-                        ? null
-                        : new { x = layoutState.Viewport.X, y = layoutState.Viewport.Y, zoom = layoutState.Viewport.Zoom }
-                }) ?? new JsonObject();
+                    cardIds.Add((JsonNode?)JsonValue.Create(cardId));
+                }
+
+                var positions = new JsonObject();
+                foreach ((string cardId, BoardCanvasPointState position) in layoutState.Positions)
+                {
+                    positions[cardId] = new JsonObject
+                    {
+                        ["x"] = JsonValue.Create(position.X),
+                        ["y"] = JsonValue.Create(position.Y),
+                    };
+                }
+
+                var widths = new JsonObject();
+                foreach ((string cardId, double width) in layoutState.Widths)
+                {
+                    widths[cardId] = JsonValue.Create(width);
+                }
+
+                JsonNode? viewport = layoutState.Viewport is null
+                    ? null
+                    : new JsonObject
+                    {
+                        ["x"] = JsonValue.Create(layoutState.Viewport.X),
+                        ["y"] = JsonValue.Create(layoutState.Viewport.Y),
+                        ["zoom"] = JsonValue.Create(layoutState.Viewport.Zoom),
+                    };
+
+                JsonNode canvasNode = new JsonObject
+                {
+                    ["cardIds"] = cardIds,
+                    ["positions"] = positions,
+                    ["widths"] = widths,
+                    ["viewport"] = viewport,
+                };
 
                 _ = await ShallowMergeAsync("canvas", canvasNode).ConfigureAwait(false);
             }

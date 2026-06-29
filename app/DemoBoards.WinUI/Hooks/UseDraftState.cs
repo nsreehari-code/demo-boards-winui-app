@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.UI.Reactor.Core;
 
 namespace DemoBoards_WinUI.Hooks;
@@ -164,6 +165,7 @@ file sealed class DraftDeepEqualityComparer<T> : IEqualityComparer<T>
 {
     public static readonly DraftDeepEqualityComparer<T> Instance = new();
 
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Draft equality uses best-effort runtime JSON serialization for change detection only.")]
     public bool Equals(T? x, T? y)
     {
         if (EqualityComparer<T>.Default.Equals(x, y))

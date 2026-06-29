@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading.Tasks;
 using DemoBoards_WinUI.Config;
 
@@ -16,6 +17,7 @@ namespace DemoBoards_WinUI.State;
 public sealed class EmbeddedBoardClient
 {
     private static readonly JsonSerializerOptions PrettyJsonOptions = new() { WriteIndented = true };
+    private const string WinUiLayoutNamespace = "winui";
 
     private readonly HostedBoardStateService boardStateService;
     private readonly HttpClient runtimeHttpClient;
@@ -59,10 +61,20 @@ public sealed class EmbeddedBoardClient
         return payload?.ToJsonString(PrettyJsonOptions) ?? "{}";
     }
 
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Hosted MCP requests intentionally serialize dynamic tool arguments supplied at runtime.")]
     public async Task<string> CallBoardMcpAsync(string tool, object? args = null)
     {
         var payload = JsonSerializer.Serialize(new { tool, args = args ?? new { } });
         using var response = await runtimeHttpClient.PostAsync(CreateBoardRequestUri("mcp"), new StringContent(payload, Encoding.UTF8, "application/json")).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+    }
+
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Hosted MCP extras requests intentionally serialize dynamic tool arguments supplied at runtime.")]
+    public async Task<string> CallControlfaceMcpExtrasAsync(string tool, object? args = null)
+    {
+        var payload = JsonSerializer.Serialize(new { tool, args = args ?? new { } });
+        using var response = await runtimeHttpClient.PostAsync(CreateRootRequestUri("mcp-extras"), new StringContent(payload, Encoding.UTF8, "application/json")).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync().ConfigureAwait(false);
     }
@@ -194,7 +206,7 @@ public sealed class EmbeddedBoardClient
         }
 
         Task<string?> boardPayloadTask = PostManageBoardsAsync("get-board", new { boardId = normalizedBoardId });
-        Task<string?> layoutPayloadTask = PostManageBoardsAsync("get-layout", new { boardId = normalizedBoardId });
+        Task<string?> layoutPayloadTask = PostManageBoardsAsync("get-layout", new { boardId = normalizedBoardId, ns = WinUiLayoutNamespace });
         string? boardPayload = await boardPayloadTask.ConfigureAwait(false);
         string? layoutPayload = await layoutPayloadTask.ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(boardPayload))
@@ -258,7 +270,8 @@ public sealed class EmbeddedBoardClient
             await PostManageBoardsAsync("save-layout", new
             {
                 boardId = normalizedBoardId,
-                layout = layoutObject
+                ns = WinUiLayoutNamespace,
+                keyvals = layoutObject
             }).ConfigureAwait(false);
         }
 
@@ -412,65 +425,15 @@ public sealed class EmbeddedBoardClient
         }
     }
 
-    public async Task<WinUiHostTemplateCatalog> DescribeHostConfigAsync()
-    {
-        string? payload = await PostManageBoardsAsync("describe-host-config", BuildHostConfigArgs()).ConfigureAwait(false);
-        using JsonDocument document = ParseRequiredJson(payload, "describe-host-config returned no payload.");
-        JsonElement root = document.RootElement;
-        EnsureSuccessPayload(root, "describe-host-config failed");
-        JsonElement data = TryGetNestedProperty(root, "data");
-
-        return new WinUiHostTemplateCatalog(
-            ParseStringArray(TryGetNestedProperty(data, "assistantNames")),
-            ParseStringArray(TryGetNestedProperty(data, "aiWorkspaceTemplateNames")),
-            ParseStringArray(TryGetNestedProperty(data, "uiTemplateNames")),
-            ParseStringArray(TryGetNestedProperty(data, "refsTemplateNames")),
-            GetStringValue(TryGetNestedProperty(data, "hostConfigPath")),
-            GetStringValue(TryGetNestedProperty(data, "templatesConfigPath")),
-            GetStringValue(TryGetNestedProperty(data, "setupSingleAiWorkspaceScriptPath")),
-            GetStringValue(TryGetNestedProperty(data, "sampleTemplateCatalogDir")),
-            GetStringValue(TryGetNestedProperty(data, "runtimeBoardsIndexRef")),
-            GetStringValue(TryGetNestedProperty(data, "runtimeBoardsLayoutRef")),
-            GetStringValue(TryGetNestedProperty(data, "rawHostSummaryJson")));
-    }
-
-    public async Task<string> ResolveEffectiveBoardConfigAsync(string boardId, string rawBoardJson)
-    {
-        string normalizedBoardId = NormalizeRequired(boardId, "Board id is required.");
-        JsonNode? record = JsonNode.Parse(NormalizeJsonPayload(rawBoardJson, "Board record is required."));
-        string? payload = await PostManageBoardsAsync("resolve-board-config", new Dictionary<string, object?>(BuildHostConfigArgs())
-        {
-            ["boardId"] = normalizedBoardId,
-            ["record"] = record,
-        }).ConfigureAwait(false);
-        using JsonDocument document = ParseRequiredJson(payload, "resolve-board-config returned no payload.");
-        JsonElement root = document.RootElement;
-        EnsureSuccessPayload(root, "resolve-board-config failed");
-        JsonElement data = TryGetNestedProperty(root, "data");
-        JsonElement resolved = TryGetNestedProperty(data, "resolvedBoardConfig");
-        return resolved.ValueKind == JsonValueKind.Undefined ? "{}" : JsonSerializer.Serialize(resolved, PrettyJsonOptions);
-    }
-
-    public async Task SetupBoardWorkspaceAsync(string boardId)
-    {
-        string normalizedBoardId = NormalizeRequired(boardId, "Board id is required.");
-        string? payload = await PostManageBoardsAsync("setup-board-workspace", new Dictionary<string, object?>(BuildHostConfigArgs())
-        {
-            ["boardId"] = normalizedBoardId,
-        }).ConfigureAwait(false);
-        using JsonDocument document = ParseRequiredJson(payload, "setup-board-workspace returned no payload.");
-        EnsureSuccessPayload(document.RootElement, "setup-board-workspace failed");
-    }
-
     public async Task<IReadOnlyList<SampleTemplateEntry>> ListSampleTemplatesAsync()
     {
-        string payload = await CallBoardMcpAsync("explore.list-sample-templates").ConfigureAwait(false);
+        string payload = await CallControlfaceMcpExtrasAsync("explore.list-sample-templates").ConfigureAwait(false);
         return ParseMcpDataArray(payload, ParseSampleTemplateEntry);
     }
 
     public async Task<SampleTemplateEnvelope> GetSampleTemplateAsync(string key)
     {
-        string payload = await CallBoardMcpAsync("explore.get-sample-template", new { key }).ConfigureAwait(false);
+        string payload = await CallControlfaceMcpExtrasAsync("explore.get-sample-template", new { key }).ConfigureAwait(false);
         using JsonDocument document = ParseRequiredJson(ExtractMcpJsonPayload(payload), "Template payload was empty.");
         JsonElement root = document.RootElement;
         string templateKey = root.TryGetProperty("key", out JsonElement keyElement) && keyElement.ValueKind == JsonValueKind.String
@@ -520,6 +483,7 @@ public sealed class EmbeddedBoardClient
         EnsureSuccessPayload(document.RootElement, "apply-import-board failed");
     }
 
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Board export formats are intentionally preserved as dynamic JSON payloads.")]
     public async Task<string> ExportBoardAsync(string boardId)
     {
         string normalizedBoardId = NormalizeRequired(boardId, "Board id is required.");
@@ -549,23 +513,37 @@ public sealed class EmbeddedBoardClient
 
         string normalizedMode = mode?.Trim() ?? string.Empty;
 
+        var canvas = new
+        {
+            cardIds = layoutState.CardIds,
+            positions = layoutState.Positions.ToDictionary(
+                entry => entry.Key,
+                entry => new { x = entry.Value.X, y = entry.Value.Y },
+                StringComparer.Ordinal),
+            widths = layoutState.Widths,
+            viewport = layoutState.Viewport is null
+                ? null
+                : new { x = layoutState.Viewport.X, y = layoutState.Viewport.Y, zoom = layoutState.Viewport.Zoom }
+        };
+
+        if (string.Equals(normalizedMode, "shallow-merge", StringComparison.OrdinalIgnoreCase))
+        {
+            return PostManageBoardsAsync("shallow-merge", new
+            {
+                boardId = normalizedBoardId,
+                ns = WinUiLayoutNamespace,
+                key = "canvas",
+                val = canvas,
+            });
+        }
+
         var args = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             ["boardId"] = normalizedBoardId,
-            ["layout"] = new
+            ["ns"] = WinUiLayoutNamespace,
+            ["keyvals"] = new
             {
-                canvas = new
-                {
-                    cardIds = layoutState.CardIds,
-                    positions = layoutState.Positions.ToDictionary(
-                        entry => entry.Key,
-                        entry => new { x = entry.Value.X, y = entry.Value.Y },
-                        StringComparer.Ordinal),
-                    widths = layoutState.Widths,
-                    viewport = layoutState.Viewport is null
-                        ? null
-                        : new { x = layoutState.Viewport.X, y = layoutState.Viewport.Y, zoom = layoutState.Viewport.Zoom }
-                }
+                canvas,
             }
         };
         if (normalizedMode.Length > 0)
@@ -591,6 +569,7 @@ public sealed class EmbeddedBoardClient
         return PostBoardJsonWithResultAsync("mcp-controlplane", new { tool, args = WithBoardId(args) });
     }
 
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Board POST bodies intentionally carry dynamic runtime payloads.")]
     private async Task<string> PostBoardJsonWithResultAsync(string relativePath, object payload)
     {
         string json = JsonSerializer.Serialize(payload);
@@ -599,6 +578,7 @@ public sealed class EmbeddedBoardClient
         return await response.Content.ReadAsStringAsync().ConfigureAwait(false);
     }
 
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Board POST bodies intentionally carry dynamic runtime payloads.")]
     private async Task PostBoardJsonAsync(string relativePath, object payload)
     {
         string json = JsonSerializer.Serialize(payload);
@@ -607,6 +587,7 @@ public sealed class EmbeddedBoardClient
         _ = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
     }
 
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Manage-boards commands intentionally serialize dynamic argument objects.")]
     private async Task<string?> PostManageBoardsAsync(string subcommand, object args)
     {
         string json = JsonSerializer.Serialize(new { subcommand, args });
@@ -660,6 +641,7 @@ public sealed class EmbeddedBoardClient
         return GlobalStateStore.Current.GetOrAdd(GlobalStateKeys.BoardId, boardStateService.BoardId);
     }
 
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Board controlplane arguments are intentionally normalized into dynamic JSON objects.")]
     private JsonNode? WithBoardId(object args)
     {
         JsonNode? node = JsonSerializer.SerializeToNode(args) ?? new JsonObject();
@@ -670,19 +652,6 @@ public sealed class EmbeddedBoardClient
 
         obj["board_id"] = GetActiveBoardId();
         return obj;
-    }
-
-    private static Dictionary<string, object?> BuildHostConfigArgs()
-    {
-        WinUiBackendAppConfig backend = App.Current.HostConfig.Backend;
-        return new Dictionary<string, object?>(StringComparer.Ordinal)
-        {
-            ["hostConfigPath"] = backend.HostConfigPath,
-            ["localFsConfigLoaderPath"] = backend.LocalFsConfigLoaderPath,
-            ["templatesConfigPath"] = backend.TemplatesConfigPath,
-            ["assistantRegistryPath"] = backend.AssistantRegistryPath,
-            ["setupSingleAiWorkspaceScriptPath"] = backend.SetupSingleAiWorkspaceScriptPath,
-        };
     }
 
     private static IReadOnlyList<string> ParseStringArray(JsonElement value)

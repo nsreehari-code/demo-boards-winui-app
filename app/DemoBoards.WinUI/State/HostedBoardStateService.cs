@@ -76,7 +76,7 @@ public sealed class HostedBoardStateService : IAsyncDisposable
                 using var reader = new StreamReader(stream, Encoding.UTF8);
                 var payloadBuilder = new StringBuilder();
 
-                while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
+                while (!cancellationToken.IsCancellationRequested)
                 {
                     string? line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
                     if (line is null)

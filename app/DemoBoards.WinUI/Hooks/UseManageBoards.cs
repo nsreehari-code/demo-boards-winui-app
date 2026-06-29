@@ -60,6 +60,7 @@ public abstract partial class HookComponent<TProps>
     /// <summary>Port of <c>useManageBoards</c>: managed-board list state plus the admin action callbacks.</summary>
     protected ManageBoards UseManageBoards(ManageBoardsOptions? options = null)
     {
+        const string winUiLayoutNamespace = "winui";
         ManageBoardsOptions opts = options ?? new ManageBoardsOptions();
         EmbeddedBoardClient client = UseEmbeddedClient();
         var (serverUrl, _) = UseGlobalState<string>(GlobalStateKeys.ServerUrl, App.Current.HostConfig.Frontend.InitialServerUrl);
@@ -148,7 +149,7 @@ public abstract partial class HookComponent<TProps>
         async Task<JsonNode?> GetLayout(string boardId)
         {
             string normalizedBoardId = NormalizeBoardId(boardId);
-            JsonNode? data = await client.ManageBoardsAsync("get-layout", new { boardId = normalizedBoardId });
+            JsonNode? data = await client.ManageBoardsAsync("get-layout", new { boardId = normalizedBoardId, ns = winUiLayoutNamespace });
             return GetChild(data, "layout")?.DeepClone();
         }
 
@@ -160,7 +161,8 @@ public abstract partial class HookComponent<TProps>
             var args = new Dictionary<string, object?>(StringComparer.Ordinal)
             {
                 ["boardId"] = normalizedBoardId,
-                ["layout"] = layout.DeepClone(),
+                ["ns"] = winUiLayoutNamespace,
+                ["keyvals"] = layout.DeepClone(),
             };
             if (normalizedMode.Length > 0) args["mode"] = normalizedMode;
             JsonNode? data = await client.ManageBoardsAsync("save-layout", args);

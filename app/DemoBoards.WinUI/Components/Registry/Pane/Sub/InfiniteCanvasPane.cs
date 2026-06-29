@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text.Json;
 using Microsoft.UI.Reactor;
@@ -53,6 +54,7 @@ public sealed class InfiniteCanvasPane : HookComponent<InfiniteCanvasPaneProps>
 {
     private const double NodeWidth = 360;
 
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "The canvas graph is intentionally assembled from runtime card topology and rendered as dynamic JSON.")]
     public override Element Render()
     {
         AppTheme theme = UseContext(AppThemeContext.Current);

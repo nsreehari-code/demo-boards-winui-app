@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -68,6 +69,7 @@ public static class JsonataSync
         }
     }
 
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "JSONata validators operate on runtime-defined form payloads and intentionally serialize dynamic values.")]
     public static IReadOnlyList<string> RunValidators(
         IReadOnlyList<JsonataValidator> validators,
         IReadOnlyDictionary<string, object?> values)
