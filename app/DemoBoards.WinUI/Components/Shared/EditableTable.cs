@@ -54,7 +54,7 @@ public sealed class EditableTable : Component<EditableTableProps>
             headerCells.Add(TextBlock(string.Empty).Width(28));
         }
 
-        var body = new List<Element> { HStack(8, headerCells.ToArray()) };
+        var body = new List<Element> { HStack(0, headerCells.ToArray()) };
 
         if (rows.Count == 0)
         {
@@ -85,7 +85,7 @@ public sealed class EditableTable : Component<EditableTableProps>
                         .SubtleButton().AutomationName("Remove row").Width(28));
                 }
 
-                body.Add(HStack(8, cells.ToArray()));
+                body.Add(HStack(0, cells.ToArray()));
             }
         }
 
@@ -120,12 +120,11 @@ public sealed class EditableTable : Component<EditableTableProps>
                 }).AccentButton().AutomationName("Save changes"));
         }
 
-        body.Add(HStack(8, actions.ToArray()));
+        if (actions.Count > 0)
+        {
+            body.Add(HStack(6, actions.ToArray()));
+        }
 
-        return Border(VStack(6, body.ToArray()))
-            .Padding(10)
-            .Background(theme.CardBackground)
-            .WithBorder(theme.CardBorder, 1)
-            .CornerRadius(12);
+        return VStack(4, body.ToArray());
     }
 }

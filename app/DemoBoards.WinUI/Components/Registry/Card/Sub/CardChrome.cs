@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.UI.Reactor;
 using Microsoft.UI.Reactor.Core;
+using Microsoft.UI.Xaml.Controls;
 using static Microsoft.UI.Reactor.Factories;
 using DemoBoards_WinUI;
 using DemoBoards_WinUI.Assets;
@@ -32,6 +33,8 @@ public sealed record CardChromeProps(
 /// </summary>
 public sealed class CardChrome : Component<CardChromeProps>
 {
+    internal const double BodyMaxHeight = 560;
+
     public override Element Render() =>
         Props.Chrome == "inspect"
             ? Component<CardChromeInspectView, CardChromeInspectViewProps>(
@@ -173,15 +176,23 @@ public sealed class CardChromeInspectView : HookComponent<CardChromeInspectViewP
                 ? TextBlock(status).FontSize(11).Foreground(BoardTheme.CreateStatusBrush(status, 0xFF))
                 : Empty());
 
-        Element body = VStack(8,
-            CardChrome.PathStateOverlay(pathState, rationale),
-            Props.Children ?? Empty());
+        Element body = ScrollViewer(VStack(8,
+                CardChrome.PathStateOverlay(pathState, rationale),
+                Props.Children ?? Empty()))
+            .MaxHeight(CardChrome.BodyMaxHeight)
+            .Set(scrollViewer =>
+            {
+                scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+                scrollViewer.HorizontalScrollMode = ScrollMode.Disabled;
+                scrollViewer.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
+                scrollViewer.VerticalScrollMode = ScrollMode.Auto;
+            });
 
         Element card = Border(VStack(8, header, body))
-            .Padding(16)
+            .Padding(8)
             .Background(theme.CardBackground)
             .WithBorder(theme.CardBorder, 1)
-            .CornerRadius(16);
+            .CornerRadius(4);
 
         return Component<ResizableCardShell, ResizableCardShellProps>(
             new ResizableCardShellProps(Props.CardId, false, card));
@@ -265,15 +276,26 @@ public sealed class CardChromeBoardView : HookComponent<CardChromeBoardViewProps
 
         Element bodyActions = !showHeader && showRefresh ? RefreshControl() : Empty();
 
-        Element contentArea = VStack(8,
-            CardChrome.PathStateOverlay(pathState, rationale),
-            Props.Children ?? Empty());
+        Element body = ScrollViewer(VStack(8,
+                miniChat,
+                bodyActions,
+                VStack(8,
+                    CardChrome.PathStateOverlay(pathState, rationale),
+                    Props.Children ?? Empty())))
+            .MaxHeight(CardChrome.BodyMaxHeight)
+            .Set(scrollViewer =>
+            {
+                scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+                scrollViewer.HorizontalScrollMode = ScrollMode.Disabled;
+                scrollViewer.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
+                scrollViewer.VerticalScrollMode = ScrollMode.Auto;
+            });
 
-        Element card = Border(VStack(8, header, miniChat, bodyActions, contentArea))
-            .Padding(16)
+        Element card = Border(VStack(8, header, body))
+            .Padding(8)
             .Background(theme.CardBackground)
             .WithBorder(theme.CardBorder, 1)
-            .CornerRadius(16);
+            .CornerRadius(4);
 
         Element shell = Component<ResizableCardShell, ResizableCardShellProps>(
             new ResizableCardShellProps(Props.CardId, Props.EnableResize, card));

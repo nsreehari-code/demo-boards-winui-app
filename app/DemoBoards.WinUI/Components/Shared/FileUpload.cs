@@ -62,10 +62,6 @@ public sealed class FileUpload : Component<FileUploadProps>
         Element content = Props.Children ?? TextBlock("Choose files").Foreground(theme.TextPrimary);
 
         return Border(content)
-            .Padding(14)
-            .Background(theme.Layer)
-            .WithBorder(theme.CardBorder, 1)
-            .CornerRadius(10)
             .AutomationName("File upload")
             .Set(border =>
             {

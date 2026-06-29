@@ -168,7 +168,7 @@ public sealed class Form : Component<FormProps>
             fields.Add(HStack(8, footer.ToArray()));
         }
 
-        return VStack(10, fields.ToArray());
+        return VStack(8, fields.ToArray());
     }
 
     private static Element BuildField(string key, FieldSchema schema, object? value, bool isRequired, Action<string, FieldSchema, object?> setField, AppTheme theme)
@@ -177,13 +177,20 @@ public sealed class Form : Component<FormProps>
         bool disabled = schema.ReadOnly || schema.Disabled;
         string? hint = schema.Description ?? schema.Hint;
 
-        Element label = TextBlock(title).FontSize(12).Opacity(0.75).Foreground(theme.TextPrimary);
-
         Element control;
         if (schema.Type == "boolean")
         {
             bool current = value is bool b && b;
-            control = ToggleSwitch(current, on => setField(key, schema, on), title, "On", "Off");
+            control = CheckBox(current, on => setField(key, schema, on), title)
+                .Set(box => box.IsEnabled = !disabled);
+
+            var booleanChildren = new List<Element> { control };
+            if (!string.IsNullOrWhiteSpace(hint))
+            {
+                booleanChildren.Add(TextBlock(hint).FontSize(11).Opacity(0.6).Foreground(theme.TextPrimary));
+            }
+
+            return VStack(2, booleanChildren.ToArray());
         }
         else if (IsMultiSelect(schema))
         {
@@ -266,6 +273,7 @@ public sealed class Form : Component<FormProps>
                 .Set(box => box.IsReadOnly = disabled);
         }
 
+        Element label = TextBlock(title).FontSize(12).Opacity(0.75).Foreground(theme.TextPrimary);
         var children = new List<Element> { label, control };
         if (!string.IsNullOrWhiteSpace(hint))
         {

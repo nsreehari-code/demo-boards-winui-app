@@ -131,6 +131,11 @@ internal sealed record InfiniteCanvasNodeBox(
     double Height,
     JsonElement Descriptor);
 
+internal sealed class InfiniteCanvasNodeMeasurementHook
+{
+    public required string NodeId { get; init; }
+}
+
 /// <summary>Internal: pan (content offset in view px) + zoom factor, persisted inside the opaque blob.</summary>
 internal sealed record InfiniteCanvasViewport(double OffsetX, double OffsetY, double Zoom);
 
@@ -322,6 +327,8 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         // win). Falls back to the persisted blob / GetInitialNodePos / auto-grid for anything not yet here.
         var (movedPositions, setMovedPositions) = UseState<IReadOnlyDictionary<string, InfiniteCanvasNodePosition>>(
             new Dictionary<string, InfiniteCanvasNodePosition>(StringComparer.Ordinal));
+        var (measuredNodeHeights, setMeasuredNodeHeights) = UseState<IReadOnlyDictionary<string, double>>(
+            new Dictionary<string, double>(StringComparer.Ordinal));
         var (nodeOrder, setNodeOrder) = UseState<IReadOnlyList<string>>(
             ResolveNodeOrder(Props.Nodes, preferredOrder: null, Props.CanvasState));
 
@@ -337,6 +344,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
             () =>
             {
                 setMovedPositions(new Dictionary<string, InfiniteCanvasNodePosition>(StringComparer.Ordinal));
+                setMeasuredNodeHeights(new Dictionary<string, double>(StringComparer.Ordinal));
                 setNodeOrder(ResolveNodeOrder(Props.Nodes, preferredOrder: null, Props.CanvasState));
                 setViewport(null);
                 restoredViewportRef.Current = false;
@@ -347,6 +355,27 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         // Opaque persisted blob the canvas owns: node geometry + viewport live here. Read for seeding,
         // written back through OnCanvasStateCommit on every geometry/viewport change.
         JsonElement? blob = Props.CanvasState;
+
+        void CommitMeasuredHeight(string id, double measuredHeight)
+        {
+            if (!double.IsFinite(measuredHeight) || measuredHeight <= 0)
+            {
+                return;
+            }
+
+            double normalized = Math.Ceiling(measuredHeight);
+            if (measuredNodeHeights.TryGetValue(id, out double existing)
+                && Math.Abs(existing - normalized) < 0.5)
+            {
+                return;
+            }
+
+            var next = new Dictionary<string, double>(measuredNodeHeights, StringComparer.Ordinal)
+            {
+                [id] = normalized,
+            };
+            setMeasuredNodeHeights(next);
+        }
 
         // App theme, consumed from the nearest ThemeProvider via Reactor context (no static resource
         // lookups inside the canvas). Threaded into the builders below so grid/edges/nodes/minimap/zoom
@@ -364,7 +393,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
             JsonElement descriptor = Props.Nodes[index];
             string id = NodeId(descriptor);
             (InfiniteCanvasNodePosition pos, double width, double height) =
-                ResolveGeometry(descriptor, id, index, Props.Nodes, committed, movedPositions, blob, Props);
+                ResolveGeometry(descriptor, id, index, Props.Nodes, committed, movedPositions, measuredNodeHeights, blob, Props);
             committed[id] = pos;
             boxes[id] = new InfiniteCanvasNodeBox(id, width, height, descriptor);
         }
@@ -483,6 +512,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
                 zIndices.TryGetValue(id, out int zIndex) ? zIndex : 0,
                 options,
                 () => BringNodeToFront(id),
+                measuredHeight => CommitMeasuredHeight(id, measuredHeight),
                 committedPos => CommitPosition(id, committedPos),
                 movedPos => positionDraft.SetField(id, movedPos),
                 theme));
@@ -765,6 +795,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         IReadOnlyList<JsonElement> nodes,
         IReadOnlyDictionary<string, InfiniteCanvasNodePosition> placed,
         IReadOnlyDictionary<string, InfiniteCanvasNodePosition> moved,
+        IReadOnlyDictionary<string, double> measuredHeights,
         JsonElement? blob,
         InfiniteCanvasProps props)
     {
@@ -819,6 +850,13 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         {
             width = 240;
             height = 140;
+        }
+
+        if (measuredHeights.TryGetValue(id, out double measuredHeight)
+            && double.IsFinite(measuredHeight)
+            && measuredHeight > 0)
+        {
+            height = measuredHeight;
         }
 
         return (pos, width, height);
@@ -901,6 +939,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         int zIndex,
         InfiniteCanvasOptions options,
         Action onBringToFront,
+        Action<double> onMeasuredHeight,
         Action<InfiniteCanvasNodePosition> onCommitted,
         Action<InfiniteCanvasNodePosition> onDragMove,
         AppTheme theme)
@@ -912,12 +951,12 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         // opaque descriptor (no canvas-owned chrome — titles etc. are the consumer's to render).
         Element nodeContent = Props.RenderNode(box.Descriptor);
 
-        Element body = Border(nodeContent)
-            .Background(theme.CardBackground)
-            .WithBorder(theme.CardBorder, 1)
-            .CornerRadius(12)
+        Element body = Grid(
+                new[] { GridSize.Star() },
+                new[] { GridSize.Star() },
+                nodeContent)
             .Width(box.Width)
-            .Height(box.Height)
+            .Set(element => AttachNodeHeightMeasurement(element, id, onMeasuredHeight))
             .VAlign(VerticalAlignment.Center);
 
         var frameRows = new List<Element>();
@@ -937,12 +976,12 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
             HStack(PortRailGap,
                     BuildVerticalRail(box, ports?.Left, InfiniteCanvasPortSide.Left, Props.RenderNodePort)
                         .Width(layout.LeftRailWidth)
-                        .Height(layout.MiddleRowHeight),
+                        .MinHeight(layout.MiddleRowHeight),
                     body,
                     BuildVerticalRail(box, ports?.Right, InfiniteCanvasPortSide.Right, Props.RenderNodePort)
                         .Width(layout.RightRailWidth)
-                        .Height(layout.MiddleRowHeight))
-                .Height(layout.MiddleRowHeight));
+                        .MinHeight(layout.MiddleRowHeight))
+                .MinHeight(layout.MiddleRowHeight));
 
         if (layout.BottomRailHeight > 0)
         {
@@ -957,7 +996,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
 
         return VStack(0, frameRows.ToArray())
             .Width(layout.FrameWidth)
-            .Height(layout.FrameHeight)
+            .MinHeight(layout.FrameHeight)
             .Canvas(pos.X - layout.BodyOffsetX, pos.Y - layout.BodyOffsetY)
             .Set(element => Microsoft.UI.Xaml.Controls.Canvas.SetZIndex(element, zIndex))
             .OnPointerPressed((element, args) =>
@@ -967,8 +1006,6 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
                 {
                     return;
                 }
-
-                onBringToFront();
 
                 Point world = args.GetCurrentPoint(canvas).Position;
                 draggingKey.Current = id;
@@ -1916,6 +1953,30 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         {
             scrollViewer.XamlRoot.Changed += (_, _) => Fit();
         }
+    }
+
+    private static void AttachNodeHeightMeasurement(
+        FrameworkElement element,
+        string nodeId,
+        Action<double> onMeasuredHeight)
+    {
+        void Report()
+        {
+            if (element.ActualHeight > 0)
+            {
+                onMeasuredHeight(element.ActualHeight);
+            }
+        }
+
+        if (element.Tag is not InfiniteCanvasNodeMeasurementHook hook
+            || !string.Equals(hook.NodeId, nodeId, StringComparison.Ordinal))
+        {
+            element.Tag = new InfiniteCanvasNodeMeasurementHook { NodeId = nodeId };
+            element.Loaded += (_, _) => Report();
+            element.SizeChanged += (_, _) => Report();
+        }
+
+        Report();
     }
 
     // ---- Viewport restore ----
