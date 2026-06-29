@@ -99,14 +99,16 @@ public sealed class AppRoot : HookComponent<AppRootProps>
             return () => { };
         }, activeBoardId, activeServerUrl, runningBoardId, runningServerUrl);
 
-        var sections = new List<Element>
+        var sections = new List<Element>();
+
+        if (!testPageMode)
         {
-            BuildTopBar(
-                boardStore,
-                board,
-                theme,
-                testPageMode),
-        };
+            sections.Add(
+                BuildTopBar(
+                    boardStore,
+                    board,
+                    theme));
+        }
 
         if (loading)
         {
@@ -123,7 +125,7 @@ public sealed class AppRoot : HookComponent<AppRootProps>
                 : Component<BoardRenderer, BoardRendererProps>(
                     new BoardRendererProps(boardStore.GetBoardInfo().BoardId)))
             .Flex(grow: 1)
-            .Margin(0, 4, 0, 0));
+            .Margin(0, testPageMode ? 0 : 4, 0, 0));
 
         Element boardSettingsHost = Component<PanelVertical, PanelVerticalProps>(
             new PanelVerticalProps(
@@ -183,8 +185,7 @@ public sealed class AppRoot : HookComponent<AppRootProps>
     private static Element BuildTopBar(
         BoardStore boardStore,
         BoardState board,
-        AppTheme theme,
-        bool testPageMode)
+        AppTheme theme)
     {
         (string title, string subtitle) = ResolvePageTitleAndSubtitle(boardStore.State.ManagedBoardConfig, boardStore.GetBoardInfo().BoardId);
         double refreshIntervalMs = ResolveRefreshAllIntervalMs(boardStore.State.ManagedBoardConfig);
@@ -193,14 +194,6 @@ public sealed class AppRoot : HookComponent<AppRootProps>
         {
             TextBlock(title).Bold().FontSize(15)
         };
-
-        if (testPageMode)
-        {
-            titleBlockChildren.Add(
-                Component<Badge, BadgeProps>(
-                    new BadgeProps("Test Page", "accent"))
-                    .VAlign(VerticalAlignment.Center));
-        }
 
         Element refreshButton = Component<TimerButton, TimerButtonProps>(
             new TimerButtonProps(
