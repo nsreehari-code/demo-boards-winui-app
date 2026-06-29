@@ -26,6 +26,16 @@ public sealed record AppThemeChipTokens(
     double CompactPaddingY,
     double CompactRadius);
 
+public sealed record AppThemeTableTokens(
+    Brush HeaderBackground,
+    Brush HeaderForeground,
+    Brush RowStripeBackground,
+    Brush GridLine,
+    double CellPaddingX,
+    double CellPaddingY,
+    double HeaderPaddingY,
+    double Radius);
+
 /// <summary>
 /// The app theme as a small set of <b>semantic</b> brushes/colours that Reactor components consume
 /// through <see cref="AppThemeContext"/> instead of reaching into XAML resources directly. Each role
@@ -69,7 +79,8 @@ public sealed record AppTheme(
     Color GridDotColor,
     Color MiniMapViewportFill,
     AppThemeSurfaceTokens Surfaces,
-    AppThemeChipTokens Chips)
+    AppThemeChipTokens Chips,
+    AppThemeTableTokens Tables)
 {
     /// <summary>
     /// Resource-independent neutral theme used as the <see cref="AppThemeContext"/> default (only seen
@@ -126,7 +137,16 @@ public sealed record AppTheme(
             Radius: 10,
             CompactPaddingX: 6,
             CompactPaddingY: 2,
-            CompactRadius: 8));
+            CompactRadius: 8),
+        Tables: new AppThemeTableTokens(
+            HeaderBackground: new SolidColorBrush(Color.FromArgb(0x1C, 0xFF, 0xFF, 0xFF)),
+            HeaderForeground: new SolidColorBrush(Color.FromArgb(0xFF, 0xD8, 0xE0, 0xEA)),
+            RowStripeBackground: new SolidColorBrush(Color.FromArgb(0x0D, 0xFF, 0xFF, 0xFF)),
+            GridLine: new SolidColorBrush(Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF)),
+            CellPaddingX: 12,
+            CellPaddingY: 8,
+            HeaderPaddingY: 9,
+            Radius: 10));
 
     /// <summary>
     /// Builds the live theme from the application's current Fluent/board theme resources. The two
@@ -155,6 +175,8 @@ public sealed record AppTheme(
         Color errorColor = BoardTheme.ResolveColor("BoardStatusFailedColor", Color.FromArgb(0xFF, 0xD6, 0x45, 0x5D));
         Color warningColor = BoardTheme.ResolveColor("BoardStatusBlockedColor", Color.FromArgb(0xFF, 0xD9, 0x92, 0x2E));
         Color neutralColor = BoardTheme.ResolveColor("BoardStatusUnknownColor", Color.FromArgb(0xFF, 0x81, 0x91, 0xA3));
+        Color borderColor = BoardTheme.ResolveColor("BoardColorBorder", Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF));
+        Color borderStrongColor = BoardTheme.ResolveColor("BoardColorBorderStrong", Color.FromArgb(0x55, 0xFF, 0xFF, 0xFF));
 
         return new AppTheme(
             Transparent: new SolidColorBrush(Colors.Transparent),
@@ -207,7 +229,16 @@ public sealed record AppTheme(
                 Radius: 10,
                 CompactPaddingX: 6,
                 CompactPaddingY: 2,
-                CompactRadius: 8));
+                CompactRadius: 8),
+            Tables: new AppThemeTableTokens(
+                HeaderBackground: ResolveBrush("BoardTableHeaderBackgroundBrush", Color.FromArgb(0x20, borderStrongColor.R, borderStrongColor.G, borderStrongColor.B)),
+                HeaderForeground: ResolveBrush("BoardTableHeaderForegroundBrush", textMuted is SolidColorBrush mutedBrush ? mutedBrush.Color : Color.FromArgb(0xFF, 0xB8, 0xC0, 0xCC)),
+                RowStripeBackground: ResolveBrush("BoardTableRowStripeBackgroundBrush", Color.FromArgb(0x10, borderColor.R, borderColor.G, borderColor.B)),
+                GridLine: ResolveBrush("BoardTableGridLineBrush", borderColor),
+                CellPaddingX: 12,
+                CellPaddingY: 8,
+                HeaderPaddingY: 9,
+                Radius: 10));
     }
 
     public Brush BrushForTone(string? tone)

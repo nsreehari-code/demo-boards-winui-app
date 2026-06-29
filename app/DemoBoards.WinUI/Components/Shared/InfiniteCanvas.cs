@@ -300,6 +300,8 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         var dragStartPointer = UseRef<Point>(new Point(0, 0));
         var dragStartPos = UseRef<InfiniteCanvasNodePosition>(new InfiniteCanvasNodePosition(0, 0));
         var dragLatest = UseRef<InfiniteCanvasNodePosition>(new InfiniteCanvasNodePosition(0, 0));
+        var focusedNodeIdRef = UseRef<string?>(null);
+        var savedFocusedViewportRef = UseRef<InfiniteCanvasViewport?>(null);
 
         // Mini-map viewport-indicator drag state. The main canvas only pans on release.
         var miniCanvasRef = UseRef<Canvas?>(null);
@@ -350,6 +352,8 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
                 setFrontNodeId(null);
                 setViewport(null);
                 restoredViewportRef.Current = false;
+                focusedNodeIdRef.Current = null;
+                savedFocusedViewportRef.Current = null;
                 return () => { };
             },
             Props.StateKey ?? string.Empty);
@@ -469,6 +473,64 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
             Commit();
         }
 
+        void ToggleNodeFocus(string id, InfiniteCanvasNodeBox node, InfiniteCanvasNodePosition pos, NodeFrameLayout layout)
+        {
+            ScrollViewer? scrollViewer = scrollViewerRef.Current;
+            if (scrollViewer is null)
+            {
+                return;
+            }
+
+            if (string.Equals(focusedNodeIdRef.Current, id, StringComparison.Ordinal))
+            {
+                InfiniteCanvasViewport? saved = savedFocusedViewportRef.Current;
+                focusedNodeIdRef.Current = null;
+                savedFocusedViewportRef.Current = null;
+                if (saved is not null)
+                {
+                    scrollViewer.ChangeView(saved.OffsetX, saved.OffsetY, (float)saved.Zoom);
+                }
+
+                return;
+            }
+
+            double viewportWidth = scrollViewer.ViewportWidth > 0
+                ? scrollViewer.ViewportWidth
+                : viewport?.ViewportWidth > 0 ? viewport.Value.ViewportWidth : 1200;
+            double viewportHeight = scrollViewer.ViewportHeight > 0
+                ? scrollViewer.ViewportHeight
+                : viewport?.ViewportHeight > 0 ? viewport.Value.ViewportHeight : 800;
+            if (viewportWidth <= 0 || viewportHeight <= 0)
+            {
+                return;
+            }
+
+            if (focusedNodeIdRef.Current is null)
+            {
+                double savedOffsetX = scrollViewer.HorizontalOffset;
+                double savedOffsetY = scrollViewer.VerticalOffset;
+                double savedZoom = scrollViewer.ZoomFactor > 0 ? scrollViewer.ZoomFactor : viewport?.Zoom ?? 1;
+                savedFocusedViewportRef.Current = new InfiniteCanvasViewport(savedOffsetX, savedOffsetY, savedZoom);
+            }
+
+            focusedNodeIdRef.Current = id;
+
+            double frameLeft = pos.X - layout.BodyOffsetX;
+            double frameTop = pos.Y - layout.BodyOffsetY;
+            double frameWidth = Math.Max(1, layout.FrameWidth);
+            double frameHeight = Math.Max(1, layout.FrameHeight);
+            double zoomForHeight = (viewportHeight * 0.9) / frameHeight;
+            double zoomForWidth = (viewportWidth * 0.95) / frameWidth;
+            double targetZoom = Math.Min(Math.Min(zoomForHeight, zoomForWidth), options.MaxZoom);
+            targetZoom = Math.Clamp(targetZoom, options.MinZoom, options.MaxZoom);
+
+            double centerX = frameLeft + (frameWidth / 2);
+            double centerY = frameTop + (frameHeight / 2);
+            double offsetX = Math.Max(0, (centerX * targetZoom) - (viewportWidth / 2));
+            double offsetY = Math.Max(0, (centerY * targetZoom) - (viewportHeight / 2));
+            scrollViewer.ChangeView(offsetX, offsetY, (float)targetZoom);
+        }
+
         void BringNodeToFront(string id)
         {
             if (string.Equals(frontNodeId, id, StringComparison.Ordinal))
@@ -518,6 +580,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
                 zIndices.TryGetValue(id, out int zIndex) ? zIndex : 0,
                 options,
                 () => BringNodeToFront(id),
+                () => ToggleNodeFocus(id, node, pos, ResolveNodeFrameLayout(node, nodePorts)),
                 measuredHeight => CommitMeasuredHeight(id, measuredHeight),
                 committedPos => CommitPosition(id, committedPos),
                 movedPos => positionDraft.SetField(id, movedPos),
@@ -945,6 +1008,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         int zIndex,
         InfiniteCanvasOptions options,
         Action onBringToFront,
+        Action onToggleFocus,
         Action<double> onMeasuredHeight,
         Action<InfiniteCanvasNodePosition> onCommitted,
         Action<InfiniteCanvasNodePosition> onDragMove,
@@ -1061,6 +1125,22 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
                 draggingKey.Current = null;
                 args.Handled = true;
                 onCommitted(dragLatest.Current);
+            })
+            .Set(element =>
+            {
+                if (element is not UIElement ui)
+                {
+                    return;
+                }
+
+                ui.DoubleTapped -= HandleDoubleTapped;
+                ui.DoubleTapped += HandleDoubleTapped;
+
+                void HandleDoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs args)
+                {
+                    onToggleFocus();
+                    args.Handled = true;
+                }
             })
             .WithKey($"icv-node-{id}");
     }

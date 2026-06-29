@@ -175,8 +175,10 @@ public sealed class BoardStore : IDisposable
 
         var cardData = card.Fields.ToDictionary(field => field.Key, field => field.Value, StringComparer.Ordinal);
         var requiresDataObjects = card.Requires
-            .Where(token => state.DataObjectsByToken.TryGetValue(token, out _))
-            .ToDictionary(token => token, token => state.DataObjectsByToken[token], StringComparer.Ordinal);
+            .ToDictionary(
+                token => token,
+                token => state.DataObjectsByToken.TryGetValue(token, out string? value) ? value : "null",
+                StringComparer.Ordinal);
         var providesDataObjects = card.Provides
             .Where(token => state.DataObjectsByToken.TryGetValue(token, out _))
             .ToDictionary(token => token, token => state.DataObjectsByToken[token], StringComparer.Ordinal);
@@ -707,14 +709,28 @@ public sealed class BoardStore : IDisposable
             }
 
             string schemaVersion = GetString(runtimeElement, "schema_version") ?? string.Empty;
+            string rawRuntimeJson = BuildRuntimeSliceJson(runtime, computedElement);
             runtimes[cardId] = new BoardCardRuntimeSlice(
                 status,
                 ParseFields(computedElement),
-                runtime.GetRawText(),
+                rawRuntimeJson,
                 schemaVersion);
         }
 
         return runtimes;
+    }
+
+    private static string BuildRuntimeSliceJson(JsonElement runtime, JsonElement computedValues)
+    {
+        JsonObject root = new()
+        {
+            ["runtime"] = JsonNode.Parse(runtime.GetRawText()),
+            ["computed_values"] = computedValues.ValueKind == JsonValueKind.Object
+                ? JsonNode.Parse(computedValues.GetRawText())
+                : new JsonObject(),
+        };
+
+        return root.ToJsonString();
     }
 
     private static IReadOnlyDictionary<string, BoardCardChatViewState> ParseCanonicalChats(string chatsJson)

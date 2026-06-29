@@ -106,6 +106,10 @@ internal static class BoardTheme
         dictionary["BoardOverlayBrush"] = new SolidColorBrush(palette.BoardColorOverlay);
         dictionary["BoardSurfaceStrongBrush"] = new SolidColorBrush(palette.BoardColorSurfaceStrong);
         dictionary["BoardSurfaceMutedBrush"] = new SolidColorBrush(palette.BoardColorSurfaceMuted);
+        dictionary["BoardTableHeaderBackgroundBrush"] = new SolidColorBrush(Color.FromArgb(0xA6, palette.BoardColorSurfaceStrong.R, palette.BoardColorSurfaceStrong.G, palette.BoardColorSurfaceStrong.B));
+        dictionary["BoardTableHeaderForegroundBrush"] = new SolidColorBrush(palette.BoardColorTextMuted);
+        dictionary["BoardTableRowStripeBackgroundBrush"] = new SolidColorBrush(Color.FromArgb(0x66, palette.BoardColorSurfaceMuted.R, palette.BoardColorSurfaceMuted.G, palette.BoardColorSurfaceMuted.B));
+        dictionary["BoardTableGridLineBrush"] = new SolidColorBrush(palette.BoardColorBorderStrong);
         dictionary["CardBackgroundFillColorDefaultBrush"] = new SolidColorBrush(palette.BoardColorSurface);
         dictionary["CardBackgroundFillColorSecondaryBrush"] = new SolidColorBrush(palette.BoardColorSurfaceStrong);
         dictionary["CardStrokeColorDefaultBrush"] = new SolidColorBrush(palette.BoardColorBorder);

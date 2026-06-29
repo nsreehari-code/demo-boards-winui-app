@@ -17,20 +17,16 @@ public sealed class Metric : Component<MetricProps>
         var children = new System.Collections.Generic.List<Element>();
         if (!string.IsNullOrEmpty(Props.Title))
         {
-            children.Add(TextBlock(Props.Title).FontSize(12).Opacity(0.7).Foreground(theme.TextPrimary));
+            children.Add(TextBlock(Props.Title).FontSize(12).Foreground(theme.TextMuted));
         }
 
         children.Add(TextBlock(Props.Value).FontSize(22).Bold().Foreground(theme.TextPrimary));
 
         if (!string.IsNullOrEmpty(Props.Detail))
         {
-            children.Add(TextBlock(Props.Detail).FontSize(12).Opacity(0.7).Foreground(theme.TextPrimary));
+            children.Add(TextBlock(Props.Detail).FontSize(12).Foreground(theme.TextMuted));
         }
 
-        return Border(VStack(2, children.ToArray()))
-            .Padding(12)
-            .Background(theme.CardBackground)
-            .WithBorder(theme.CardBorder, 1)
-            .CornerRadius(10);
+        return SurfaceUi.TileSurface(theme, VStack(2, children.ToArray()));
     }
 }
