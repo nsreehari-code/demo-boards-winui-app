@@ -184,6 +184,7 @@ public sealed class InfiniteCanvasWorkingExamplePage : HookComponent<InfiniteCan
                             ShowGrid: true,
                             MiniMap: InfiniteCanvasMiniMapPlacement.BottomRight,
                             ShowZoomControls: true,
+                            ShowEdgeLabels: true,
                             GridSpacing: 24)))
                     .Flex(grow: 1))
             .Padding(12)

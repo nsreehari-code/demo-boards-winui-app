@@ -52,10 +52,10 @@ public sealed class FloatingCircularButton : HookComponent<FloatingCircularButto
         string source = activeIcon is not null && IconSources.TryGetValue(activeIcon, out string? mapped)
             ? mapped
             : HostIconSources.List;
-        double opacity = hovered ? 0.75 : (Props.Toggled ? 0.60 : 0.50);
+        double opacity = hovered ? 0.92 : (Props.Toggled ? 0.84 : 0.76);
 
         return Button(Component<SvgIcon, SvgIconProps>(new SvgIconProps(source, 20)), () => activeOnClick?.Invoke())
-            .Background(theme.SurfaceElevated)
+            .Background(theme.CardBackground)
             .AutomationName(Props.AriaLabel ?? "Toggle")
             .Foreground(theme.AccentStrong)
             .Opacity(opacity)

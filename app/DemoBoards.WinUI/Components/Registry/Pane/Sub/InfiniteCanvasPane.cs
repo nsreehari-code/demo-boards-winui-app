@@ -225,20 +225,26 @@ public sealed class InfiniteCanvasPane : HookComponent<InfiniteCanvasPaneProps>
                     ShowGrid: true,
                     MiniMap: InfiniteCanvasMiniMapPlacement.BottomRight,
                     ShowZoomControls: true,
+                    ShowEdgeLabels: false,
                     GridSpacing: 24)));
     }
 
     private static Element BuildTokenGem(AppTheme theme, string token, bool provide, bool selected, bool active, Action onClick) =>
-        Button(token, onClick)
+        Button(string.Empty, onClick)
             .AutomationName($"{(provide ? "Provides" : "Requires")} {token}")
-            .CornerRadius(10)
-            .Padding(8, 2, 8, 2)
+            .CornerRadius(999)
+            .Padding(0)
             .MinWidth(0)
+            .Width(14)
+            .Height(14)
             .Background(selected || (provide && active)
                 ? theme.Accent
                 : theme.ControlFill)
             .WithBorder(theme.CardBorder, 1)
-            .Set(button => button.FontSize = 10);
+            .Set(button =>
+            {
+                button.Foreground = theme.Transparent;
+            });
 
     private static string? ReadString(JsonElement element, string name) =>
         element.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.String

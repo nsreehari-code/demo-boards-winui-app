@@ -149,6 +149,7 @@ public sealed record InfiniteCanvasOptions(
     bool ShowGrid = true,
     InfiniteCanvasMiniMapPlacement MiniMap = InfiniteCanvasMiniMapPlacement.TopRight,
     bool ShowZoomControls = true,
+    bool ShowEdgeLabels = true,
     double ContentPadding = 240,
     double GridSpacing = 28);
 
@@ -435,7 +436,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         IReadOnlyList<InfiniteCanvasEdge> edges = DeriveEdges(Props.NodePorts);
         if (edges.Count > 0)
         {
-            children.AddRange(BuildEdges(edges, effective, boxes, Props.NodePorts, theme));
+            children.AddRange(BuildEdges(edges, effective, boxes, Props.NodePorts, theme, options.ShowEdgeLabels));
         }
 
         foreach ((string id, InfiniteCanvasNodeBox node) in boxes)
@@ -1011,7 +1012,8 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         IReadOnlyDictionary<string, InfiniteCanvasNodePosition> positions,
         IReadOnlyDictionary<string, InfiniteCanvasNodeBox> nodes,
         IReadOnlyDictionary<string, InfiniteCanvasNodePorts>? nodePorts,
-        AppTheme theme)
+        AppTheme theme,
+        bool showEdgeLabels)
     {
         IReadOnlyDictionary<(string Node, string Port), (double X, double Y, InfiniteCanvasPortSide Side)> anchors =
             BuildPortAnchors(positions, nodes, nodePorts);
@@ -1078,7 +1080,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
             yield return Ellipse().Width(6).Height(6).Fill(stroke).Canvas(sx - 3, sy - 3).WithKey($"icv-edge-s-{edge.Id}");
             yield return Ellipse().Width(8).Height(8).Fill(stroke).Canvas(tx - 4, ty - 4).WithKey($"icv-edge-t-{edge.Id}");
 
-            if (!string.IsNullOrWhiteSpace(edge.Label))
+            if (showEdgeLabels && !string.IsNullOrWhiteSpace(edge.Label))
             {
                 double cx = (sx + tx) / 2;
                 double cy = (sy + ty) / 2;

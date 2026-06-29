@@ -72,7 +72,7 @@ public sealed class PanelVertical : Component<PanelVerticalProps>
             .Padding(12)
             .Background(theme.CardBackground)
             .WithBorder(theme.CardBorder, 1)
-            .CornerRadius(0)
+            .CornerRadius(2)
             .Width(480)
             .MaxWidth(560)
             .HAlign(horizontalAlignment)
