@@ -148,8 +148,7 @@ public sealed class EditPageDetails : Component<EditPageDetailsProps>
                 .Foreground(theme.StatusSuccess));
         }
 
-        return VStack(12, sections.ToArray())
-            .Set(stack => stack.Padding = new(12));
+        return VStack(12, sections.ToArray());
     }
 
     private static object?[] BuildOptions(IReadOnlyList<string>? options)

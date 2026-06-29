@@ -30,27 +30,18 @@ public sealed class BoardImportExport : Component<BoardImportExportProps>
             TextBlock("Board Import / Export")
                 .FontSize(14)
                 .Bold(),
-            HStack(8,
-                Button(Props.Importing ? "Importing…" : "Import Board", Props.OnImport)
-                    .IsEnabled(!(Props.Importing || Props.Disabled))
-                    .AutomationName("Import board configuration")
-                    .SubtleButton(),
-                Button(Props.Exporting ? "Saving…" : "Export Board", Props.OnExport)
-                    .IsEnabled(!(Props.Exporting || Props.Disabled))
-                    .AutomationName("Export board configuration")
-                    .SubtleButton(),
-                Button(Props.Refreshing ? "Refreshing…" : "Refresh Workspace Bootstrap", Props.OnRefreshBootstrap)
-                    .IsEnabled(!(Props.Refreshing || Props.Disabled))
-                    .AutomationName("Refresh workspace bootstrap data")
-                    .SubtleButton()
-            )
-        )
-        .Set(stack => stack.Padding = new(12))
-        .Set(stack => stack.BorderThickness = new(1))
-        .Set(stack =>
-        {
-            stack.BorderBrush = theme.CardBorder;
-            stack.Background = theme.SurfaceElevated;
-        });
+            Button(Props.Importing ? "Importing…" : "Import Board", Props.OnImport)
+                .IsEnabled(!(Props.Importing || Props.Disabled))
+                .AutomationName("Import board configuration")
+                .SubtleButton(),
+            Button(Props.Exporting ? "Saving…" : "Export Board", Props.OnExport)
+                .IsEnabled(!(Props.Exporting || Props.Disabled))
+                .AutomationName("Export board configuration")
+                .SubtleButton(),
+            Button(Props.Refreshing ? "Refreshing…" : "Refresh Workspace Bootstrap", Props.OnRefreshBootstrap)
+                .IsEnabled(!(Props.Refreshing || Props.Disabled))
+                .AutomationName("Refresh workspace bootstrap data")
+                .SubtleButton()
+        );
     }
 }

@@ -326,6 +326,128 @@ public sealed class InfiniteCanvasPane : HookComponent<InfiniteCanvasPaneProps>
         return result;
     }
 
+    private static List<string> ResolveRequiredTokens(BoardCard? card)
+    {
+        if (card?.Requires is { Count: > 0 })
+        {
+            return UniqueTokens(card.Requires);
+        }
+
+        if (string.IsNullOrWhiteSpace(card?.RawDefinitionJson))
+        {
+            return new List<string>();
+        }
+
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(card.RawDefinitionJson);
+            JsonElement root = document.RootElement;
+            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("requires", out JsonElement requiresValue))
+            {
+                return ParseTokenList(requiresValue);
+            }
+        }
+        catch
+        {
+        }
+
+        return new List<string>();
+    }
+
+    private static List<string> ResolveProvidedTokens(BoardCard? card)
+    {
+        if (card?.Provides is { Count: > 0 })
+        {
+            return UniqueTokens(card.Provides);
+        }
+
+        if (string.IsNullOrWhiteSpace(card?.RawDefinitionJson))
+        {
+            return new List<string>();
+        }
+
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(card.RawDefinitionJson);
+            JsonElement root = document.RootElement;
+            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("provides", out JsonElement providesValue))
+            {
+                return ParseProvideTokenList(providesValue);
+            }
+        }
+        catch
+        {
+        }
+
+        return new List<string>();
+    }
+
+    private static List<string> ParseTokenList(JsonElement value)
+    {
+        var tokens = new List<string>();
+        if (value.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement entry in value.EnumerateArray())
+            {
+                if (entry.ValueKind == JsonValueKind.String)
+                {
+                    string? token = entry.GetString();
+                    if (!string.IsNullOrWhiteSpace(token))
+                    {
+                        tokens.Add(token);
+                    }
+                }
+            }
+        }
+        else if (value.ValueKind == JsonValueKind.Object)
+        {
+            foreach (JsonProperty property in value.EnumerateObject())
+            {
+                if (!string.IsNullOrWhiteSpace(property.Name))
+                {
+                    tokens.Add(property.Name);
+                }
+            }
+        }
+
+        return UniqueTokens(tokens);
+    }
+
+    private static List<string> ParseProvideTokenList(JsonElement value)
+    {
+        var tokens = new List<string>();
+        if (value.ValueKind != JsonValueKind.Array)
+        {
+            return ParseTokenList(value);
+        }
+
+        foreach (JsonElement entry in value.EnumerateArray())
+        {
+            if (entry.ValueKind == JsonValueKind.String)
+            {
+                string? token = entry.GetString();
+                if (!string.IsNullOrWhiteSpace(token))
+                {
+                    tokens.Add(token);
+                }
+                continue;
+            }
+
+            if (entry.ValueKind == JsonValueKind.Object
+                && entry.TryGetProperty("bindTo", out JsonElement bindTo)
+                && bindTo.ValueKind == JsonValueKind.String)
+            {
+                string? token = bindTo.GetString();
+                if (!string.IsNullOrWhiteSpace(token))
+                {
+                    tokens.Add(token);
+                }
+            }
+        }
+
+        return UniqueTokens(tokens);
+    }
+
     /// <summary>Port of <c>buildGraph</c>: cards, token edges, and incoming/outgoing adjacency.</summary>
     internal static CanvasGraphResult BuildGraph(
         IReadOnlyList<string> cardIds,
@@ -340,8 +462,8 @@ public sealed class InfiniteCanvasPane : HookComponent<InfiniteCanvasPaneProps>
         {
             cardContents.TryGetValue(cardId, out BoardCard? card);
             string status = string.IsNullOrEmpty(card?.Status) ? "fresh" : card!.Status;
-            List<string> requires = UniqueTokens(card?.Requires);
-            List<string> provides = UniqueTokens(card?.Provides);
+            List<string> requires = ResolveRequiredTokens(card);
+            List<string> provides = ResolveProvidedTokens(card);
             List<string> providesActive = provides.Where(dataObjects.ContainsKey).ToList();
 
             cards[cardId] = new GraphCard(cardId, ResolveTitle(card, cardId), status, requires, provides, providesActive);

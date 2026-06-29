@@ -2,6 +2,7 @@ using System;
 using Microsoft.UI.Reactor;
 using Microsoft.UI.Reactor.Core;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 using static Microsoft.UI.Reactor.Factories;
 using DemoBoards_WinUI;
 using Windows.UI;
@@ -60,7 +61,14 @@ public sealed class PanelVertical : Component<PanelVerticalProps>
 
         (double panelLeft, double panelTop, double panelRight, double panelBottom) = ResolvePanelMargin(isRight);
 
-        Element panel = Border(ScrollViewer(Props.Children ?? Empty()).Flex(grow: 1))
+        Element panel = Border(
+                ScrollViewer(Props.Children ?? Empty())
+                    .Flex(grow: 1)
+                    .Set(scrollViewer =>
+                    {
+                        scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+                        scrollViewer.HorizontalScrollMode = ScrollMode.Disabled;
+                    }))
             .Padding(12)
             .Background(theme.CardBackground)
             .WithBorder(theme.CardBorder, 1)

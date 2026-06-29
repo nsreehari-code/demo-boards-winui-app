@@ -44,6 +44,7 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
 
     private static readonly JsonSerializerOptions PrettyJsonOptions = new() { WriteIndented = true };
     private const int DefaultRefreshAllIntervalSeconds = 30 * 60;
+    private const double FixedPaneWidth = 456;
 
     public override Element Render()
     {
@@ -58,7 +59,8 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
         string rawLayoutJson = visualsHook.Visuals.LayoutBlob.ToJsonString(PrettyJsonOptions);
         PageDetailsState pageDetails = PageDetailsState.FromRaw(Props.BoardId, rawBoardJson, rawMetadataJson);
 
-        Element SectionCard(Element content) => content;
+        Element SectionCard(Element content) =>
+            Component<BoardConfigSection, BoardConfigSectionProps>(new BoardConfigSectionProps(content));
 
         Brush CreateStatusBrush(StatusKind kind) => kind switch
         {
@@ -188,29 +190,32 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
         var sections = new List<Element>();
 
         sections.Add(
-            SectionCard(
-                Component<BoardSwitcher, BoardSwitcherProps>(new BoardSwitcherProps(
-                    Value: pendingBoardId,
-                    Options: boardOptions,
-                    CurrentBoardId: Props.ActiveBoardId,
-                    OnChange: setPendingBoardId,
-                    OnSwitch: SwitchBoard,
-                    SelectDisabled: manageBoards.LoadingManagedBoards,
-                    Loading: manageBoards.LoadingManagedBoards,
-                    SmokeRunnerEnabled: smokeRunnerEnabled,
-                    OnRunSmokeRunner: Props.OnRunSmokeRunner,
-                    SmokeRunnerTitle: smokeRunnerTitle))
-                        .WithKey($"{Props.ActiveBoardId}|{Props.ActiveServerUrl}")));
+            TextBlock("Board Config")
+                .FontSize(18)
+                .Bold());
 
         sections.Add(
-            SectionCard(
-                VStack(10,
-                    HStack(8,
-                        Button("New board", () =>
-                        {
-                            setShowAddBoardForm(true);
-                            setAddBoardStatus(StatusMessage.Empty);
-                        }).AutomationName("Open new board form").SubtleButton()))));
+            Component<BoardSwitcher, BoardSwitcherProps>(new BoardSwitcherProps(
+                Value: pendingBoardId,
+                Options: boardOptions,
+                CurrentBoardId: Props.ActiveBoardId,
+                OnChange: setPendingBoardId,
+                OnSwitch: SwitchBoard,
+                SelectDisabled: manageBoards.LoadingManagedBoards,
+                Loading: manageBoards.LoadingManagedBoards,
+                SmokeRunnerEnabled: smokeRunnerEnabled,
+                OnRunSmokeRunner: Props.OnRunSmokeRunner,
+                SmokeRunnerTitle: smokeRunnerTitle))
+                    .WithKey($"{Props.ActiveBoardId}|{Props.ActiveServerUrl}"));
+
+        sections.Add(
+            VStack(10,
+                HStack(8,
+                    Button("New board", () =>
+                    {
+                        setShowAddBoardForm(true);
+                        setAddBoardStatus(StatusMessage.Empty);
+                    }).AutomationName("Open new board form").SubtleButton())));
 
         sections.Add(
             SectionCard(
@@ -389,6 +394,7 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
                             ? StatusBlock(addBoardStatus)
                             : TextBlock(string.Empty).Set(text => text.Visibility = Visibility.Collapsed)
                     ])))
+                .Width(FixedPaneWidth)
                 .Set(scrollViewer =>
                 {
                     scrollViewer.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
@@ -425,6 +431,7 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
                                 }
                             }))
                     ])))
+                .Width(FixedPaneWidth)
                 .Set(scrollViewer =>
                 {
                     scrollViewer.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
@@ -439,6 +446,7 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
                         stack.Padding = new Thickness(12, 10, 12, 12);
                         stack.HorizontalAlignment = HorizontalAlignment.Stretch;
                     }))
+            .Width(FixedPaneWidth)
             .Set(scrollViewer =>
             {
                 scrollViewer.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;

@@ -10,6 +10,7 @@ using DemoBoards_WinUI.Assets;
 using DemoBoards_WinUI.Controls.Shared;
 using DemoBoards_WinUI.Hooks;
 using DemoBoards_WinUI.State;
+using Microsoft.UI.Xaml;
 
 namespace DemoBoards_WinUI.Controls.Registry.BoardConfig;
 
@@ -292,18 +293,19 @@ public sealed class BoardSwitcher : HookComponent<BoardSwitcherProps>
             TextBlock("Board")
                 .FontSize(12)
                 .Opacity(0.7),
-            HStack(8,
-                Component<SelectControl, SelectControlProps>(new SelectControlProps(
-                    Value: Props.Value,
-                    Options: selectOptions.Cast<object?>().ToList(),
-                    Disabled: Props.SelectDisabled,
-                    EmptyLabel: Props.Loading ? "Loading boards…" : "No boards available",
-                    AllowEmpty: options.Count == 0,
-                    AriaLabel: "Select a board",
-                    OnChange: Props.OnChange
-                )).Flex(grow: 1),
-                HStack(4, buttonElements.ToArray()).Flex(shrink: 0)
-            )
-        ).Flex(grow: 1);
+            Component<SelectControl, SelectControlProps>(new SelectControlProps(
+                Value: Props.Value,
+                Options: selectOptions.Cast<object?>().ToList(),
+                Disabled: Props.SelectDisabled,
+                EmptyLabel: Props.Loading ? "Loading boards…" : "No boards available",
+                AllowEmpty: options.Count == 0,
+                AriaLabel: "Select a board",
+                OnChange: Props.OnChange
+            )).HorizontalAlignment(HorizontalAlignment.Stretch),
+            HStack(4, buttonElements.ToArray())
+                .HorizontalAlignment(HorizontalAlignment.Right)
+        )
+        .Flex(grow: 1)
+        .HorizontalAlignment(HorizontalAlignment.Stretch);
     }
 }
