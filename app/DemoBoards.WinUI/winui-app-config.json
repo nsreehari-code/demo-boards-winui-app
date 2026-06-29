@@ -1,7 +1,7 @@
 {
   "repoRoot": "${repoRoot}",
   "frontend": {
-    "defaultBoardId": "live-test-frontend",
+    "defaultBoardId": "live",
     "serverUrl": "http://localhost:7799",
     "boardServerConstants": {
       "agentOutputChannel": "agent-output",

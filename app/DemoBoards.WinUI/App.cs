@@ -55,11 +55,14 @@ public sealed class App : IAsyncDisposable
             BoardCanvasLayoutEngine.ConfigureDefaults(appConfig.Frontend.CanvasLayout);
             LogStartup($"App config loaded. Templates config path: {appConfig.Backend.TemplatesConfigPath}");
             Environment.SetEnvironmentVariable(RuntimeAssetResolver.NsCodeRepoRootEnvVar, appConfig.Backend.NsCodeRepoRoot);
-            string initialBoardId = WinUiBoardIdStore.LoadOverride() ?? appConfig.Frontend.DefaultBoardId;
+            GlobalStateStore globalState = GlobalStateStore.Current;
+            string defaultBoardId = appConfig.Frontend.DefaultBoardId;
+            string initialBoardId = globalState.GetOrAdd(GlobalStateKeys.BoardId, defaultBoardId);
             string defaultServerUrl = appConfig.Frontend.InitialServerUrl;
-            string initialServerUrl = WinUiServerUrlStore.LoadOverride() ?? defaultServerUrl;
-            GlobalStateStore.Current.Set(GlobalStateKeys.BoardId, initialBoardId);
-            GlobalStateStore.Current.Set(GlobalStateKeys.ServerUrl, initialServerUrl);
+            string initialServerUrl = globalState.GetOrAdd(GlobalStateKeys.ServerUrl, defaultServerUrl);
+            globalState.GetOrAdd(GlobalStateKeys.TestPageMode, false);
+            globalState.Set(GlobalStateKeys.BoardId, initialBoardId);
+            globalState.Set(GlobalStateKeys.ServerUrl, initialServerUrl);
             LogStartup($"Initial board id resolved: {initialBoardId}");
             LogStartup($"Initial server url resolved: {initialServerUrl}");
 
@@ -67,12 +70,14 @@ public sealed class App : IAsyncDisposable
             {
                 (boardStateService, boardStore, boardClient) = CreateBoardSessionAsync(initialServerUrl, initialBoardId).GetAwaiter().GetResult();
             }
-            catch (Exception ex) when (!string.Equals(NormalizeServerOrigin(initialServerUrl), NormalizeServerOrigin(defaultServerUrl), StringComparison.OrdinalIgnoreCase))
+            catch (Exception ex) when (
+                !string.Equals(initialBoardId, defaultBoardId, StringComparison.Ordinal)
+                || !string.Equals(NormalizeServerOrigin(initialServerUrl), NormalizeServerOrigin(defaultServerUrl), StringComparison.OrdinalIgnoreCase))
             {
-                LogStartup($"Saved server override failed at startup: {initialServerUrl}. Falling back to configured default {defaultServerUrl}.{Environment.NewLine}{ex}");
-                WinUiServerUrlStore.SaveOverride(defaultServerUrl);
-                GlobalStateStore.Current.Set(GlobalStateKeys.ServerUrl, defaultServerUrl);
-                (boardStateService, boardStore, boardClient) = CreateBoardSessionAsync(defaultServerUrl, initialBoardId).GetAwaiter().GetResult();
+                LogStartup($"Saved session override failed at startup: board={initialBoardId}, server={initialServerUrl}. Falling back to configured defaults board={defaultBoardId}, server={defaultServerUrl}.{Environment.NewLine}{ex}");
+                globalState.Set(GlobalStateKeys.BoardId, defaultBoardId);
+                globalState.Set(GlobalStateKeys.ServerUrl, defaultServerUrl);
+                (boardStateService, boardStore, boardClient) = CreateBoardSessionAsync(defaultServerUrl, defaultBoardId).GetAwaiter().GetResult();
             }
 
             started = true;
