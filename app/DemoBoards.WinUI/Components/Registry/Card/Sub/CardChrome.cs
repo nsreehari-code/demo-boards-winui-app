@@ -260,13 +260,20 @@ public sealed class CardChromeBoardView : HookComponent<CardChromeBoardViewProps
             .Set(button => button.IsEnabled = !refreshDisabled);
 
         Element header = Empty();
+        Element headerStatus = Empty();
         if (showHeader)
         {
-            Element titleBlock = VStack(2,
-                TextBlock(title).Bold().FontSize(14).Foreground(theme.TextPrimary),
-                status != "completed"
-                    ? TextBlock(status).FontSize(11).Foreground(BoardTheme.CreateStatusBrush(status, 0xFF))
-                    : Empty());
+            Element titleBlock = TextBlock(title).Bold().FontSize(14).Foreground(theme.TextPrimary);
+
+            headerStatus = status == "running"
+                ? Border(
+                        TextBlock(status)
+                            .FontSize(11)
+                            .Foreground(BoardTheme.CreateStatusBrush(status, 0xFF)))
+                    .Padding(4)
+                    .Background(theme.LayerAlt)
+                    .CornerRadius(6)
+                : Empty();
 
             Element inspectButton = Button(
                     Component<SvgIcon, SvgIconProps>(new SvgIconProps(inspectOpen ? HostIconSources.CardCloseDetails : HostIconSources.Sliders2, 15)),
@@ -310,7 +317,7 @@ public sealed class CardChromeBoardView : HookComponent<CardChromeBoardViewProps
                 scrollViewer.VerticalScrollMode = ScrollMode.Auto;
             });
 
-        Element card = SurfaceUi.CardSurface(theme, VStack(8, header, body));
+        Element card = SurfaceUi.CardSurface(theme, VStack(8, header, headerStatus, body));
 
         Element shell = Component<ResizableCardShell, ResizableCardShellProps>(
             new ResizableCardShellProps(Props.CardId, Props.EnableResize, card));
