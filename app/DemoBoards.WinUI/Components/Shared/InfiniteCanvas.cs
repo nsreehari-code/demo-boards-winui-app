@@ -912,7 +912,7 @@ public sealed class InfiniteCanvas : HookComponent<InfiniteCanvasProps>
         // opaque descriptor (no canvas-owned chrome — titles etc. are the consumer's to render).
         Element nodeContent = Props.RenderNode(box.Descriptor);
 
-        Element body = Border(Border(nodeContent).Padding(12))
+        Element body = Border(nodeContent)
             .Background(theme.CardBackground)
             .WithBorder(theme.CardBorder, 1)
             .CornerRadius(12)

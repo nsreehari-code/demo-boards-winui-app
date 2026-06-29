@@ -254,9 +254,9 @@ public sealed class InfiniteCanvasPane : HookComponent<InfiniteCanvasPaneProps>
                 .CornerRadius(999)
                 .Padding(0)
                 .MinWidth(0)
-                    .MinHeight(0)
-                    .Width(14)
-                .Height(14)
+                .MinHeight(0)
+                .Width(1)
+                .Height(1)
                 .Background(emphasized ? Props.Theme.AccentStrong : Props.Theme.Accent)
                 .WithBorder(emphasized ? Props.Theme.AccentStrong : Props.Theme.Accent, 1)
                 .Set(button =>
