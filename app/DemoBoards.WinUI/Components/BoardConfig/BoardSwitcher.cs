@@ -41,6 +41,8 @@ public sealed record BoardSwitcherProps(
 
 public sealed class BoardSwitcher : HookComponent<BoardSwitcherProps>
 {
+    private const string DefaultLayoutKind = "infinite-canvas";
+
     private static string GetOptionId(object? opt) =>
         opt is IDictionary<string, object?> dict && dict.TryGetValue("id", out var id)
             ? id?.ToString() ?? ""
@@ -51,6 +53,16 @@ public sealed class BoardSwitcher : HookComponent<BoardSwitcherProps>
             ? label?.ToString() ?? ""
             : "";
 
+    private static string ResolveCentrePaneKind(JsonObject layoutBlob)
+    {
+        return layoutBlob.TryGetPropertyValue("kind", out JsonNode? kindNode)
+            && kindNode is JsonValue kindValue
+            && kindValue.TryGetValue(out string? kindString)
+            && !string.IsNullOrWhiteSpace(kindString)
+                ? kindString.Trim()
+                : DefaultLayoutKind;
+    }
+
     public override Element Render()
     {
         string targetBoardId = string.IsNullOrWhiteSpace(Props.Value)
@@ -60,14 +72,72 @@ public sealed class BoardSwitcher : HookComponent<BoardSwitcherProps>
         EmbeddedBoardClient client = UseEmbeddedClient();
         BoardStore store = UseBoardStoreSubscription(includeUiState: false);
         var (togglingLayout, setTogglingLayout) = UseState(false);
+        var (togglingTheme, setTogglingTheme) = UseState(false);
         var (layoutKindOverride, setLayoutKindOverride) = UseState<string?>(null);
+        var (themePackOverride, setThemePackOverride) = UseState<string?>(null);
+        var (selectedLayoutKind, setSelectedLayoutKind) = UseState<string?>(null);
+        var (selectedThemePackId, setSelectedThemePackId) = UseState<string?>(null);
+
+        UseEffect(() =>
+        {
+            bool cancelled = false;
+
+            if (string.IsNullOrWhiteSpace(targetBoardId))
+            {
+                setSelectedLayoutKind(null);
+                setSelectedThemePackId(null);
+                return static () => { };
+            }
+
+            if (string.Equals(targetBoardId, Props.CurrentBoardId, StringComparison.Ordinal))
+            {
+                setSelectedLayoutKind(visualsHook.Visuals.CentrePaneKind);
+                setSelectedThemePackId(visualsHook.Visuals.Theme);
+                return static () => { };
+            }
+
+            async Task LoadSelectedVisualsAsync()
+            {
+                try
+                {
+                    ManagedBoardConfigState? saved = await client.GetManagedBoardConfigAsync(targetBoardId).ConfigureAwait(false);
+                    if (cancelled)
+                    {
+                        return;
+                    }
+
+                    JsonObject layoutBlob = ParseManagedBoardObjectOrEmpty(saved?.RawLayoutJson);
+                    setSelectedLayoutKind(ResolveCentrePaneKind(layoutBlob));
+                    setSelectedThemePackId(BoardTheme.ResolveThemePackIdFromLayoutJson(layoutBlob.ToJsonString()));
+                }
+                catch
+                {
+                    if (cancelled)
+                    {
+                        return;
+                    }
+
+                    setSelectedLayoutKind(null);
+                    setSelectedThemePackId(null);
+                }
+            }
+
+            _ = LoadSelectedVisualsAsync();
+            return () => { cancelled = true; };
+        }, targetBoardId, Props.CurrentBoardId, visualsHook.Visuals.CentrePaneKind, visualsHook.Visuals.Theme);
 
         string sourceLayoutKind = !string.IsNullOrWhiteSpace(Props.LayoutKind)
             ? Props.LayoutKind!
-            : visualsHook.Visuals.CentrePaneKind;
+            : (selectedLayoutKind ?? visualsHook.Visuals.CentrePaneKind);
         string layoutKind = string.IsNullOrWhiteSpace(layoutKindOverride)
-            ? (string.IsNullOrWhiteSpace(sourceLayoutKind) ? "infinite-canvas" : sourceLayoutKind)
+            ? (string.IsNullOrWhiteSpace(sourceLayoutKind) ? DefaultLayoutKind : sourceLayoutKind)
             : layoutKindOverride!;
+        string sourceThemePackId = !string.IsNullOrWhiteSpace(Props.ThemePackId)
+            ? Props.ThemePackId!
+            : (selectedThemePackId ?? visualsHook.Visuals.Theme);
+        string themePackId = string.IsNullOrWhiteSpace(themePackOverride)
+            ? BoardTheme.NormalizeThemePackId(sourceThemePackId)
+            : BoardTheme.NormalizeThemePackId(themePackOverride);
 
         UseEffect(
             () =>
@@ -77,12 +147,23 @@ public sealed class BoardSwitcher : HookComponent<BoardSwitcherProps>
             },
             targetBoardId,
             Props.LayoutKind ?? string.Empty,
+            selectedLayoutKind ?? string.Empty,
             visualsHook.Visuals.CentrePaneKind ?? string.Empty);
 
+        UseEffect(
+            () =>
+            {
+                setThemePackOverride(null);
+                return static () => { };
+            },
+            targetBoardId,
+            Props.ThemePackId ?? string.Empty,
+            selectedThemePackId ?? string.Empty,
+            visualsHook.Visuals.Theme ?? string.Empty);
+
         var options = Props.Options ?? Array.Empty<object?>();
-        bool showThemeToggle = Props.OnToggleTheme != null;
         bool isCardsLayout = layoutKind == "flowing-cards";
-        bool isSignalRoom = Props.ThemePackId == "signal-room";
+        bool isSignalRoom = string.Equals(themePackId, "signal-room", StringComparison.Ordinal);
         bool showRunButtons = Props.SmokeRunnerEnabled;
 
         async Task ToggleLayoutAsync()
@@ -99,6 +180,7 @@ public sealed class BoardSwitcher : HookComponent<BoardSwitcherProps>
             try
             {
                 await visualsHook.ShallowMerge("kind", JsonValue.Create(nextKind)).ConfigureAwait(false);
+                setSelectedLayoutKind(nextKind);
 
                 if (string.Equals(targetBoardId, Props.CurrentBoardId, StringComparison.Ordinal))
                 {
@@ -116,6 +198,43 @@ public sealed class BoardSwitcher : HookComponent<BoardSwitcherProps>
             finally
             {
                 setTogglingLayout(false);
+            }
+        }
+
+        async Task ToggleThemeAsync()
+        {
+            if (togglingTheme || string.IsNullOrWhiteSpace(targetBoardId))
+            {
+                return;
+            }
+
+            string nextThemePackId = isSignalRoom ? "mist-ops" : "signal-room";
+            setTogglingTheme(true);
+            setThemePackOverride(nextThemePackId);
+
+            try
+            {
+                await visualsHook.ShallowMerge("theme", JsonValue.Create(nextThemePackId)).ConfigureAwait(false);
+                setSelectedThemePackId(nextThemePackId);
+
+                if (string.Equals(targetBoardId, Props.CurrentBoardId, StringComparison.Ordinal))
+                {
+                    ManagedBoardConfigState? saved = await client.GetManagedBoardConfigAsync(targetBoardId).ConfigureAwait(false);
+                    if (saved is not null)
+                    {
+                        store.SetManagedBoardConfig(saved);
+                    }
+
+                    App.Current.ApplyThemePack(nextThemePackId);
+                }
+            }
+            catch
+            {
+                setThemePackOverride(null);
+            }
+            finally
+            {
+                setTogglingTheme(false);
             }
         }
 
@@ -163,14 +282,11 @@ public sealed class BoardSwitcher : HookComponent<BoardSwitcherProps>
                 .SubtleButton());
 
         // Theme toggle button (bi-brightness-high / bi-moon-stars)
-        if (showThemeToggle)
-        {
-            buttonElements.Add(
-                Button(Component<SvgIcon, SvgIconProps>(new SvgIconProps(isSignalRoom ? HostIconSources.BrightnessHigh : HostIconSources.MoonStars, 15)), Props.OnToggleTheme)
-                    .IsEnabled(!(Props.ThemeToggleDisabled || Props.ThemePackId == null || Props.TogglingTheme))
-                    .AutomationName(isSignalRoom ? "Switch to mist-ops theme" : "Switch to signal-room theme")
-                    .SubtleButton());
-        }
+        buttonElements.Add(
+            Button(Component<SvgIcon, SvgIconProps>(new SvgIconProps(isSignalRoom ? HostIconSources.BrightnessHigh : HostIconSources.MoonStars, 15)), () => _ = ToggleThemeAsync())
+                .IsEnabled(!(Props.ThemeToggleDisabled || togglingTheme || Props.TogglingTheme || string.IsNullOrWhiteSpace(targetBoardId)))
+                .AutomationName(isSignalRoom ? "Switch to mist-ops theme" : "Switch to signal-room theme")
+                .SubtleButton());
 
         return VStack(8,
             TextBlock("Board")

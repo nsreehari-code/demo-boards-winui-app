@@ -78,7 +78,6 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
                 .Set(text => text.TextWrapping = TextWrapping.WrapWholeWords);
 
         var (pageStatus, setPageStatus) = UseState(StatusMessage.Empty);
-        var (themeStatus, setThemeStatus) = UseState(StatusMessage.Empty);
         var (importExportStatus, setImportExportStatus) = UseState(StatusMessage.Empty);
         var (templateStatus, setTemplateStatus) = UseState(StatusMessage.Empty);
         var (addBoardStatus, setAddBoardStatus) = UseState(StatusMessage.Empty);
@@ -93,7 +92,6 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
         var (showAddBoardForm, setShowAddBoardForm) = UseState(false);
 
         var (saving, setSaving) = UseState(false);
-        var (savingTheme, setSavingTheme) = UseState(false);
         var (importing, setImporting) = UseState(false);
         var (exporting, setExporting) = UseState(false);
         var (refreshingWorkspace, setRefreshingWorkspace) = UseState(false);
@@ -110,7 +108,6 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
         UseEffect(() =>
         {
             setPageStatus(StatusMessage.Empty);
-            setThemeStatus(StatusMessage.Empty);
             setImportExportStatus(StatusMessage.Empty);
             setTemplateStatus(StatusMessage.Empty);
             setAddBoardStatus(StatusMessage.Empty);
@@ -195,18 +192,6 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
 
         sections.Add(
             SectionCard(
-                VStack(8,
-                    HStack(8,
-                        VStack(4,
-                            TextBlock("Board Settings").FontSize(20).Bold(),
-                            TextBlock("Edit board details from the Reactor shell without falling back to WinUI hosts.")
-                                .Opacity(0.72)
-                                .Set(text => text.TextWrapping = TextWrapping.WrapWholeWords))
-                            .Flex(grow: 1),
-                        Button("Close", Props.CloseAction).AutomationName("Close board settings").SubtleButton()))));
-
-        sections.Add(
-            SectionCard(
                 Component<BoardSwitcher, BoardSwitcherProps>(new BoardSwitcherProps(
                     Value: pendingBoardId,
                     Options: boardOptions,
@@ -223,18 +208,6 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
         sections.Add(
             SectionCard(
                 VStack(10,
-                    Component<ServerSwitcher, ServerSwitcherProps>(
-                        new ServerSwitcherProps(Props.ActiveServerUrl, Props.SetActiveServerUrl, Props.LiveRuntimeServerUrl)),
-                    string.IsNullOrWhiteSpace(manageBoards.ManageBoardsError)
-                        ? (Element)TextBlock(string.Empty).Set(text => text.Visibility = Visibility.Collapsed)
-                        : TextBlock($"Board list error: {manageBoards.ManageBoardsError}")
-                            .Opacity(0.78)
-                            .Set(text => text.TextWrapping = TextWrapping.WrapWholeWords))));
-
-        sections.Add(
-            SectionCard(
-                VStack(10,
-                    LabelValue("Board", string.IsNullOrWhiteSpace(Props.BoardId) ? "Board id unavailable." : Props.BoardId),
                     HStack(8,
                         Button("New board", () =>
                         {
@@ -276,26 +249,14 @@ public sealed class BoardConfigPane : HookComponent<BoardConfigPaneProps>
 
         sections.Add(
             SectionCard(
-                Component<ThemeVisualSettings, ThemeVisualSettingsProps>(new ThemeVisualSettingsProps(
-                    ThemePackId: visualsHook.Visuals.Theme,
-                    ThemePackOptions: BoardTheme.ThemePackIds,
-                    Saving: savingTheme,
-                    ErrorMessage: themeStatus.Kind == StatusKind.Error ? themeStatus.Message : string.Empty,
-                    SuccessMessage: themeStatus.Kind == StatusKind.Success ? themeStatus.Message : string.Empty,
-                    OnSave: themePackId =>
-                    {
-                        if (!savingTheme)
-                        {
-                            _ = SaveThemeAsync(
-                                Props.BoardClient,
-                                Props.BoardId,
-                                visualsHook.ShallowMerge,
-                                themePackId,
-                                setSavingTheme,
-                                setThemeStatus,
-                                Props.SetManagedBoardConfig);
-                        }
-                    }))));
+                VStack(10,
+                    Component<ServerSwitcher, ServerSwitcherProps>(
+                        new ServerSwitcherProps(Props.ActiveServerUrl, Props.SetActiveServerUrl, Props.LiveRuntimeServerUrl)),
+                    string.IsNullOrWhiteSpace(manageBoards.ManageBoardsError)
+                        ? (Element)TextBlock(string.Empty).Set(text => text.Visibility = Visibility.Collapsed)
+                        : TextBlock($"Board list error: {manageBoards.ManageBoardsError}")
+                            .Opacity(0.78)
+                            .Set(text => text.TextWrapping = TextWrapping.WrapWholeWords))));
 
         sections.Add(
             SectionCard(
